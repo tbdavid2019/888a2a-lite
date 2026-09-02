@@ -389,7 +389,10 @@ func (service *Service) ListActiveAnnouncements(ctx context.Context, afterID uin
 	return summaries, next, nil
 }
 
-func (service *Service) PublishAnnouncement(ctx context.Context, input hub.AnnouncementInput) (hub.Announcement, error) {
+func (service *Service) PublishAnnouncement(ctx context.Context, token string, input hub.AnnouncementInput) (hub.Announcement, error) {
+	if err := service.AuthenticateOperator(token); err != nil {
+		return hub.Announcement{}, err
+	}
 	now := service.now().UTC()
 	if err := input.Validate(now); err != nil {
 		return hub.Announcement{}, err

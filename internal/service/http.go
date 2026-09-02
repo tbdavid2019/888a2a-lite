@@ -224,7 +224,7 @@ func (server *HTTPServer) adminCreateAnnouncement(w http.ResponseWriter, r *http
 	if strings.EqualFold(request.Status, string(hub.AnnouncementDraft)) {
 		announcement, err = server.service.CreateDraft(r.Context(), token, request.input())
 	} else {
-		announcement, err = server.service.PublishAnnouncement(r.Context(), request.input())
+		announcement, err = server.service.PublishAnnouncement(r.Context(), token, request.input())
 	}
 	if err != nil {
 		writeServiceError(w, err)
@@ -371,7 +371,7 @@ func (server *HTTPServer) listAgents(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	agents, err := server.service.ListAgents(r.Context(), agentID, token, server.baseURL)
+	agents, err := server.service.ListAgents(r.Context(), agentID, token, server.baseURLFor(r))
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -989,10 +989,20 @@ func (limiter *requestLimiter) allow(key string) bool {
 		first++
 	}
 	requests = requests[first:]
+	if len(requests) == 0 {
+		delete(limiter.requests, key)
+	}
 	if len(requests) >= limiter.max {
 		limiter.requests[key] = requests
 		return false
 	}
 	limiter.requests[key] = append(requests, now)
+	if len(limiter.requests) > 10000 {
+		for k, v := range limiter.requests {
+			if len(v) == 0 || v[len(v)-1].Before(cutoff) {
+				delete(limiter.requests, k)
+			}
+		}
+	}
 	return true
 }

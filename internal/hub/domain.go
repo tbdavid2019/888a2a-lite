@@ -200,6 +200,9 @@ func ValidateIdempotencyKey(key string) error {
 	if len(key) > MaxIdempotencyKeyLength {
 		return fmt.Errorf("must not exceed %d bytes", MaxIdempotencyKeyLength)
 	}
+	if strings.HasPrefix(key, "group:") {
+		return errors.New("must not start with reserved prefix 'group:'")
+	}
 	return nil
 }
 

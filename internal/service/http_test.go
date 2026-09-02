@@ -175,6 +175,26 @@ func TestHTTPThreeAgentDeliveryAndAuthorizationBoundaries(t *testing.T) {
 	if feed.Code != http.StatusOK || !strings.Contains(feed.Body.String(), "Read-only maintenance notice") {
 		t.Fatalf("announcement feed status/body = %d/%s", feed.Code, feed.Body.String())
 	}
+
+	// Security: Direct task with reserved group: prefix must be rejected
+	collisionTask := map[string]any{
+		"contextId":      "context-coll",
+		"idempotencyKey": "group:group-1:key1",
+		"message":        "should be rejected",
+		"taskId":         "task-coll",
+	}
+	collResp := doJSON(t, handler, http.MethodPost, "/hub/v1/agents/"+agents[1].ID+"/tasks", agents[0].ID, agents[0].Token, collisionTask)
+	if collResp.Code != http.StatusBadRequest {
+		t.Fatalf("task with reserved group: prefix status = %d, want 400; body=%s", collResp.Code, collResp.Body.String())
+	}
+
+	// Security: Publish announcement without valid operator token must be rejected
+	unauthAnnounce := doJSONWithBearer(t, handler, http.MethodPost, "/hub/v1/admin/announcements", "invalid-token", map[string]any{
+		"title": "Unauthorized", "summary": "Should fail", "severity": "CRITICAL",
+	})
+	if unauthAnnounce.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthorized publish announcement status = %d, want 401; body=%s", unauthAnnounce.Code, unauthAnnounce.Body.String())
+	}
 }
 
 type registeredTestAgent struct {

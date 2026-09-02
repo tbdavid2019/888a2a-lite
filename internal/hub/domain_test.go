@@ -79,7 +79,7 @@ func TestIdempotencyKeyValidation(t *testing.T) {
 	if err := ValidateIdempotencyKey("installation-1"); err != nil {
 		t.Fatalf("valid key rejected: %v", err)
 	}
-	for _, key := range []string{"", "   ", strings.Repeat("x", MaxIdempotencyKeyLength+1)} {
+	for _, key := range []string{"", "   ", strings.Repeat("x", MaxIdempotencyKeyLength+1), "group:group-1:task-1", "group:something"} {
 		if err := ValidateIdempotencyKey(key); err == nil {
 			t.Fatalf("invalid key accepted: %q", key)
 		}

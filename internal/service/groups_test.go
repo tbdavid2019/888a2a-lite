@@ -154,3 +154,69 @@ func TestHTTPGroupLifecycleFanoutAndAuthorization(t *testing.T) {
 		t.Fatalf("system card group extension = %s", cardJSON)
 	}
 }
+
+func TestExpiredGroupInvitationRenewalAndReinvitation(t *testing.T) {
+	ctx := context.Background()
+	database, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "hub.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open: %v", err)
+	}
+	defer func() { _ = database.Close() }()
+	repo := sqlite.NewRepository(database)
+	now := time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC)
+	for _, agentID := range []string{"owner-1", "member-1"} {
+		if err := repo.CreateAgent(ctx, hub.RegisteredAgent{
+			HubID: "public", AgentID: agentID, RegistrationKeyHash: hub.HashToken("reg-" + agentID),
+			TokenHash: hub.HashToken("tok-" + agentID), DisplayName: agentID, ProviderFamily: "test",
+			TransportID: "http-json", Capabilities: []string{"text/plain"}, State: hub.AgentStatePending,
+			ExpiresAt: now.Add(24 * time.Hour), CreatedAt: now,
+		}); err != nil {
+			t.Fatalf("CreateAgent: %v", err)
+		}
+	}
+	group, err := repo.Groups().CreateGroup(ctx, hub.Group{
+		HubID: "public", GroupID: "group-renew", Name: "renew-test", State: hub.GroupStateActive,
+		OwnerAgentID: "owner-1", CreatedAt: now,
+	})
+	if err != nil {
+		t.Fatalf("CreateGroup: %v", err)
+	}
+
+	// Create an already-expired invitation
+	expiredInv, err := repo.Groups().CreateInvitation(ctx, hub.GroupInvitation{
+		HubID: "public", GroupID: group.GroupID, InviterAgentID: "owner-1", InviteeAgentID: "member-1",
+		State: hub.InvitationPending, CreatedAt: now.Add(-48 * time.Hour), ExpiresAt: now.Add(-24 * time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("CreateInvitation: %v", err)
+	}
+	if expiredInv.ID == 0 {
+		t.Fatal("expired invitation missing ID")
+	}
+
+	// FindPendingInvitation should NOT return the expired invitation
+	if _, err := repo.Groups().FindPendingInvitation(ctx, group.GroupID, "member-1"); err == nil {
+		t.Fatal("FindPendingInvitation returned an expired invitation, expected not found")
+	}
+
+	// Create a new invitation (should mark the old one EXPIRED and succeed)
+	freshInv, err := repo.Groups().CreateInvitation(ctx, hub.GroupInvitation{
+		HubID: "public", GroupID: group.GroupID, InviterAgentID: "owner-1", InviteeAgentID: "member-1",
+		State: hub.InvitationPending, CreatedAt: now, ExpiresAt: now.Add(24 * time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("CreateInvitation fresh: %v", err)
+	}
+	if freshInv.ID == expiredInv.ID {
+		t.Fatalf("fresh invitation ID %d should differ from expired ID %d", freshInv.ID, expiredInv.ID)
+	}
+
+	// Member should now be able to accept the fresh invitation
+	member, err := repo.Groups().AcceptInvitation(ctx, freshInv.ID, "member-1", now.Add(time.Hour))
+	if err != nil {
+		t.Fatalf("AcceptInvitation fresh: %v", err)
+	}
+	if member.AgentID != "member-1" || member.State != hub.MembershipActive {
+		t.Fatalf("unexpected member state: %+v", member)
+	}
+}

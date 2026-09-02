@@ -104,21 +104,35 @@ func (repository *Repository) CreateInvitation(ctx context.Context, invitation h
 	if invitation.State == "" {
 		invitation.State = hub.InvitationPending
 	}
-	result, err := repository.executor().ExecContext(ctx, `
+	var resultInvitation hub.GroupInvitation
+	err := repository.withTransaction(ctx, func(tx *Repository) error {
+		if _, err := tx.executor().ExecContext(ctx, `
+UPDATE group_invitation SET state = 'EXPIRED'
+WHERE hub_id = ? AND group_id = ? AND invitee_agent_id = ? AND state = 'PENDING' AND expires_at <= ?`,
+			invitation.HubID, invitation.GroupID, invitation.InviteeAgentID, formatTime(invitation.CreatedAt)); err != nil {
+			return err
+		}
+		result, err := tx.executor().ExecContext(ctx, `
 INSERT INTO group_invitation (
     hub_id, group_id, inviter_agent_id, invitee_agent_id, state, created_at, expires_at, responded_at
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, invitation.HubID, invitation.GroupID, invitation.InviterAgentID,
-		invitation.InviteeAgentID, string(invitation.State), formatTime(invitation.CreatedAt),
-		formatTime(invitation.ExpiresAt), nullTimePtr(invitation.RespondedAt))
+			invitation.InviteeAgentID, string(invitation.State), formatTime(invitation.CreatedAt),
+			formatTime(invitation.ExpiresAt), nullTimePtr(invitation.RespondedAt))
+		if err != nil {
+			return err
+		}
+		id, err := result.LastInsertId()
+		if err != nil {
+			return err
+		}
+		invitation.ID = uint64(id)
+		resultInvitation = invitation
+		return nil
+	})
 	if err != nil {
 		return hub.GroupInvitation{}, err
 	}
-	id, err := result.LastInsertId()
-	if err != nil {
-		return hub.GroupInvitation{}, err
-	}
-	invitation.ID = uint64(id)
-	return invitation, nil
+	return resultInvitation, nil
 }
 
 func (repository *Repository) FindInvitation(ctx context.Context, id uint64) (hub.GroupInvitation, error) {
@@ -130,8 +144,8 @@ FROM group_invitation WHERE id = ?`, id))
 func (repository *Repository) FindPendingInvitation(ctx context.Context, groupID, inviteeAgentID string) (hub.GroupInvitation, error) {
 	return scanInvitation(repository.executor().QueryRowContext(ctx, `
 SELECT id, hub_id, group_id, inviter_agent_id, invitee_agent_id, state, created_at, expires_at, responded_at
-FROM group_invitation WHERE group_id = ? AND invitee_agent_id = ? AND state = 'PENDING'
-ORDER BY id DESC LIMIT 1`, groupID, inviteeAgentID))
+FROM group_invitation WHERE group_id = ? AND invitee_agent_id = ? AND state = 'PENDING' AND expires_at > ?
+ORDER BY id DESC LIMIT 1`, groupID, inviteeAgentID, formatTime(time.Now().UTC())))
 }
 
 func (repository *Repository) ListInvitations(ctx context.Context, inviteeAgentID string) ([]hub.GroupInvitation, error) {
