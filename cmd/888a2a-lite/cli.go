@@ -179,7 +179,7 @@ func loadClient(path string) (*httpclient.Client, error) {
 	return client, nil
 }
 
-func saveCredentials(path string, credentials credentialFile) error {
+func saveCredentials(path string, credentials credentialFile) (returnErr error) {
 	data, err := json.MarshalIndent(credentials, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode credential file: %w", err)
@@ -191,7 +191,11 @@ func saveCredentials(path string, credentials credentialFile) error {
 	if err != nil {
 		return fmt.Errorf("create credential file: %w", err)
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil && returnErr == nil {
+			returnErr = fmt.Errorf("close credential file: %w", err)
+		}
+	}()
 	if err := file.Chmod(0600); err != nil {
 		return fmt.Errorf("protect credential file: %w", err)
 	}

@@ -214,7 +214,10 @@ func (client *Client) request(ctx context.Context, method, path string, payload 
 			return nil, err
 		}
 		body, readErr := io.ReadAll(io.LimitReader(response.Body, maxResponseBytes+1))
-		response.Body.Close()
+		closeErr := response.Body.Close()
+		if readErr == nil {
+			readErr = closeErr
+		}
 		if readErr != nil {
 			return nil, readErr
 		}

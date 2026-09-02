@@ -11,7 +11,11 @@ func TestOpenBootstrapsSQLiteWithRequiredPragmas(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open returned an error: %v", err)
 	}
-	defer database.Close()
+	defer func() {
+		if err := database.Close(); err != nil {
+			t.Errorf("close database: %v", err)
+		}
+	}()
 
 	var journalMode string
 	if err := database.SQL().QueryRow("PRAGMA journal_mode").Scan(&journalMode); err != nil {

@@ -176,7 +176,6 @@ SELECT agent_id FROM agent ORDER BY created_at, agent_id`)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	var agentIDs []string
 	for rows.Next() {
 		var agentID string
@@ -387,7 +386,7 @@ ORDER BY sequence LIMIT ?`, targetAgentID, afterSequence, limit)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]hub.InboxItem, 0, limit)
 	for rows.Next() {
 		item, err := scanInbox(rows)

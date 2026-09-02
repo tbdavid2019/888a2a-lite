@@ -125,7 +125,11 @@ func TestRepositorySerializesConcurrentAgentWrites(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open returned an error: %v", err)
 	}
-	defer database.Close()
+	defer func() {
+		if err := database.Close(); err != nil {
+			t.Errorf("close database: %v", err)
+		}
+	}()
 	repository := NewRepository(database)
 
 	var wait sync.WaitGroup
@@ -158,7 +162,11 @@ func TestRepositoryPersistsAndUpdatesPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open returned an error: %v", err)
 	}
-	defer database.Close()
+	defer func() {
+		if err := database.Close(); err != nil {
+			t.Errorf("close database: %v", err)
+		}
+	}()
 	repository := NewRepository(database)
 	want := hub.HubPolicy{
 		HubID:               "public",
