@@ -41,3 +41,8 @@
 - [x] 6.3 Deploy the Docker image and persistent volume to `david@10.9.0.11`, run the smoke test there, and verify the three-Agent flow plus revoke and registration-control checks; redact credentials from output and preserve the database on failure.
 - [x] 6.4 Update project documentation (`README.md`, `CHANGELOG.md` under `## 2026-09-02`, with no `[Unreleased]` or release-version heading); verify documentation content and license wording.
 - [x] 6.5 Verify `.github/workflows/ci.yml` and `.github/workflows/docker-publish.yml` pass Go formatting, tests, static checks, Docker build, and Docker Hub publish after repository secrets are configured; do not mark complete until the CI run is green.
+
+## 7. Dynamic LLM metadata & durable audit log
+
+- [x] 7.1 Generate `/llms.txt` links from configured public URL or request origin and verify alternate deployment hosts in CI.
+- [x] 7.2 Persist safe Hub audit events in SQLite and expose operator-only cursor retrieval; verify restart recovery and secret/payload exclusion in CI.

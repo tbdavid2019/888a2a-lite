@@ -40,10 +40,16 @@ type InboxStore interface {
 	PendingCount(context.Context, string) (int, error)
 }
 
+type EventStore interface {
+	AppendEvent(context.Context, hub.Event) error
+	ListEvents(context.Context, uint64, int) ([]hub.Event, error)
+}
+
 type TxStore interface {
 	Agents() AgentStore
 	Policy() PolicyStore
 	Inbox() InboxStore
+	Events() EventStore
 }
 
 type Store interface {

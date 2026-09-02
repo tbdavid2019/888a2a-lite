@@ -39,9 +39,17 @@ func TestHandlerServesLLMSTxtAtRoot(t *testing.T) {
 		t.Fatalf("content type = %q, want text/plain", contentType)
 	}
 	body := response.Body.String()
-	for _, expected := range []string{"# 888a2a-lite", "https://github.com/tbdavid2019/888a2a-lite", "http://10.9.0.11:8080/hub/v1"} {
+	for _, expected := range []string{"# 888a2a-lite", "https://github.com/tbdavid2019/888a2a-lite", "http://example.com/hub/v1"} {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("llms.txt does not contain %q", expected)
 		}
+	}
+
+	cfg.PublicBaseURL = "https://new-hub.example"
+	handler = NewHTTPServer(New(sqlite.NewRepository(database), cfg)).Handler()
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/llms.txt", nil))
+	if !strings.Contains(response.Body.String(), "https://new-hub.example/hub/v1") || strings.Contains(response.Body.String(), "http://example.com/hub/v1") {
+		t.Fatalf("configured public URL was not applied: %s", response.Body.String())
 	}
 }

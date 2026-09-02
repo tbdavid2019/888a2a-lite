@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -41,6 +42,7 @@ func (server *HTTPServer) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", server.health)
 	mux.HandleFunc("GET /llms.txt", server.llms)
+	mux.HandleFunc("GET /hub/v1/admin/events", server.listEvents)
 	mux.HandleFunc("GET /hub/v1/status", server.status)
 	mux.HandleFunc("POST /hub/v1/agents/register", server.register)
 	mux.HandleFunc("GET /hub/v1/agents", server.listAgents)
@@ -62,10 +64,22 @@ func (server *HTTPServer) Handler() http.Handler {
 	})
 }
 
-func (server *HTTPServer) llms(w http.ResponseWriter, _ *http.Request) {
+func (server *HTTPServer) llms(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(llmsText)
+	_, _ = w.Write([]byte(strings.ReplaceAll(string(llmsText), "{{BASE_URL}}", server.baseURLFor(r))))
+}
+
+func (server *HTTPServer) baseURLFor(r *http.Request) string {
+	if server.baseURL != "" {
+		return strings.TrimRight(server.baseURL, "/")
+	}
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	parsed := url.URL{Scheme: scheme, Host: r.Host}
+	return strings.TrimRight(parsed.String(), "/")
 }
 
 func (server *HTTPServer) health(w http.ResponseWriter, r *http.Request) {
@@ -129,7 +143,7 @@ func (server *HTTPServer) getAgent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	view, err := server.service.GetAgent(r.Context(), agentID, token, r.PathValue("agentId"), server.baseURL)
+	view, err := server.service.GetAgent(r.Context(), agentID, token, r.PathValue("agentId"), server.baseURLFor(r))
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -142,7 +156,7 @@ func (server *HTTPServer) agentCard(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	view, err := server.service.GetAgent(r.Context(), agentID, token, r.PathValue("agentId"), server.baseURL)
+	view, err := server.service.GetAgent(r.Context(), agentID, token, r.PathValue("agentId"), server.baseURLFor(r))
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -158,7 +172,7 @@ func (server *HTTPServer) heartbeat(w http.ResponseWriter, r *http.Request) {
 	if !decodeEmptyOrJSON(w, r, server.maxBodyBytes) {
 		return
 	}
-	view, err := server.service.Heartbeat(r.Context(), agentID, token)
+	view, err := server.service.Heartbeat(r.Context(), agentID, token, server.baseURLFor(r))
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -314,6 +328,34 @@ func (server *HTTPServer) cancelTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"taskId": r.PathValue("taskId"), "state": string(hub.DeliveryStateCanceled)})
+}
+
+func (server *HTTPServer) listEvents(w http.ResponseWriter, r *http.Request) {
+	token, ok := bearerToken(r.Header.Get("Authorization"))
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "authentication failed")
+		return
+	}
+	afterID, err := parseUintQuery(r, "afterId", 0)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_QUERY", "afterId must be a non-negative integer")
+		return
+	}
+	limit, err := parseIntQuery(r, "limit", 100)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_QUERY", "limit must be an integer")
+		return
+	}
+	events, err := server.service.ListEvents(r.Context(), token, afterID, limit)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	next := afterID
+	if len(events) > 0 {
+		next = events[len(events)-1].ID
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"events": events, "nextId": next})
 }
 
 func (server *HTTPServer) agentCredentials(w http.ResponseWriter, r *http.Request, pathAgentID string) (string, string, bool) {

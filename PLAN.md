@@ -66,6 +66,8 @@ DuckDB 保留作為未來事件分析選項。它適合批次查詢、統計與�
 - `hub_policy`：Hub ID、模式、註冊開關、配額與時間限制。
 - `agent`：Agent ID、Token hash、註冊宣告、狀態、租約與過期時間。
 - `inbox_item`：序號、發送者、接收者、訊息、idempotency key、ACK 狀態。
+- `event_log`：註冊、heartbeat、送 task、poll、ACK、cancel、revoke、policy 與 Hub
+  lifecycle 的安全操作摘要。
 
 必要約束：
 
@@ -162,6 +164,7 @@ POST /hub/v1/agents/{agentId}/inbox/{sequence}/ack
 POST /hub/v1/admin/registration
 POST /hub/v1/admin/agents/{agentId}/revoke
 POST /hub/v1/admin/tasks/{taskId}/cancel
+GET  /hub/v1/admin/events?afterId=0
 ```
 
 Lite v1 不提供完整 SaaS 的 Connect RPC、組織 API、聊天 API 或 runtime

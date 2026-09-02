@@ -76,6 +76,14 @@ envelope 和 bounded validation 限定行為。正式 API type 會在 Stage 1 co
 Lite v1 的 Agent Card version 固定為協定常數 `1`，不接受 declaration 自行覆寫，讓
 公開 Card 的語意不會因不可信 Agent metadata 而漂移。
 
+`llms.txt` 使用 embedded Markdown template；部署請求有設定
+`A2A888_HUB_PUBLIC_URL` 時使用該 origin，否則以目前 request 的 scheme 和 Host 產生
+連結。如此同一個 image 可部署於不同 URL，不需重建內容。
+
+安全操作摘要寫入 SQLite `event_log`，operator 透過 cursor endpoint 調閱。Event log
+和 inbox 共用 `/data` volume，但只保存 identity、類型、時間與 bounded safe details；
+message payload 和 credential 不會複製到 audit log。
+
 ### 6. 驗證在 CI 與遠端環境完成
 
 GitHub Actions 執行 format、static checks、unit/integration tests 和 container checks；

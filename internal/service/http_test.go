@@ -157,6 +157,10 @@ func TestHTTPThreeAgentDeliveryAndAuthorizationBoundaries(t *testing.T) {
 	if blocked.Code != http.StatusForbidden || !strings.Contains(blocked.Body.String(), "REGISTRATION_DISABLED") {
 		t.Fatalf("disabled registration status/body = %d/%s", blocked.Code, blocked.Body.String())
 	}
+	events := doJSONWithBearer(t, handler, http.MethodGet, "/hub/v1/admin/events?afterId=0&limit=100", "operator-fixture", nil)
+	if events.Code != http.StatusOK || !strings.Contains(events.Body.String(), hub.EventAgentRegistered) || strings.Contains(events.Body.String(), "hello from codex") {
+		t.Fatalf("events status/body = %d/%s", events.Code, events.Body.String())
+	}
 }
 
 type registeredTestAgent struct {

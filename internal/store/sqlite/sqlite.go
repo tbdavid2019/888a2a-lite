@@ -132,6 +132,20 @@ CREATE TABLE IF NOT EXISTS inbox_item (
 
 CREATE INDEX IF NOT EXISTS idx_inbox_pending
     ON inbox_item (hub_id, target_agent_id, state, sequence);
+
+CREATE TABLE IF NOT EXISTS event_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    hub_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    actor_agent_id TEXT NOT NULL DEFAULT '',
+    target_agent_id TEXT NOT NULL DEFAULT '',
+    task_id TEXT NOT NULL DEFAULT '',
+    details_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_event_log_hub_id
+    ON event_log (hub_id, id);
 `
 
 func formatTime(value time.Time) string {

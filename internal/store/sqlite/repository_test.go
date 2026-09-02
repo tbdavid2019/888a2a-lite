@@ -197,6 +197,34 @@ func TestRepositoryPersistsAndUpdatesPolicy(t *testing.T) {
 	}
 }
 
+func TestRepositoryPersistsSafeAuditEvents(t *testing.T) {
+	ctx := context.Background()
+	database, err := Open(ctx, filepath.Join(t.TempDir(), "hub.db"))
+	if err != nil {
+		t.Fatalf("Open returned an error: %v", err)
+	}
+	defer func() {
+		if err := database.Close(); err != nil {
+			t.Errorf("close database: %v", err)
+		}
+	}()
+	repository := NewRepository(database)
+	createdAt := time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC)
+	if err := repository.AppendEvent(ctx, hub.Event{
+		HubID: "public", Type: hub.EventAgentRegistered, ActorAgentID: "agent-1",
+		Details: map[string]any{"count": 1}, CreatedAt: createdAt,
+	}); err != nil {
+		t.Fatalf("AppendEvent: %v", err)
+	}
+	events, err := repository.ListEvents(ctx, 0, 10)
+	if err != nil || len(events) != 1 {
+		t.Fatalf("ListEvents = events:%+v err:%v", events, err)
+	}
+	if events[0].ID == 0 || events[0].Type != hub.EventAgentRegistered || events[0].ActorAgentID != "agent-1" {
+		t.Fatalf("event = %+v", events[0])
+	}
+}
+
 func testAgent(agentID string, createdAt time.Time) hub.RegisteredAgent {
 	return hub.RegisteredAgent{
 		HubID:               "public",

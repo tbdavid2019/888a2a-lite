@@ -9,7 +9,8 @@ heartbeat、訊息遞送和 operator controls 不需要依賴完整 888a2a 的 S
 
 Server SHALL 提供 `GET /healthz`，以及以下 `/hub/v1` 路徑：status、Agent register、
 Agent list、Agent lookup、Agent Card、heartbeat、disconnect、task delivery、inbox
-poll、inbox ACK、registration control、Agent revoke 和 task cancel。Lite v1 SHALL 不
+poll、inbox ACK、registration control、Agent revoke、task cancel 和 operator-only event
+list。Lite v1 SHALL 不
 提供完整 SaaS 的 Connect RPC、organization、chat 或 runtime execution API。
 
 #### Scenario: Health endpoint is available
@@ -77,3 +78,21 @@ API SHALL 使用 Hub contract 定義的 camelCase JSON 欄位和 `/hub/v1` path 
 
 - **WHEN** client 呼叫 organization、chat、billing 或 runtime execution route
 - **THEN** server 回傳 not-found 或 not-supported，且不觸發任何本機 Agent 執行
+
+### Requirement: Audit events are durable and operator-only
+
+Hub SHALL 將註冊、heartbeat、disconnect、task delivery、poll、ACK、cancel、revoke、
+registration policy change 和 Hub lifecycle 的安全摘要寫入 durable event log。只有
+operator credential 可以查詢 event log；事件不得包含 Agent Token、Token hash、完整
+message payload 或其他 credential。
+
+#### Scenario: Operator reads events after restart
+
+- **WHEN** operator 以合法 credential 呼叫 `GET /hub/v1/admin/events`，且 Hub 曾經重啟
+- **THEN** Hub 依 `afterId` 遞增回傳持久事件，並保留 event type、actor/target/task
+  identity、safe details 和 created-at
+
+#### Scenario: Agent cannot read audit events
+
+- **WHEN** Agent Token 或無效 credential 呼叫 admin event endpoint
+- **THEN** Hub 回傳 unauthorized 或 forbidden，且不回傳任何 event detail

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -62,6 +63,7 @@ func (service *Service) Register(ctx context.Context, declaration hub.AgentDecla
 		return hub.AgentIdentity{}, false, ErrRegistrationDisabled
 	}
 	if existing, findErr := service.store.Agents().FindAgentByRegistrationKey(ctx, declaration.RegistrationIdempotency); findErr == nil {
+		service.audit(ctx, hub.Event{Type: hub.EventAgentRegistrationRetry, ActorAgentID: existing.AgentID})
 		return hub.AgentIdentity{HubID: existing.HubID, AgentID: existing.AgentID, ExpiresAt: existing.ExpiresAt}, true, nil
 	} else if !errors.Is(findErr, store.ErrNotFound) {
 		return hub.AgentIdentity{}, false, findErr
@@ -98,6 +100,7 @@ func (service *Service) Register(ctx context.Context, declaration hub.AgentDecla
 	if err := service.store.Agents().CreateAgent(ctx, agent); err != nil {
 		return hub.AgentIdentity{}, false, err
 	}
+	service.audit(ctx, hub.Event{Type: hub.EventAgentRegistered, ActorAgentID: agent.AgentID})
 	return hub.AgentIdentity{HubID: agent.HubID, AgentID: agent.AgentID, AgentToken: token, ExpiresAt: agent.ExpiresAt}, false, nil
 }
 
@@ -143,7 +146,7 @@ func (service *Service) GetAgent(ctx context.Context, requesterID, token, target
 	return view, nil
 }
 
-func (service *Service) Heartbeat(ctx context.Context, agentID, token string) (hub.AgentView, error) {
+func (service *Service) Heartbeat(ctx context.Context, agentID, token, baseURL string) (hub.AgentView, error) {
 	if _, err := service.AuthenticateAgent(ctx, agentID, token); err != nil {
 		return hub.AgentView{}, err
 	}
@@ -152,8 +155,9 @@ func (service *Service) Heartbeat(ctx context.Context, agentID, token string) (h
 	if err != nil {
 		return hub.AgentView{}, ErrAgentUnavailable
 	}
-	view := agent.SafeView(service.config.PublicBaseURL)
+	view := agent.SafeView(baseURL)
 	view.State = agent.StateAt(now)
+	service.audit(ctx, hub.Event{Type: hub.EventAgentHeartbeat, ActorAgentID: agentID})
 	return view, nil
 }
 
@@ -164,6 +168,7 @@ func (service *Service) Disconnect(ctx context.Context, agentID, token string) e
 	if err := service.store.Agents().DisconnectAgent(ctx, agentID, service.now().UTC()); err != nil {
 		return ErrAgentUnavailable
 	}
+	service.audit(ctx, hub.Event{Type: hub.EventAgentDisconnected, ActorAgentID: agentID})
 	return nil
 }
 
@@ -186,6 +191,7 @@ func (service *Service) SendTask(ctx context.Context, requesterID, token string,
 		HubID: service.config.HubID, TargetAgentID: task.TargetAgentID,
 		RequesterAgentID: requesterID, Key: task.IdempotencyKey,
 	}); err == nil && found {
+		service.audit(ctx, hub.Event{Type: hub.EventTaskDuplicate, ActorAgentID: requesterID, TargetAgentID: task.TargetAgentID, TaskID: existing.TaskID})
 		return existing, true, nil
 	} else if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return hub.InboxItem{}, false, err
@@ -206,7 +212,15 @@ func (service *Service) SendTask(ctx context.Context, requesterID, token string,
 		State:            hub.DeliveryStatePending,
 		CreatedAt:        service.now().UTC(),
 	}
-	return service.store.Inbox().Enqueue(ctx, item)
+	stored, duplicate, err := service.store.Inbox().Enqueue(ctx, item)
+	if err == nil {
+		eventType := hub.EventTaskQueued
+		if duplicate {
+			eventType = hub.EventTaskDuplicate
+		}
+		service.audit(ctx, hub.Event{Type: eventType, ActorAgentID: requesterID, TargetAgentID: task.TargetAgentID, TaskID: stored.TaskID})
+	}
+	return stored, duplicate, err
 }
 
 func (service *Service) Poll(ctx context.Context, agentID, token string, after uint64, limit int) ([]hub.InboxItem, error) {
@@ -216,14 +230,22 @@ func (service *Service) Poll(ctx context.Context, agentID, token string, after u
 	if limit < 1 || limit > 100 {
 		return nil, fmt.Errorf("inbox limit must be between 1 and 100")
 	}
-	return service.store.Inbox().Poll(ctx, agentID, after, limit)
+	items, err := service.store.Inbox().Poll(ctx, agentID, after, limit)
+	if err == nil {
+		service.audit(ctx, hub.Event{Type: hub.EventInboxPolled, ActorAgentID: agentID, Details: map[string]any{"count": len(items)}})
+	}
+	return items, err
 }
 
 func (service *Service) Acknowledge(ctx context.Context, agentID, token string, sequence uint64) error {
 	if _, err := service.AuthenticateAgent(ctx, agentID, token); err != nil {
 		return err
 	}
-	return service.store.Inbox().Acknowledge(ctx, agentID, sequence, service.now().UTC())
+	err := service.store.Inbox().Acknowledge(ctx, agentID, sequence, service.now().UTC())
+	if err == nil {
+		service.audit(ctx, hub.Event{Type: hub.EventInboxAcknowledged, ActorAgentID: agentID, Details: map[string]any{"sequence": sequence}})
+	}
+	return err
 }
 
 func (service *Service) Status(ctx context.Context) (HubStatus, error) {
@@ -250,15 +272,50 @@ func (service *Service) AuthenticateOperator(token string) error {
 }
 
 func (service *Service) SetRegistrationEnabled(ctx context.Context, enabled bool) error {
-	return service.store.Policy().SetRegistrationEnabled(ctx, enabled)
+	err := service.store.Policy().SetRegistrationEnabled(ctx, enabled)
+	if err == nil {
+		service.audit(ctx, hub.Event{Type: hub.EventRegistrationChanged, Details: map[string]any{"enabled": enabled}})
+	}
+	return err
 }
 
 func (service *Service) Revoke(ctx context.Context, agentID, reason string) error {
-	return service.store.Agents().RevokeAgent(ctx, agentID, reason, service.now().UTC())
+	err := service.store.Agents().RevokeAgent(ctx, agentID, reason, service.now().UTC())
+	if err == nil {
+		service.audit(ctx, hub.Event{Type: hub.EventAgentRevoked, TargetAgentID: agentID, Details: map[string]any{"hasReason": strings.TrimSpace(reason) != ""}})
+	}
+	return err
 }
 
 func (service *Service) CancelTask(ctx context.Context, taskID, reason string) error {
-	return service.store.Inbox().CancelTask(ctx, taskID, reason, service.now().UTC())
+	err := service.store.Inbox().CancelTask(ctx, taskID, reason, service.now().UTC())
+	if err == nil {
+		service.audit(ctx, hub.Event{Type: hub.EventTaskCanceled, TaskID: taskID, Details: map[string]any{"hasReason": strings.TrimSpace(reason) != ""}})
+	}
+	return err
+}
+
+func (service *Service) ListEvents(ctx context.Context, token string, afterID uint64, limit int) ([]hub.Event, error) {
+	if err := service.AuthenticateOperator(token); err != nil {
+		return nil, err
+	}
+	if limit < 1 || limit > 1000 {
+		return nil, fmt.Errorf("event limit must be between 1 and 1000")
+	}
+	return service.store.Events().ListEvents(ctx, afterID, limit)
+}
+
+func (service *Service) RecordEvent(ctx context.Context, eventType string) {
+	service.audit(ctx, hub.Event{Type: eventType})
+}
+
+func (service *Service) audit(ctx context.Context, event hub.Event) {
+	if event.HubID == "" {
+		event.HubID = service.config.HubID
+	}
+	if err := service.store.Events().AppendEvent(ctx, event); err != nil {
+		log.Printf("audit event failed type=%s", event.Type)
+	}
 }
 
 func (service *Service) policyFromConfig() hub.HubPolicy {

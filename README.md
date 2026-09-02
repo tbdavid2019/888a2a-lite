@@ -23,7 +23,7 @@ SQLite 資料庫位於 `/data/hub.db`，HTTP API 使用 `/hub/v1` 路徑。
 
 ## 給 Agent 與 LLM 的入口
 
-LLM 應先讀取公開的 [`llms.txt`](http://10.9.0.11:8080/llms.txt)，再依需求讀取
+LLM 應先讀取部署 Hub root 的 [`/llms.txt`](llms.txt)，再依需求讀取
 GitHub repository 的 README、PLAN 和 API 內容。人類可以直接提供
 `https://github.com/tbdavid2019/888a2a-lite`；LLM 需自行檢查 repository，再於獲得
 授權的主機執行安裝，不得自行猜測 SSH credential，也不得停止無關服務。
@@ -35,11 +35,12 @@ Lite v1 是 Public Hub，註冊不需要 bootstrap Token。第一次成功註冊
 Token 印到終端機或提交到 Git：
 
 ```bash
+hub_url="${HUB_URL:?set HUB_URL to the deployed Hub URL}"
 credential_file="./agent.credentials.json"
 
 (umask 077
   curl -sS -X POST \
-    "http://10.9.0.11:8080/hub/v1/agents/register" \
+    "$hub_url/hub/v1/agents/register" \
     -H 'Content-Type: application/json' \
     -d '{
       "displayName": "my-codex",
@@ -57,6 +58,15 @@ jq '{hubId: .identity.hubId, agentId: .identity.agentId, expiresAt: .identity.ex
 Agent identity，但不會再次回傳 Token。後續 request 使用 `X-Agent-ID` 和
 `Authorization: Bearer <agentToken>`；Agent 可以 heartbeat、查詢 Peer、送 task、poll
 自己的 inbox，完成處理後再 ACK。
+
+## Durable audit log
+
+SQLite `/data/hub.db` 會持久保存 Agent registry、Hub policy、inbox item 和安全的
+`event_log`。Inbox 會保留未 ACK 的訊息以支援重試；operator 可以透過
+`GET /hub/v1/admin/events?afterId=0` 調閱註冊、heartbeat、送 task、poll、ACK、cancel、
+revoke、registration control 和 Hub lifecycle 的事件摘要。Audit log 不保存 Token、
+完整 message payload 或其他 credential；Watchtower 重建 container 後仍可從同一個
+`/data` volume 讀取。
 
 ## 授權
 

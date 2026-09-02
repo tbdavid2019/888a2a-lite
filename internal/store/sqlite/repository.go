@@ -36,6 +36,8 @@ func (repository *Repository) Policy() store.PolicyStore { return repository }
 
 func (repository *Repository) Inbox() store.InboxStore { return repository }
 
+func (repository *Repository) Events() store.EventStore { return repository }
+
 func (repository *Repository) WithTransaction(ctx context.Context, fn func(store.TxStore) error) error {
 	if repository.tx != nil {
 		return fn(repository)
@@ -449,6 +451,55 @@ func (repository *Repository) PendingCount(ctx context.Context, targetAgentID st
 	err := repository.executor().QueryRowContext(ctx,
 		"SELECT COUNT(*) FROM inbox_item WHERE (? = '' OR target_agent_id = ?) AND state = 'PENDING'", targetAgentID, targetAgentID).Scan(&count)
 	return count, err
+}
+
+func (repository *Repository) AppendEvent(ctx context.Context, event hub.Event) error {
+	if strings.TrimSpace(event.HubID) == "" || strings.TrimSpace(event.Type) == "" {
+		return errors.New("event requires hub id and type")
+	}
+	if event.Details == nil {
+		event.Details = map[string]any{}
+	}
+	details, err := json.Marshal(event.Details)
+	if err != nil {
+		return fmt.Errorf("marshal event details: %w", err)
+	}
+	if event.CreatedAt.IsZero() {
+		event.CreatedAt = time.Now().UTC()
+	}
+	_, err = repository.executor().ExecContext(ctx, `
+INSERT INTO event_log (hub_id, event_type, actor_agent_id, target_agent_id, task_id, details_json, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?)`, event.HubID, event.Type, event.ActorAgentID, event.TargetAgentID, event.TaskID, string(details), formatTime(event.CreatedAt))
+	return err
+}
+
+func (repository *Repository) ListEvents(ctx context.Context, afterID uint64, limit int) ([]hub.Event, error) {
+	rows, err := repository.executor().QueryContext(ctx, `
+SELECT id, hub_id, event_type, actor_agent_id, target_agent_id, task_id, details_json, created_at
+FROM event_log WHERE id > ? ORDER BY id LIMIT ?`, afterID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	events := make([]hub.Event, 0, limit)
+	for rows.Next() {
+		var event hub.Event
+		var detailsJSON, createdAt string
+		if err := rows.Scan(&event.ID, &event.HubID, &event.Type, &event.ActorAgentID, &event.TargetAgentID, &event.TaskID, &detailsJSON, &createdAt); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(detailsJSON), &event.Details); err != nil {
+			return nil, fmt.Errorf("unmarshal event details: %w", err)
+		}
+		if event.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAt); err != nil {
+			return nil, fmt.Errorf("parse event created_at: %w", err)
+		}
+		events = append(events, event)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return events, nil
 }
 
 type scanner interface {
