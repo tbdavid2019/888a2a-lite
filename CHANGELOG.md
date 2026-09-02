@@ -20,3 +20,5 @@
   和 registration control smoke verification。
 - 新增 Docker Hub publish workflow、image-based Compose 設定與 Watchtower label-only
   更新設定。
+- 在 `10.9.0.11` 啟用 scope `888a2a-lite` 的 Watchtower，並指定 Docker API version
+  `1.40` 以相容該主機 daemon。

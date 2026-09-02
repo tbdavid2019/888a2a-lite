@@ -45,3 +45,16 @@ image 推送至 `docker.io/<Docker Hub username>/888a2a-lite`。請在 GitHub re
 `com.centurylinklabs.watchtower.enable=true`。Watchtower 啟用 label-only 更新後，
 只會自動更新 Lite Hub container，不會更新同一台主機的其他服務。部署前請先以
 `.env.example` 建立遠端環境設定，並將該檔案權限設為 `600`。
+
+Watchtower 需要連接 Docker socket，並應使用獨立 scope 啟動：
+
+```bash
+docker run -d --name watchtower --restart unless-stopped \
+  --label com.centurylinklabs.watchtower.scope=888a2a-lite \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  containrrr/watchtower:latest \
+  --label-enable --scope 888a2a-lite --api-version 1.40 --interval 300 --cleanup
+```
+
+若 Docker Hub repository 設為 private，Watchtower 也需要遠端 Docker login 的
+registry config；請不要把該 credential 寫入 Compose 或 GitHub repository。
