@@ -49,4 +49,4 @@
 
 ## 8. Multi-platform image delivery
 
-- [ ] 8.1 Build and publish Docker image manifests for `linux/amd64` and `linux/arm64`, document both `docker run` and Compose installation paths, and verify both platforms in GitHub Actions.
+- [x] 8.1 Build and publish Docker image manifests for `linux/amd64` and `linux/arm64`, document both `docker run` and Compose installation paths, and verify both platforms in GitHub Actions.

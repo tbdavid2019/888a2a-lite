@@ -31,3 +31,5 @@
   操作摘要。
 - README 新增 Docker image／Compose 安裝方式，並將 Docker Hub publish 改為
   `linux/amd64` 與 `linux/arm64` 雙平台 image。
+- Docker Hub manifest 已驗證包含 `linux/amd64` 和 `linux/arm64`，並由遠端 Watchtower
+  更新成功。
