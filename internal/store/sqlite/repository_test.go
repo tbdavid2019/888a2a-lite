@@ -263,14 +263,14 @@ func TestRepositoryPersistsAnnouncementLifecycle(t *testing.T) {
 	if err != nil || updated.Title != "Updated" || updated.Severity != hub.AnnouncementCritical {
 		t.Fatalf("updated draft = %+v err:%v", updated, err)
 	}
-	published, err := repository.PublishAnnouncement(ctx, revision.ID, now.Add(3*time.Minute))
-	if err != nil || published.Status != hub.AnnouncementPublished || published.PublishedAt == nil {
-		t.Fatalf("published revision = %+v err:%v", published, err)
-	}
 	if _, err := repository.CreateRevision(ctx, revision.ID, hub.AnnouncementInput{
 		Title: "Invalid", Summary: "Invalid", Severity: hub.AnnouncementInfo,
 	}, now); !errors.Is(err, store.ErrInvalidState) {
 		t.Fatalf("draft revision error = %v, want ErrInvalidState", err)
+	}
+	published, err := repository.PublishAnnouncement(ctx, revision.ID, now.Add(3*time.Minute))
+	if err != nil || published.Status != hub.AnnouncementPublished || published.PublishedAt == nil {
+		t.Fatalf("published revision = %+v err:%v", published, err)
 	}
 	if err := database.Close(); err != nil {
 		t.Fatalf("close before reopen: %v", err)
