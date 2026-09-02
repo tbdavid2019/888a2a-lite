@@ -1,0 +1,19 @@
+# Local configuration and credentials
+.env
+.env.*
+*.credentials.json
+*.token
+
+# Runtime data and local output
+*.db
+*.db-*
+/data/
+/bin/
+/888a2a-lite
+
+# Tool and editor output
+.DS_Store
+.agent/
+.agents/
+.opencode/node_modules/
+.opencode/

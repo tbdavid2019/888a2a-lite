@@ -1,0 +1,9 @@
+.git
+.github
+.opencode
+.agent
+.agents
+.env
+.env.*
+*.db
+data/

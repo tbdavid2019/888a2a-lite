@@ -1,0 +1,20 @@
+services:
+  hub:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: 888a2a-lite:local
+    restart: unless-stopped
+    ports:
+      - "${A2A888_HUB_PORT:-8080}:8080"
+    environment:
+      A2A888_HUB_ID: ${A2A888_HUB_ID:-public}
+      A2A888_HUB_LISTEN_ADDR: ":8080"
+      A2A888_HUB_DB_PATH: /data/hub.db
+      A2A888_HUB_PUBLIC_URL: ${A2A888_HUB_PUBLIC_URL:-http://localhost:8080}
+      A2A888_HUB_OPERATOR_TOKEN: ${A2A888_HUB_OPERATOR_TOKEN:?set A2A888_HUB_OPERATOR_TOKEN outside this file}
+    volumes:
+      - lite-data:/data
+
+volumes:
+  lite-data:
