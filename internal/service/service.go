@@ -305,6 +305,169 @@ func (service *Service) ListEvents(ctx context.Context, token string, afterID ui
 	return service.store.Events().ListEvents(ctx, afterID, limit)
 }
 
+func (service *Service) BuildSystemCard(baseURL string) hub.HubSystemCard {
+	baseURL = strings.TrimRight(baseURL, "/")
+	return hub.HubSystemCard{
+		HubID:                service.config.HubID,
+		SelfURL:              baseURL + "/hub/v1/system-card.json",
+		Mode:                 "PUBLIC",
+		Protocol:             "a2a888-hub",
+		ProtocolVersion:      "1",
+		DeliverySemantics:    "AT_LEAST_ONCE",
+		CapabilityTrust:      "SELF_DECLARED",
+		IncomingMessageTrust: "UNTRUSTED_DATA",
+		SystemMetadataTrust:  "CONTROL_PLANE_METADATA",
+		RemoteExecution:      false,
+		SystemCardURL:        baseURL + "/hub/v1/system-card.json",
+		AnnouncementFeedURL:  baseURL + "/hub/v1/announcements",
+		Limits: map[string]int64{
+			"maxRegisteredAgents": int64(service.config.MaxRegisteredAgents),
+			"maxTasksPerMinute":   int64(service.config.MaxTasksPerMinute),
+			"maxConcurrentTasks":  int64(service.config.MaxConcurrentTasks),
+			"maxPayloadBytes":     service.config.MaxPayloadBytes,
+		},
+		Extensions: []hub.SystemCardExtension{{URI: hub.AnnouncementExtensionURI, Required: false}},
+		UpdatedAt:  service.now().UTC(),
+	}
+}
+
+func (service *Service) HubMetadata(ctx context.Context, baseURL string) (hub.HubMetadata, error) {
+	baseURL = strings.TrimRight(baseURL, "/")
+	announcements, err := service.store.Announcements().ListActiveAnnouncements(ctx, 0, 20, service.now().UTC())
+	if err != nil {
+		return hub.HubMetadata{}, err
+	}
+	summaries := make([]hub.AnnouncementSummary, 0, len(announcements))
+	var cursor uint64
+	for _, announcement := range announcements {
+		summaries = append(summaries, announcement.SummaryView())
+		if announcement.ID > cursor {
+			cursor = announcement.ID
+		}
+	}
+	return hub.HubMetadata{
+		SystemCardURL:       baseURL + "/hub/v1/system-card.json",
+		AnnouncementFeedURL: baseURL + "/hub/v1/announcements",
+		AnnouncementCursor:  cursor,
+		Announcements:       summaries,
+		ExtensionURI:        hub.AnnouncementExtensionURI,
+	}, nil
+}
+
+func (service *Service) ListActiveAnnouncements(ctx context.Context, afterID uint64, limit int) ([]hub.AnnouncementSummary, uint64, error) {
+	if limit < 1 || limit > 100 {
+		return nil, afterID, fmt.Errorf("announcement limit must be between 1 and 100")
+	}
+	items, err := service.store.Announcements().ListActiveAnnouncements(ctx, afterID, limit, service.now().UTC())
+	if err != nil {
+		return nil, afterID, err
+	}
+	summaries := make([]hub.AnnouncementSummary, 0, len(items))
+	next := afterID
+	for _, item := range items {
+		summaries = append(summaries, item.SummaryView())
+		if item.ID > next {
+			next = item.ID
+		}
+	}
+	return summaries, next, nil
+}
+
+func (service *Service) PublishAnnouncement(ctx context.Context, input hub.AnnouncementInput) (hub.Announcement, error) {
+	now := service.now().UTC()
+	if err := input.Validate(now); err != nil {
+		return hub.Announcement{}, err
+	}
+	announcement, err := service.store.Announcements().CreateAnnouncement(ctx, hub.Announcement{
+		HubID: service.config.HubID, Revision: 1, Status: hub.AnnouncementPublished,
+		Severity: input.Severity, Title: strings.TrimSpace(input.Title), Summary: strings.TrimSpace(input.Summary),
+		DocumentationURL: strings.TrimSpace(input.DocumentationURL), PublishedAt: &now,
+		ExpiresAt: input.ExpiresAt, CreatedAt: now,
+	})
+	if err == nil {
+		service.audit(ctx, hub.Event{Type: hub.EventAnnouncementPublished, Details: map[string]any{"announcementId": announcement.ID, "severity": announcement.Severity}})
+	}
+	return announcement, err
+}
+
+func (service *Service) ListAnnouncementAdmin(ctx context.Context, token string, afterID uint64, limit int) ([]hub.Announcement, uint64, error) {
+	if err := service.AuthenticateOperator(token); err != nil {
+		return nil, afterID, err
+	}
+	if limit < 1 || limit > 1000 {
+		return nil, afterID, fmt.Errorf("announcement limit must be between 1 and 1000")
+	}
+	items, err := service.store.Announcements().ListAnnouncements(ctx, afterID, limit)
+	if err != nil {
+		return nil, afterID, err
+	}
+	next := afterID
+	for _, item := range items {
+		if item.ID > next {
+			next = item.ID
+		}
+	}
+	return items, next, nil
+}
+
+func (service *Service) CreateDraft(ctx context.Context, token string, input hub.AnnouncementInput) (hub.Announcement, error) {
+	if err := service.AuthenticateOperator(token); err != nil {
+		return hub.Announcement{}, err
+	}
+	if err := input.Validate(service.now().UTC()); err != nil {
+		return hub.Announcement{}, err
+	}
+	announcement, err := service.store.Announcements().CreateAnnouncement(ctx, hub.Announcement{
+		HubID: service.config.HubID, Revision: 1, Status: hub.AnnouncementDraft,
+		Severity: input.Severity, Title: strings.TrimSpace(input.Title), Summary: strings.TrimSpace(input.Summary),
+		DocumentationURL: strings.TrimSpace(input.DocumentationURL), ExpiresAt: input.ExpiresAt,
+		CreatedAt: service.now().UTC(),
+	})
+	if err == nil {
+		service.audit(ctx, hub.Event{Type: hub.EventAnnouncementDraftCreated, Details: map[string]any{"announcementId": announcement.ID}})
+	}
+	return announcement, err
+}
+
+func (service *Service) UpdateDraft(ctx context.Context, token string, id uint64, input hub.AnnouncementInput) (hub.Announcement, error) {
+	if err := service.AuthenticateOperator(token); err != nil {
+		return hub.Announcement{}, err
+	}
+	if err := input.Validate(service.now().UTC()); err != nil {
+		return hub.Announcement{}, err
+	}
+	announcement, err := service.store.Announcements().UpdateDraft(ctx, id, input, service.now().UTC())
+	if err == nil {
+		service.audit(ctx, hub.Event{Type: hub.EventAnnouncementDraftUpdated, Details: map[string]any{"announcementId": announcement.ID}})
+	}
+	return announcement, err
+}
+
+func (service *Service) PublishDraft(ctx context.Context, token string, id uint64) (hub.Announcement, error) {
+	if err := service.AuthenticateOperator(token); err != nil {
+		return hub.Announcement{}, err
+	}
+	announcement, err := service.store.Announcements().PublishAnnouncement(ctx, id, service.now().UTC())
+	if err == nil {
+		service.audit(ctx, hub.Event{Type: hub.EventAnnouncementPublished, Details: map[string]any{"announcementId": id}})
+	}
+	return announcement, err
+}
+
+func (service *Service) CreateRevision(ctx context.Context, token string, id uint64, input hub.AnnouncementInput) (hub.Announcement, error) {
+	if err := service.AuthenticateOperator(token); err != nil {
+		return hub.Announcement{}, err
+	}
+	if err := input.Validate(service.now().UTC()); err != nil {
+		return hub.Announcement{}, err
+	}
+	announcement, err := service.store.Announcements().CreateRevision(ctx, id, input, service.now().UTC())
+	if err == nil {
+		service.audit(ctx, hub.Event{Type: hub.EventAnnouncementRevisionCreated, Details: map[string]any{"announcementId": announcement.ID, "revisionOfId": id}})
+	}
+	return announcement, err
+}
+
 func (service *Service) RecordEvent(ctx context.Context, eventType string) {
 	service.audit(ctx, hub.Event{Type: eventType})
 }

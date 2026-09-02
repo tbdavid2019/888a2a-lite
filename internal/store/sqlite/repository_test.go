@@ -225,6 +225,67 @@ func TestRepositoryPersistsSafeAuditEvents(t *testing.T) {
 	}
 }
 
+func TestRepositoryPersistsAnnouncementLifecycle(t *testing.T) {
+	ctx := context.Background()
+	databasePath := filepath.Join(t.TempDir(), "hub.db")
+	database, err := Open(ctx, databasePath)
+	if err != nil {
+		t.Fatalf("Open returned an error: %v", err)
+	}
+	defer func() {
+		if err := database.Close(); err != nil {
+			t.Errorf("close database: %v", err)
+		}
+	}()
+	repository := NewRepository(database)
+	now := time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC)
+	expires := now.Add(time.Hour)
+	created, err := repository.CreateAnnouncement(ctx, hub.Announcement{
+		HubID: "public", Revision: 1, Status: hub.AnnouncementPublished, Severity: hub.AnnouncementInfo,
+		Title: "Initial", Summary: "Initial summary", PublishedAt: &now, ExpiresAt: &expires, CreatedAt: now,
+	})
+	if err != nil {
+		t.Fatalf("CreateAnnouncement: %v", err)
+	}
+	active, err := repository.ListActiveAnnouncements(ctx, 0, 10, now)
+	if err != nil || len(active) != 1 || active[0].ID != created.ID {
+		t.Fatalf("active announcements = %+v err:%v", active, err)
+	}
+	revision, err := repository.CreateRevision(ctx, created.ID, hub.AnnouncementInput{
+		Title: "Revision", Summary: "Revised summary", Severity: hub.AnnouncementWarning,
+	}, now.Add(time.Minute))
+	if err != nil || revision.Revision != 2 || revision.Status != hub.AnnouncementDraft || revision.RevisionOfID == nil || *revision.RevisionOfID != created.ID {
+		t.Fatalf("revision = %+v err:%v", revision, err)
+	}
+	updated, err := repository.UpdateDraft(ctx, revision.ID, hub.AnnouncementInput{
+		Title: "Updated", Summary: "Updated summary", Severity: hub.AnnouncementCritical,
+	}, now.Add(2*time.Minute))
+	if err != nil || updated.Title != "Updated" || updated.Severity != hub.AnnouncementCritical {
+		t.Fatalf("updated draft = %+v err:%v", updated, err)
+	}
+	published, err := repository.PublishAnnouncement(ctx, revision.ID, now.Add(3*time.Minute))
+	if err != nil || published.Status != hub.AnnouncementPublished || published.PublishedAt == nil {
+		t.Fatalf("published revision = %+v err:%v", published, err)
+	}
+	if _, err := repository.CreateRevision(ctx, revision.ID, hub.AnnouncementInput{
+		Title: "Invalid", Summary: "Invalid", Severity: hub.AnnouncementInfo,
+	}, now); !errors.Is(err, store.ErrInvalidState) {
+		t.Fatalf("draft revision error = %v, want ErrInvalidState", err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatalf("close before reopen: %v", err)
+	}
+	database, err = Open(ctx, databasePath)
+	if err != nil {
+		t.Fatalf("reopen returned an error: %v", err)
+	}
+	repository = NewRepository(database)
+	all, err := repository.ListAnnouncements(ctx, 0, 10)
+	if err != nil || len(all) != 2 || all[1].Title != "Updated" {
+		t.Fatalf("announcements after reopen = %+v err:%v", all, err)
+	}
+}
+
 func testAgent(agentID string, createdAt time.Time) hub.RegisteredAgent {
 	return hub.RegisteredAgent{
 		HubID:               "public",

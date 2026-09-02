@@ -30,12 +30,18 @@ type Client struct {
 type RegisterResponse struct {
 	Identity  hub.AgentIdentity `json:"identity"`
 	Policy    hub.HubPolicy     `json:"policy"`
+	Hub       hub.HubMetadata   `json:"hub"`
 	Duplicate bool              `json:"duplicate"`
 }
 
 type PollResponse struct {
 	Items        []hub.InboxItem `json:"items"`
 	NextSequence uint64          `json:"nextSequence"`
+}
+
+type AnnouncementResponse struct {
+	Announcements []hub.AnnouncementSummary `json:"announcements"`
+	NextID        uint64                    `json:"nextId"`
 }
 
 type APIError struct {
@@ -120,6 +126,31 @@ func (client *Client) GetAgent(ctx context.Context, agentID string) (hub.AgentVi
 	var response hub.AgentView
 	if err := json.Unmarshal(body, &response); err != nil {
 		return hub.AgentView{}, fmt.Errorf("decode agent response: %w", err)
+	}
+	return response, nil
+}
+
+func (client *Client) GetSystemCard(ctx context.Context) (hub.HubSystemCard, error) {
+	body, err := client.request(ctx, http.MethodGet, "/hub/v1/system-card.json", nil, false)
+	if err != nil {
+		return hub.HubSystemCard{}, err
+	}
+	var card hub.HubSystemCard
+	if err := json.Unmarshal(body, &card); err != nil {
+		return hub.HubSystemCard{}, fmt.Errorf("decode system card response: %w", err)
+	}
+	return card, nil
+}
+
+func (client *Client) ListAnnouncements(ctx context.Context, afterID uint64, limit int) (AnnouncementResponse, error) {
+	path := "/hub/v1/announcements?afterId=" + strconv.FormatUint(afterID, 10) + "&limit=" + strconv.Itoa(limit)
+	body, err := client.request(ctx, http.MethodGet, path, nil, false)
+	if err != nil {
+		return AnnouncementResponse{}, err
+	}
+	var response AnnouncementResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return AnnouncementResponse{}, fmt.Errorf("decode announcement response: %w", err)
 	}
 	return response, nil
 }

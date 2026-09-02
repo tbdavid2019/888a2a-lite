@@ -9,8 +9,9 @@ import (
 )
 
 var (
-	ErrNotFound = errors.New("store record not found")
-	ErrCanceled = errors.New("store inbox item is canceled")
+	ErrNotFound     = errors.New("store record not found")
+	ErrCanceled     = errors.New("store inbox item is canceled")
+	ErrInvalidState = errors.New("store record has an invalid state")
 )
 
 type AgentStore interface {
@@ -45,11 +46,22 @@ type EventStore interface {
 	ListEvents(context.Context, uint64, int) ([]hub.Event, error)
 }
 
+type AnnouncementStore interface {
+	CreateAnnouncement(context.Context, hub.Announcement) (hub.Announcement, error)
+	FindAnnouncement(context.Context, uint64) (hub.Announcement, error)
+	ListAnnouncements(context.Context, uint64, int) ([]hub.Announcement, error)
+	ListActiveAnnouncements(context.Context, uint64, int, time.Time) ([]hub.Announcement, error)
+	UpdateDraft(context.Context, uint64, hub.AnnouncementInput, time.Time) (hub.Announcement, error)
+	PublishAnnouncement(context.Context, uint64, time.Time) (hub.Announcement, error)
+	CreateRevision(context.Context, uint64, hub.AnnouncementInput, time.Time) (hub.Announcement, error)
+}
+
 type TxStore interface {
 	Agents() AgentStore
 	Policy() PolicyStore
 	Inbox() InboxStore
 	Events() EventStore
+	Announcements() AnnouncementStore
 }
 
 type Store interface {

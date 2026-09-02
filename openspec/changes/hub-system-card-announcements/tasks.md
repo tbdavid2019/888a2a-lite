@@ -1,19 +1,19 @@
 ## 1. Domain and contract
 
-- [ ] 1.1 Define system card, extension declaration, announcement severity, summary, cursor, and register Hub metadata types; verify the package compiles in GitHub Actions.
-- [ ] 1.2 Define announcement validation rules for bounded title/summary/URL/expiry fields and control-plane trust semantics; verify invalid secret-like or oversized inputs are rejected by unit tests in CI.
+- [x] 1.1 Define system card, extension declaration, announcement severity, summary, cursor, and register Hub metadata types; verify the package compiles in GitHub Actions.
+- [x] 1.2 Define announcement validation rules for bounded title/summary/URL/expiry fields and control-plane trust semantics; verify invalid secret-like or oversized inputs are rejected by unit tests in CI.
 
 ## 2. SQLite persistence
 
-- [ ] 2.1 Add the announcement schema, indexes, and migration version without changing existing Agent, inbox, event, or policy rows; verify migration runs against an existing database in CI.
-- [ ] 2.2 Implement operator announcement publish and active cursor-based feed queries with monotonic IDs and expiry filtering; verify persistence, ordering, and restart recovery in integration tests.
+- [x] 2.1 Add the announcement schema, indexes, and migration version without changing existing Agent, inbox, event, or policy rows; verify migration runs against an existing database in CI.
+- [x] 2.2 Implement operator announcement publish and active cursor-based feed queries with monotonic IDs and expiry filtering; verify persistence, ordering, and restart recovery in integration tests.
 
 ## 3. System card and announcements API
 
-- [ ] 3.1 Implement dynamic `GET /hub/v1/system-card.json` and public `GET /hub/v1/announcements?afterId=&limit=` using configured public URL or request origin; verify alternate Host and configured-origin responses in HTTP tests.
-- [ ] 3.2 Add optional `hub` metadata to first registration and idempotent retry responses, including system card URL, feed URL, cursor, summaries, and optional extension URI; verify legacy response parsing and one-time Token behavior in HTTP tests.
-- [ ] 3.3 Implement operator `POST /hub/v1/admin/announcements` with bounded validation, operator authentication, safe error envelopes, and audit event recording; verify unauthorized, invalid, and successful publish cases in CI.
-- [ ] 3.4 Implement draft edit and published revision API semantics, preserving immutable published history and announcement cursor behavior; verify draft edits, revision IDs, expiry, and audit records in CI.
+- [x] 3.1 Implement dynamic `GET /hub/v1/system-card.json` and public `GET /hub/v1/announcements?afterId=&limit=` using configured public URL or request origin; verify alternate Host and configured-origin responses in HTTP tests.
+- [x] 3.2 Add optional `hub` metadata to first registration and idempotent retry responses, including system card URL, feed URL, cursor, summaries, and optional extension URI; verify legacy response parsing and one-time Token behavior in HTTP tests.
+- [x] 3.3 Implement operator `POST /hub/v1/admin/announcements` with bounded validation, operator authentication, safe error envelopes, and audit event recording; verify unauthorized, invalid, and successful publish cases in CI.
+- [x] 3.4 Implement draft edit and published revision API semantics, preserving immutable published history and announcement cursor behavior; verify draft edits, revision IDs, expiry, and audit records in CI.
 
 ## 4. Client and adapter integration
 

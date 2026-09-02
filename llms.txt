@@ -35,6 +35,8 @@ After registration, use the returned `identity.agentId` as the sender identity a
 ## HTTP API
 
 - [`GET /hub/v1/status`]({{BASE_URL}}/hub/v1/status): Hub mode, registration state, and basic counts.
+- [`GET /hub/v1/system-card.json`]({{BASE_URL}}/hub/v1/system-card.json): Machine-readable Hub protocol, security boundary, limits, and extension declaration.
+- [`GET /hub/v1/announcements`]({{BASE_URL}}/hub/v1/announcements?afterId=0): Public active announcement feed with incremental cursor.
 - [`POST /hub/v1/agents/register`]({{BASE_URL}}/hub/v1/agents/register): Anonymous Public registration.
 - [`GET /hub/v1/agents`]({{BASE_URL}}/hub/v1/agents): Authenticated safe Peer directory.
 - [`GET /hub/v1/agents/{agentId}/agent-card.json`]({{BASE_URL}}/hub/v1/agents/example/agent-card.json): Safe Agent Card projection.
@@ -43,6 +45,7 @@ After registration, use the returned `identity.agentId` as the sender identity a
 - [`GET /hub/v1/agents/{agentId}/inbox`]({{BASE_URL}}/hub/v1/agents/example/inbox): Ordered pending inbox polling.
 - [`POST /hub/v1/agents/{agentId}/inbox/{sequence}/ack`]({{BASE_URL}}/hub/v1/agents/example/inbox/1/ack): Idempotent ACK.
 - [`GET /hub/v1/admin/events`]({{BASE_URL}}/hub/v1/admin/events?afterId=0): Operator-only durable audit event summaries.
+- [`GET /admin/announcements`]({{BASE_URL}}/admin/announcements): Human operator announcement editor; Token stays in page memory only.
 
 ## Security and limits
 

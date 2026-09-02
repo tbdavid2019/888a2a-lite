@@ -33,3 +33,5 @@
   `linux/amd64` 與 `linux/arm64` 雙平台 image。
 - Docker Hub manifest 已驗證包含 `linux/amd64` 和 `linux/arm64`，並由遠端 Watchtower
   更新成功。
+- 新增 system card、公告 feed、register response Hub metadata 和 operator announcement
+  editor 的 OpenSpec change，準備進入實作。

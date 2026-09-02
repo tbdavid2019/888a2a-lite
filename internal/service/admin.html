@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>888a2a-lite · 公告管理</title>
+  <style>
+    :root { color-scheme: light; --ink:#17202a; --muted:#607080; --line:#d7dee5; --paper:#f5f7f9; --panel:#fff; --accent:#146c94; --warn:#9a5a00; --danger:#a33a3a; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--paper); color:var(--ink); font:15px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    main { width:min(1120px, calc(100% - 32px)); margin:32px auto 64px; }
+    header { display:flex; justify-content:space-between; gap:24px; align-items:end; margin-bottom:24px; }
+    h1 { margin:0; font-size:28px; letter-spacing:-.02em; }
+    h2 { margin:0 0 16px; font-size:18px; }
+    p { margin:6px 0; color:var(--muted); }
+    .panel { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:20px; margin-top:16px; box-shadow:0 6px 20px rgba(23,32,42,.05); }
+    .auth { display:flex; gap:10px; align-items:end; min-width:min(470px,100%); }
+    label { display:block; color:var(--muted); font-size:13px; font-weight:650; }
+    input, textarea, select { width:100%; margin-top:5px; border:1px solid #b9c5cf; border-radius:8px; padding:9px 10px; background:#fff; color:var(--ink); font:inherit; }
+    textarea { min-height:132px; resize:vertical; }
+    input:focus, textarea:focus, select:focus, button:focus-visible { outline:3px solid rgba(20,108,148,.24); outline-offset:2px; border-color:var(--accent); }
+    button { border:1px solid var(--accent); border-radius:8px; background:var(--accent); color:#fff; padding:9px 13px; font:inherit; font-weight:650; cursor:pointer; white-space:nowrap; }
+    button.secondary { background:#fff; color:var(--accent); }
+    button.danger { border-color:var(--danger); background:#fff; color:var(--danger); }
+    button:disabled { cursor:not-allowed; opacity:.5; }
+    .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+    .wide { grid-column:1/-1; }
+    .actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+    .status { min-height:24px; color:var(--muted); }
+    .status.error { color:var(--danger); }
+    .status.success { color:#237044; }
+    .table-wrap { overflow:auto; }
+    table { width:100%; border-collapse:collapse; min-width:760px; }
+    th, td { padding:12px 10px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+    th { color:var(--muted); font-size:12px; letter-spacing:.05em; text-transform:uppercase; }
+    td.summary { max-width:360px; white-space:pre-wrap; }
+    .badge { display:inline-block; border-radius:999px; padding:2px 8px; font-size:12px; font-weight:700; background:#e8eef2; }
+    .badge.WARNING { color:var(--warn); background:#fff0d8; }
+    .badge.CRITICAL { color:var(--danger); background:#fde4e4; }
+    .empty { color:var(--muted); padding:22px 10px; text-align:center; }
+    @media (max-width:760px) { main { width:min(100% - 20px,1120px); margin-top:20px; } header { display:block; } .auth { min-width:0; margin-top:16px; } .grid { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>公告管理</h1>
+      <p>Hub control-plane announcements · 公告內容會被 Agent 視為不可信 metadata。</p>
+    </div>
+    <div class="auth">
+      <label for="token">Operator Token<input id="token" type="password" autocomplete="off" placeholder="只存在本次頁面記憶體"></label>
+      <button id="load" type="button">載入</button>
+    </div>
+  </header>
+
+  <div id="status" class="status" role="status" aria-live="polite"></div>
+
+  <section class="panel" aria-labelledby="editor-title">
+    <h2 id="editor-title">建立公告</h2>
+    <form id="editor">
+      <div class="grid">
+        <label>標題<input id="title" name="title" maxlength="128" required></label>
+        <label>嚴重度<select id="severity" name="severity"><option>INFO</option><option>WARNING</option><option>CRITICAL</option></select></label>
+        <label>到期時間（可選）<input id="expiresAt" name="expiresAt" type="datetime-local"></label>
+        <label>文件連結（可選）<input id="documentationUrl" name="documentationUrl" type="url" maxlength="2048"></label>
+        <label class="wide">摘要<textarea id="summary" name="summary" maxlength="4096" required></textarea></label>
+      </div>
+      <div class="actions" style="margin-top:16px">
+        <button id="save" type="submit">發布公告</button>
+        <button id="saveDraft" class="secondary" type="button">儲存草稿</button>
+        <button id="cancelEdit" class="secondary" type="button" hidden>取消編輯</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="panel" aria-labelledby="list-title">
+    <div class="actions" style="justify-content:space-between">
+      <h2 id="list-title">公告列表</h2>
+      <button id="refresh" class="secondary" type="button">重新整理</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>ID</th><th>狀態</th><th>嚴重度</th><th>標題／摘要</th><th>時間</th><th>操作</th></tr></thead>
+        <tbody id="rows"><tr><td class="empty" colspan="6">請先輸入 Operator Token 並載入。</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+<script nonce="{{CSP_NONCE}}">
+(() => {
+  "use strict";
+  let operatorToken = "";
+  let editingId = null;
+  let revisionSourceId = null;
+  const $ = (id) => document.getElementById(id);
+  const status = (message, kind = "") => { $("status").textContent = message; $("status").className = `status ${kind}`; };
+  const input = () => ({
+    title: $("title").value.trim(), summary: $("summary").value.trim(), severity: $("severity").value,
+    documentationUrl: $("documentationUrl").value.trim(), expiresAt: $("expiresAt").value ? new Date($("expiresAt").value).toISOString() : undefined
+  });
+  const api = async (path, options = {}) => {
+    if (!operatorToken) throw new Error("請先輸入 Operator Token");
+    const headers = new Headers(options.headers || {});
+    headers.set("Authorization", `Bearer ${operatorToken}`);
+    if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+    const response = await fetch(path, { ...options, headers, cache: "no-store" });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error?.message || `HTTP ${response.status}`);
+    return body;
+  };
+  const dateText = (value) => value ? new Date(value).toLocaleString() : "—";
+  const setForm = (announcement, sourceId = null) => {
+    editingId = announcement?.id || null;
+    revisionSourceId = sourceId;
+    $("editor-title").textContent = editingId ? `編輯草稿 #${editingId}` : revisionSourceId ? `建立公告 revision #${revisionSourceId}` : "建立公告";
+    $("title").value = announcement?.title || "";
+    $("summary").value = announcement?.summary || "";
+    $("severity").value = announcement?.severity || "INFO";
+    $("documentationUrl").value = announcement?.documentationUrl || "";
+    $("expiresAt").value = announcement?.expiresAt ? new Date(announcement.expiresAt).toISOString().slice(0,16) : "";
+    $("cancelEdit").hidden = !editingId && !revisionSourceId;
+    $("save").textContent = editingId ? "更新草稿" : revisionSourceId ? "發布 revision" : "發布公告";
+    $("saveDraft").hidden = Boolean(editingId || revisionSourceId);
+  };
+  const button = (label, className, handler) => { const item = document.createElement("button"); item.type = "button"; item.textContent = label; item.className = className; item.addEventListener("click", handler); return item; };
+  const render = (items) => {
+    const rows = $("rows"); rows.replaceChildren();
+    if (!items.length) { const row = document.createElement("tr"); const cell = document.createElement("td"); cell.colSpan = 6; cell.className = "empty"; cell.textContent = "目前沒有公告。"; row.append(cell); rows.append(row); return; }
+    items.forEach((item) => {
+      const row = document.createElement("tr");
+      const values = [String(item.id), item.status, item.severity, item.title, dateText(item.publishedAt || item.createdAt)];
+      values.forEach((value, index) => { const cell = document.createElement("td"); cell.textContent = value; if (index === 3) cell.className = "summary"; row.append(cell); });
+      const detail = document.createElement("td"); detail.className = "summary"; detail.textContent = item.summary; row.children[3].append(document.createElement("br"), detail);
+      const actions = document.createElement("td"); actions.className = "actions";
+      if (item.status === "DRAFT") { actions.append(button("編輯", "secondary", () => setForm(item)), button("發布", "", async () => { try { await api(`/hub/v1/admin/announcements/${item.id}/publish`, { method: "POST" }); status("公告已發布。", "success"); await loadAnnouncements(); } catch (error) { status(error.message, "error"); } })); }
+      if (item.status === "PUBLISHED") { actions.append(button("建立 revision", "secondary", () => setForm({ ...item, id: null }, item.id))); }
+      row.append(actions); rows.append(row);
+    });
+  };
+  const loadAnnouncements = async () => { const body = await api("/hub/v1/admin/announcements?afterId=0&limit=100"); render(body.announcements || []); };
+  $("load").addEventListener("click", async () => { operatorToken = $("token").value; try { await loadAnnouncements(); status("已載入公告。", "success"); } catch (error) { operatorToken = ""; status(error.message, "error"); } });
+  $("refresh").addEventListener("click", async () => { try { await loadAnnouncements(); status("已重新整理。", "success"); } catch (error) { status(error.message, "error"); } });
+  $("cancelEdit").addEventListener("click", () => setForm(null));
+  $("saveDraft").addEventListener("click", async () => { try { await api("/hub/v1/admin/announcements", { method: "POST", body: JSON.stringify({ ...input(), status: "DRAFT" }) }); setForm(null); status("草稿已儲存。", "success"); await loadAnnouncements(); } catch (error) { status(error.message, "error"); } });
+  $("editor").addEventListener("submit", async (event) => { event.preventDefault(); try { const body = input(); if (editingId) { await api(`/hub/v1/admin/announcements/${editingId}`, { method: "PATCH", body: JSON.stringify(body) }); status("草稿已更新。", "success"); } else if (revisionSourceId) { await api(`/hub/v1/admin/announcements/${revisionSourceId}/revision`, { method: "POST", body: JSON.stringify(body) }); status("revision 草稿已建立。", "success"); } else { await api("/hub/v1/admin/announcements", { method: "POST", body: JSON.stringify(body) }); status("公告已發布。", "success"); } setForm(null); await loadAnnouncements(); } catch (error) { status(error.message, "error"); } });
+})();
+</script>
+</body>
+</html>

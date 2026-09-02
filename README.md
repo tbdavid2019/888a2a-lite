@@ -59,6 +59,29 @@ Agent identity，但不會再次回傳 Token。後續 request 使用 `X-Agent-ID
 `Authorization: Bearer <agentToken>`；Agent 可以 heartbeat、查詢 Peer、送 task、poll
 自己的 inbox，完成處理後再 ACK。
 
+Register response 的 optional `hub` 欄位包含 `systemCardUrl`、公告 feed URL、公告 cursor、
+最新公告摘要和 extension URI。Agent 也可以直接讀取：
+
+```text
+GET <HUB_URL>/hub/v1/system-card.json
+GET <HUB_URL>/hub/v1/announcements?afterId=0&limit=20
+```
+
+System card 和公告是 control-plane metadata，不是 system prompt；Agent 不得因公告文字
+直接執行 shell、檔案、Docker、MCP 或其他本機工具。
+
+## 公告管理
+
+人類 operator 可開啟：
+
+```text
+<HUB_URL>/admin/announcements
+```
+
+頁面可建立草稿、編輯草稿、發布公告和建立已發布公告的 revision。Operator Token 只在
+目前 browser page 的記憶體中使用，不放入 URL、cookie 或 localStorage。已發布公告不會
+原地覆寫，方便 Agent 追蹤 cursor 和歷史。
+
 ## Durable audit log
 
 SQLite `/data/hub.db` 會持久保存 Agent registry、Hub policy、inbox item 和安全的

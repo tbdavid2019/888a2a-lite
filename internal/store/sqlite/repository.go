@@ -38,6 +38,8 @@ func (repository *Repository) Inbox() store.InboxStore { return repository }
 
 func (repository *Repository) Events() store.EventStore { return repository }
 
+func (repository *Repository) Announcements() store.AnnouncementStore { return repository }
+
 func (repository *Repository) WithTransaction(ctx context.Context, fn func(store.TxStore) error) error {
 	if repository.tx != nil {
 		return fn(repository)
@@ -500,6 +502,173 @@ FROM event_log WHERE id > ? ORDER BY id LIMIT ?`, afterID, limit)
 		return nil, err
 	}
 	return events, nil
+}
+
+func (repository *Repository) CreateAnnouncement(ctx context.Context, announcement hub.Announcement) (hub.Announcement, error) {
+	if strings.TrimSpace(announcement.HubID) == "" || announcement.Status == "" {
+		return hub.Announcement{}, errors.New("announcement requires hub id and status")
+	}
+	if announcement.Revision < 1 {
+		announcement.Revision = 1
+	}
+	if announcement.CreatedAt.IsZero() {
+		announcement.CreatedAt = time.Now().UTC()
+	}
+	result, err := repository.executor().ExecContext(ctx, `
+INSERT INTO announcement (
+    hub_id, revision_of_id, revision, status, severity, title, summary,
+    documentation_url, published_at, expires_at, created_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		announcement.HubID, nullableUint64(announcement.RevisionOfID), announcement.Revision,
+		string(announcement.Status), string(announcement.Severity), announcement.Title, announcement.Summary,
+		announcement.DocumentationURL, nullTimePtr(announcement.PublishedAt), nullTimePtr(announcement.ExpiresAt),
+		formatTime(announcement.CreatedAt))
+	if err != nil {
+		return hub.Announcement{}, err
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return hub.Announcement{}, err
+	}
+	announcement.ID = uint64(id)
+	return announcement, nil
+}
+
+func (repository *Repository) FindAnnouncement(ctx context.Context, id uint64) (hub.Announcement, error) {
+	return repository.findAnnouncement(ctx, `
+SELECT id, hub_id, revision_of_id, revision, status, severity, title, summary,
+       documentation_url, published_at, expires_at, created_at
+FROM announcement WHERE id = ?`, id)
+}
+
+func (repository *Repository) ListAnnouncements(ctx context.Context, afterID uint64, limit int) ([]hub.Announcement, error) {
+	return repository.listAnnouncements(ctx, `
+SELECT id, hub_id, revision_of_id, revision, status, severity, title, summary,
+       documentation_url, published_at, expires_at, created_at
+FROM announcement WHERE id > ? ORDER BY id LIMIT ?`, afterID, limit)
+}
+
+func (repository *Repository) ListActiveAnnouncements(ctx context.Context, afterID uint64, limit int, now time.Time) ([]hub.Announcement, error) {
+	return repository.listAnnouncements(ctx, `
+SELECT id, hub_id, revision_of_id, revision, status, severity, title, summary,
+       documentation_url, published_at, expires_at, created_at
+FROM announcement
+WHERE id > ? AND status = 'PUBLISHED' AND (expires_at IS NULL OR expires_at > ?)
+ORDER BY id LIMIT ?`, afterID, formatTime(now), limit)
+}
+
+func (repository *Repository) listAnnouncements(ctx context.Context, query string, args ...any) ([]hub.Announcement, error) {
+	rows, err := repository.executor().QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	announcements := make([]hub.Announcement, 0)
+	for rows.Next() {
+		announcement, err := scanAnnouncement(rows)
+		if err != nil {
+			return nil, err
+		}
+		announcements = append(announcements, announcement)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return announcements, nil
+}
+
+func (repository *Repository) findAnnouncement(ctx context.Context, query string, args ...any) (hub.Announcement, error) {
+	return scanAnnouncement(repository.executor().QueryRowContext(ctx, query, args...))
+}
+
+func (repository *Repository) UpdateDraft(ctx context.Context, id uint64, input hub.AnnouncementInput, now time.Time) (hub.Announcement, error) {
+	result, err := repository.executor().ExecContext(ctx, `
+UPDATE announcement
+SET severity = ?, title = ?, summary = ?, documentation_url = ?, expires_at = ?
+WHERE id = ? AND status = 'DRAFT'`, string(input.Severity), input.Title, input.Summary,
+		input.DocumentationURL, nullTimePtr(input.ExpiresAt), id)
+	if err != nil {
+		return hub.Announcement{}, err
+	}
+	if affected, _ := result.RowsAffected(); affected != 1 {
+		return hub.Announcement{}, ErrNotFound
+	}
+	return repository.FindAnnouncement(ctx, id)
+}
+
+func (repository *Repository) PublishAnnouncement(ctx context.Context, id uint64, publishedAt time.Time) (hub.Announcement, error) {
+	result, err := repository.executor().ExecContext(ctx, `
+UPDATE announcement SET status = 'PUBLISHED', published_at = ?
+WHERE id = ? AND status = 'DRAFT'`, formatTime(publishedAt), id)
+	if err != nil {
+		return hub.Announcement{}, err
+	}
+	if affected, _ := result.RowsAffected(); affected != 1 {
+		return hub.Announcement{}, ErrNotFound
+	}
+	return repository.FindAnnouncement(ctx, id)
+}
+
+func (repository *Repository) CreateRevision(ctx context.Context, sourceID uint64, input hub.AnnouncementInput, now time.Time) (hub.Announcement, error) {
+	source, err := repository.FindAnnouncement(ctx, sourceID)
+	if err != nil {
+		return hub.Announcement{}, err
+	}
+	if source.Status != hub.AnnouncementPublished {
+		return hub.Announcement{}, store.ErrInvalidState
+	}
+	revisionOf := source.ID
+	return repository.CreateAnnouncement(ctx, hub.Announcement{
+		HubID: source.HubID, RevisionOfID: &revisionOf, Revision: source.Revision + 1,
+		Status: hub.AnnouncementDraft, Severity: input.Severity, Title: input.Title,
+		Summary: input.Summary, DocumentationURL: input.DocumentationURL,
+		ExpiresAt: input.ExpiresAt, CreatedAt: now,
+	})
+}
+
+func scanAnnouncement(row scanner) (hub.Announcement, error) {
+	var (
+		announcement                            hub.Announcement
+		revisionOf, published, expires, created sql.NullString
+		revisionOfID                            sql.NullInt64
+		status, severity                        string
+	)
+	err := row.Scan(&announcement.ID, &announcement.HubID, &revisionOfID, &announcement.Revision, &status, &severity,
+		&announcement.Title, &announcement.Summary, &announcement.DocumentationURL, &published, &expires, &created)
+	if errors.Is(err, sql.ErrNoRows) {
+		return hub.Announcement{}, ErrNotFound
+	}
+	if err != nil {
+		return hub.Announcement{}, err
+	}
+	announcement.Status = hub.AnnouncementStatus(status)
+	announcement.Severity = hub.AnnouncementSeverity(severity)
+	if revisionOfID.Valid {
+		value := uint64(revisionOfID.Int64)
+		announcement.RevisionOfID = &value
+	}
+	var parseErr error
+	if announcement.PublishedAt, parseErr = parseNullableTimePtr(published); parseErr != nil {
+		return hub.Announcement{}, parseErr
+	}
+	if announcement.ExpiresAt, parseErr = parseNullableTimePtr(expires); parseErr != nil {
+		return hub.Announcement{}, parseErr
+	}
+	if announcement.CreatedAt, parseErr = time.Parse(time.RFC3339Nano, created.String); parseErr != nil {
+		return hub.Announcement{}, parseErr
+	}
+	if announcement.Status == hub.AnnouncementPublished && announcement.ExpiresAt != nil && !announcement.ExpiresAt.After(time.Now().UTC()) {
+		announcement.Status = hub.AnnouncementExpired
+	}
+	_ = revisionOf
+	return announcement, nil
+}
+
+func nullableUint64(value *uint64) any {
+	if value == nil {
+		return nil
+	}
+	return *value
 }
 
 type scanner interface {

@@ -161,6 +161,20 @@ func TestHTTPThreeAgentDeliveryAndAuthorizationBoundaries(t *testing.T) {
 	if events.Code != http.StatusOK || !strings.Contains(events.Body.String(), hub.EventAgentRegistered) || strings.Contains(events.Body.String(), "hello from codex") {
 		t.Fatalf("events status/body = %d/%s", events.Code, events.Body.String())
 	}
+	card := doJSON(t, handler, http.MethodGet, "/hub/v1/system-card.json", "", "", nil)
+	if card.Code != http.StatusOK || !strings.Contains(card.Body.String(), "SELF_DECLARED") || !strings.Contains(card.Body.String(), "https://hub.example/hub/v1/system-card.json") {
+		t.Fatalf("system card status/body = %d/%s", card.Code, card.Body.String())
+	}
+	published := doJSONWithBearer(t, handler, http.MethodPost, "/hub/v1/admin/announcements", "operator-fixture", map[string]any{
+		"title": "Maintenance", "summary": "Read-only maintenance notice", "severity": "WARNING",
+	})
+	if published.Code != http.StatusCreated || !strings.Contains(published.Body.String(), "Maintenance") {
+		t.Fatalf("publish announcement status/body = %d/%s", published.Code, published.Body.String())
+	}
+	feed := doJSON(t, handler, http.MethodGet, "/hub/v1/announcements?afterId=0&limit=10", "", "", nil)
+	if feed.Code != http.StatusOK || !strings.Contains(feed.Body.String(), "Read-only maintenance notice") {
+		t.Fatalf("announcement feed status/body = %d/%s", feed.Code, feed.Body.String())
+	}
 }
 
 type registeredTestAgent struct {

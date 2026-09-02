@@ -146,6 +146,33 @@ CREATE TABLE IF NOT EXISTS event_log (
 
 CREATE INDEX IF NOT EXISTS idx_event_log_hub_id
     ON event_log (hub_id, id);
+
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    version INTEGER PRIMARY KEY,
+    applied_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS announcement (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    hub_id TEXT NOT NULL,
+    revision_of_id INTEGER,
+    revision INTEGER NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('DRAFT', 'PUBLISHED', 'EXPIRED')),
+    severity TEXT NOT NULL CHECK (severity IN ('INFO', 'WARNING', 'CRITICAL')),
+    title TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    documentation_url TEXT NOT NULL DEFAULT '',
+    published_at TEXT,
+    expires_at TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (revision_of_id) REFERENCES announcement (id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_announcement_active
+    ON announcement (hub_id, status, id);
+
+INSERT OR IGNORE INTO schema_migrations (version, applied_at)
+VALUES (2, CURRENT_TIMESTAMP);
 `
 
 func formatTime(value time.Time) string {

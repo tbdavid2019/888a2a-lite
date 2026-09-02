@@ -1,7 +1,10 @@
 package service
 
 import (
+	"bytes"
+	"crypto/rand"
 	_ "embed"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -19,6 +22,9 @@ import (
 
 //go:embed llms.txt
 var llmsText []byte
+
+//go:embed admin.html
+var adminHTML []byte
 
 type HTTPServer struct {
 	service             *Service
@@ -42,6 +48,14 @@ func (server *HTTPServer) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", server.health)
 	mux.HandleFunc("GET /llms.txt", server.llms)
+	mux.HandleFunc("GET /admin/announcements", server.adminAnnouncementsUI)
+	mux.HandleFunc("GET /hub/v1/system-card.json", server.systemCard)
+	mux.HandleFunc("GET /hub/v1/announcements", server.announcements)
+	mux.HandleFunc("GET /hub/v1/admin/announcements", server.adminListAnnouncements)
+	mux.HandleFunc("POST /hub/v1/admin/announcements", server.adminCreateAnnouncement)
+	mux.HandleFunc("PATCH /hub/v1/admin/announcements/{announcementId}", server.adminUpdateDraft)
+	mux.HandleFunc("POST /hub/v1/admin/announcements/{announcementId}/publish", server.adminPublishDraft)
+	mux.HandleFunc("POST /hub/v1/admin/announcements/{announcementId}/revision", server.adminCreateRevision)
 	mux.HandleFunc("GET /hub/v1/admin/events", server.listEvents)
 	mux.HandleFunc("GET /hub/v1/status", server.status)
 	mux.HandleFunc("POST /hub/v1/agents/register", server.register)
@@ -82,6 +96,192 @@ func (server *HTTPServer) baseURLFor(r *http.Request) string {
 	return strings.TrimRight(parsed.String(), "/")
 }
 
+func (server *HTTPServer) systemCard(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-cache")
+	card := server.service.BuildSystemCard(server.baseURLFor(r))
+	writeJSON(w, http.StatusOK, card)
+}
+
+func (server *HTTPServer) announcements(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "public, max-age=30")
+	afterID, err := parseUintQuery(r, "afterId", 0)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_QUERY", "afterId must be a non-negative integer")
+		return
+	}
+	limit, err := parseIntQuery(r, "limit", 20)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_QUERY", "limit must be an integer")
+		return
+	}
+	items, next, err := server.service.ListActiveAnnouncements(r.Context(), afterID, limit)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"announcements": items, "nextId": next})
+}
+
+func (server *HTTPServer) adminAnnouncementsUI(w http.ResponseWriter, _ *http.Request) {
+	nonceBytes := make([]byte, 18)
+	if _, err := rand.Read(nonceBytes); err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "admin interface is unavailable")
+		return
+	}
+	nonce := base64.RawURLEncoding.EncodeToString(nonceBytes)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'nonce-"+nonce+"'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(bytes.ReplaceAll(adminHTML, []byte("{{CSP_NONCE}}"), []byte(nonce)))
+}
+
+type announcementRequest struct {
+	Status           string                   `json:"status"`
+	Title            string                   `json:"title"`
+	Summary          string                   `json:"summary"`
+	Severity         hub.AnnouncementSeverity `json:"severity"`
+	DocumentationURL string                   `json:"documentationUrl,omitempty"`
+	ExpiresAt        *time.Time               `json:"expiresAt,omitempty"`
+}
+
+func (request announcementRequest) input() hub.AnnouncementInput {
+	return hub.AnnouncementInput{
+		Title: request.Title, Summary: request.Summary, Severity: request.Severity,
+		DocumentationURL: request.DocumentationURL, ExpiresAt: request.ExpiresAt,
+	}
+}
+
+func (server *HTTPServer) adminListAnnouncements(w http.ResponseWriter, r *http.Request) {
+	token, ok := server.operatorToken(w, r)
+	if !ok {
+		return
+	}
+	afterID, err := parseUintQuery(r, "afterId", 0)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_QUERY", "afterId must be a non-negative integer")
+		return
+	}
+	limit, err := parseIntQuery(r, "limit", 100)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_QUERY", "limit must be an integer")
+		return
+	}
+	items, next, err := server.service.ListAnnouncementAdmin(r.Context(), token, afterID, limit)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"announcements": items, "nextId": next})
+}
+
+func (server *HTTPServer) adminCreateAnnouncement(w http.ResponseWriter, r *http.Request) {
+	token, ok := server.operatorToken(w, r)
+	if !ok {
+		return
+	}
+	var request announcementRequest
+	if !decodeJSON(w, r, server.maxBodyBytes, &request) {
+		return
+	}
+	if request.Status != "" && !strings.EqualFold(request.Status, string(hub.AnnouncementDraft)) && !strings.EqualFold(request.Status, string(hub.AnnouncementPublished)) {
+		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "status must be DRAFT or PUBLISHED")
+		return
+	}
+	var announcement hub.Announcement
+	var err error
+	if strings.EqualFold(request.Status, string(hub.AnnouncementDraft)) {
+		announcement, err = server.service.CreateDraft(r.Context(), token, request.input())
+	} else {
+		announcement, err = server.service.PublishAnnouncement(r.Context(), request.input())
+	}
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, announcement)
+}
+
+func (server *HTTPServer) adminUpdateDraft(w http.ResponseWriter, r *http.Request) {
+	token, ok := server.operatorToken(w, r)
+	if !ok {
+		return
+	}
+	id, ok := parseAnnouncementID(w, r.PathValue("announcementId"))
+	if !ok {
+		return
+	}
+	var request announcementRequest
+	if !decodeJSON(w, r, server.maxBodyBytes, &request) {
+		return
+	}
+	announcement, err := server.service.UpdateDraft(r.Context(), token, id, request.input())
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, announcement)
+}
+
+func (server *HTTPServer) adminPublishDraft(w http.ResponseWriter, r *http.Request) {
+	token, ok := server.operatorToken(w, r)
+	if !ok {
+		return
+	}
+	id, ok := parseAnnouncementID(w, r.PathValue("announcementId"))
+	if !ok {
+		return
+	}
+	if !decodeEmptyOrJSON(w, r, server.maxBodyBytes) {
+		return
+	}
+	announcement, err := server.service.PublishDraft(r.Context(), token, id)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, announcement)
+}
+
+func (server *HTTPServer) adminCreateRevision(w http.ResponseWriter, r *http.Request) {
+	token, ok := server.operatorToken(w, r)
+	if !ok {
+		return
+	}
+	id, ok := parseAnnouncementID(w, r.PathValue("announcementId"))
+	if !ok {
+		return
+	}
+	var request announcementRequest
+	if !decodeJSON(w, r, server.maxBodyBytes, &request) {
+		return
+	}
+	announcement, err := server.service.CreateRevision(r.Context(), token, id, request.input())
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, announcement)
+}
+
+func (server *HTTPServer) operatorToken(w http.ResponseWriter, r *http.Request) (string, bool) {
+	token, ok := bearerToken(r.Header.Get("Authorization"))
+	if !ok || server.service.AuthenticateOperator(token) != nil {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "authentication failed")
+		return "", false
+	}
+	return token, true
+}
+
+func parseAnnouncementID(w http.ResponseWriter, value string) (uint64, bool) {
+	id, err := strconv.ParseUint(value, 10, 64)
+	if err != nil || id == 0 {
+		writeError(w, http.StatusBadRequest, "INVALID_PATH", "announcementId must be a positive integer")
+		return 0, false
+	}
+	return id, true
+}
+
 func (server *HTTPServer) health(w http.ResponseWriter, r *http.Request) {
 	if _, err := server.service.Status(r.Context()); err != nil {
 		writeError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "hub is not ready")
@@ -113,6 +313,11 @@ func (server *HTTPServer) register(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, err)
 		return
 	}
+	metadata, err := server.service.HubMetadata(r.Context(), server.baseURLFor(r))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
 	policy, err := server.service.store.Policy().GetPolicy(r.Context())
 	if err != nil {
 		writeServiceError(w, err)
@@ -121,6 +326,7 @@ func (server *HTTPServer) register(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"identity":  identity,
 		"policy":    policy,
+		"hub":       metadata,
 		"duplicate": duplicate,
 	})
 }
@@ -377,12 +583,8 @@ func (server *HTTPServer) agentCredentials(w http.ResponseWriter, r *http.Reques
 }
 
 func (server *HTTPServer) operatorCredentials(w http.ResponseWriter, r *http.Request) bool {
-	token, ok := bearerToken(r.Header.Get("Authorization"))
-	if !ok || server.service.AuthenticateOperator(token) != nil {
-		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "authentication failed")
-		return false
-	}
-	return true
+	_, ok := server.operatorToken(w, r)
+	return ok
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, maxBytes int64, target any) bool {
