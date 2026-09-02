@@ -65,6 +65,8 @@ type GroupStore interface {
 	ListMembers(context.Context, string) ([]hub.GroupMember, error)
 	CreateInvitation(context.Context, hub.GroupInvitation) (hub.GroupInvitation, error)
 	FindInvitation(context.Context, uint64) (hub.GroupInvitation, error)
+	FindPendingInvitation(context.Context, string, string) (hub.GroupInvitation, error)
+	ListInvitations(context.Context, string) ([]hub.GroupInvitation, error)
 	AcceptInvitation(context.Context, uint64, string, time.Time) (hub.GroupMember, error)
 	LeaveGroup(context.Context, string, string, time.Time) error
 	RemoveMember(context.Context, string, string, time.Time) error

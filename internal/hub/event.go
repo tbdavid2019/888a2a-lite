@@ -31,4 +31,13 @@ const (
 	EventAnnouncementDraftCreated    = "announcement.draft_created"
 	EventAnnouncementDraftUpdated    = "announcement.draft_updated"
 	EventAnnouncementRevisionCreated = "announcement.revision_created"
+	EventGroupCreated                = "group.created"
+	EventGroupInvitationCreated      = "group.invitation_created"
+	EventGroupInvitationAccepted     = "group.invitation_accepted"
+	EventGroupMemberLeft             = "group.member_left"
+	EventGroupMemberRemoved          = "group.member_removed"
+	EventGroupOwnershipTransferred   = "group.ownership_transferred"
+	EventGroupArchived               = "group.archived"
+	EventGroupMessageQueued          = "group.message_queued"
+	EventGroupMessageDuplicate       = "group.message_duplicate"
 )

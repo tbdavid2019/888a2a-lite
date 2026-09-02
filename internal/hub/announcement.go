@@ -91,6 +91,7 @@ type HubSystemCard struct {
 	RemoteExecution      bool                  `json:"remoteExecution"`
 	SystemCardURL        string                `json:"systemCardUrl"`
 	AnnouncementFeedURL  string                `json:"announcementFeedUrl"`
+	GroupBaseURL         string                `json:"groupBaseUrl,omitempty"`
 	Limits               map[string]int64      `json:"limits"`
 	Extensions           []SystemCardExtension `json:"extensions"`
 	UpdatedAt            time.Time             `json:"updatedAt"`

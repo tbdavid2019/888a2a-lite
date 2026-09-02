@@ -67,6 +67,19 @@ func (server *HTTPServer) Handler() http.Handler {
 	mux.HandleFunc("POST /hub/v1/agents/{targetAgentId}/tasks", server.sendTask)
 	mux.HandleFunc("GET /hub/v1/agents/{agentId}/inbox", server.pollInbox)
 	mux.HandleFunc("POST /hub/v1/agents/{agentId}/inbox/{sequence}/ack", server.ackInbox)
+	mux.HandleFunc("GET /hub/v1/groups", server.listGroups)
+	mux.HandleFunc("POST /hub/v1/groups", server.createGroup)
+	mux.HandleFunc("GET /hub/v1/groups/invitations", server.listGroupInvitations)
+	mux.HandleFunc("POST /hub/v1/groups/invitations/{invitationId}/accept", server.acceptGroupInvitation)
+	mux.HandleFunc("GET /hub/v1/groups/{groupId}", server.getGroup)
+	mux.HandleFunc("POST /hub/v1/groups/{groupId}/invitations", server.inviteGroupMember)
+	mux.HandleFunc("POST /hub/v1/groups/{groupId}/leave", server.leaveGroup)
+	mux.HandleFunc("POST /hub/v1/groups/{groupId}/archive", server.archiveGroup)
+	mux.HandleFunc("POST /hub/v1/groups/{groupId}/ownership", server.transferGroupOwnership)
+	mux.HandleFunc("POST /hub/v1/groups/{groupId}/members/{agentId}/remove", server.removeGroupMember)
+	mux.HandleFunc("GET /hub/v1/groups/{groupId}/roster", server.groupRoster)
+	mux.HandleFunc("GET /hub/v1/groups/{groupId}/history", server.groupHistory)
+	mux.HandleFunc("POST /hub/v1/groups/{groupId}/messages", server.sendGroupMessage)
 	mux.HandleFunc("POST /hub/v1/admin/registration", server.setRegistration)
 	mux.HandleFunc("POST /hub/v1/admin/agents/{agentId}/revoke", server.revokeAgent)
 	mux.HandleFunc("POST /hub/v1/admin/tasks/{taskId}/cancel", server.cancelTask)
@@ -143,6 +156,24 @@ type announcementRequest struct {
 	Severity         hub.AnnouncementSeverity `json:"severity"`
 	DocumentationURL string                   `json:"documentationUrl,omitempty"`
 	ExpiresAt        *time.Time               `json:"expiresAt,omitempty"`
+}
+
+type groupCreateRequest struct {
+	Name string `json:"name"`
+}
+
+type groupInviteRequest struct {
+	AgentID string `json:"agentId"`
+}
+
+type groupOwnershipRequest struct {
+	AgentID string `json:"agentId"`
+}
+
+type groupMessageRequest struct {
+	ContextID      string `json:"contextId"`
+	IdempotencyKey string `json:"idempotencyKey"`
+	Message        string `json:"message"`
 }
 
 func (request announcementRequest) input() hub.AnnouncementInput {
@@ -274,9 +305,13 @@ func (server *HTTPServer) operatorToken(w http.ResponseWriter, r *http.Request) 
 }
 
 func parseAnnouncementID(w http.ResponseWriter, value string) (uint64, bool) {
+	return parsePositiveID(w, value, "announcementId")
+}
+
+func parsePositiveID(w http.ResponseWriter, value, name string) (uint64, bool) {
 	id, err := strconv.ParseUint(value, 10, 64)
 	if err != nil || id == 0 {
-		writeError(w, http.StatusBadRequest, "INVALID_PATH", "announcementId must be a positive integer")
+		writeError(w, http.StatusBadRequest, "INVALID_PATH", name+" must be a positive integer")
 		return 0, false
 	}
 	return id, true
@@ -481,6 +516,235 @@ func (server *HTTPServer) ackInbox(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"sequence": sequence, "state": string(hub.DeliveryStateAcknowledged)})
 }
 
+func (server *HTTPServer) listGroups(w http.ResponseWriter, r *http.Request) {
+	agentID, token, ok := server.agentCredentials(w, r, "")
+	if !ok {
+		return
+	}
+	groups, err := server.service.ListGroups(r.Context(), agentID, token)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"groups": groups})
+}
+
+func (server *HTTPServer) createGroup(w http.ResponseWriter, r *http.Request) {
+	agentID, token, ok := server.agentCredentials(w, r, "")
+	if !ok {
+		return
+	}
+	var request groupCreateRequest
+	if !decodeJSON(w, r, server.maxBodyBytes, &request) {
+		return
+	}
+	group, err := server.service.CreateGroup(r.Context(), agentID, token, hub.CreateGroupInput{Name: request.Name})
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, group)
+}
+
+func (server *HTTPServer) getGroup(w http.ResponseWriter, r *http.Request) {
+	agentID, token, ok := server.agentCredentials(w, r, "")
+	if !ok {
+		return
+	}
+	group, members, err := server.service.GetGroup(r.Context(), agentID, token, r.PathValue("groupId"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"group": group, "members": members})
+}
+
+func (server *HTTPServer) inviteGroupMember(w http.ResponseWriter, r *http.Request) {
+	agentID, token, ok := server.agentCredentials(w, r, "")
+	if !ok {
+		return
+	}
+	var request groupInviteRequest
+	if !decodeJSON(w, r, server.maxBodyBytes, &request) {
+		return
+	}
+	if strings.TrimSpace(request.AgentID) == "" {
+		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "agentId is required")
+		return
+	}
+	invitation, err := server.service.InviteMember(r.Context(), agentID, token, r.PathValue("groupId"), request.AgentID)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, invitation)
+}
+
+func (server *HTTPServer) listGroupInvitations(w http.ResponseWriter, r *http.Request) {
+	agentID, token, ok := server.agentCredentials(w, r, "")
+	if !ok {
+		return
+	}
+	invitations, err := server.service.ListInvitations(r.Context(), agentID, token)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"invitations": invitations})
+}
+
+func (server *HTTPServer) acceptGroupInvitation(w http.ResponseWriter, r *http.Request) {
+	agentID, token, ok := server.agentCredentials(w, r, "")
+	if !ok {
+		return
+	}
+	invitationID, ok := parsePositiveID(w, r.PathValue("invitationId"), "invitationId")
+	if !ok {
+		return
+	}
+	if !decodeEmptyOrJSON(w, r, server.maxBodyBytes) {
+		return
+	}
+	member, err := server.service.AcceptInvitation(r.Context(), agentID, token, invitationID)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, member)
+}
+
+func (server *HTTPServer) leaveGroup(w http.ResponseWriter, r *http.Request) {
+	agentID, token, ok := server.agentCredentials(w, r, "")
+	if !ok {
+		return
+	}
+	if !decodeEmptyOrJSON(w, r, server.maxBodyBytes) {
+		return
+	}
+	groupID := r.PathValue("groupId")
+	if err := server.service.LeaveGroup(r.Context(), agentID, token, groupID); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"groupId": groupID, "state": string(hub.MembershipLeft)})
+}
+
+func (server *HTTPServer) archiveGroup(w http.ResponseWriter, r *http.Request) {
+	agentID, token, ok := server.agentCredentials(w, r, "")
+	if !ok {
+		return
+	}
+	if !decodeEmptyOrJSON(w, r, server.maxBodyBytes) {
+		return
+	}
+	groupID := r.PathValue("groupId")
+	if err := server.service.ArchiveGroup(r.Context(), agentID, token, groupID); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"groupId": groupID, "state": string(hub.GroupStateArchived)})
+}
+
+func (server *HTTPServer) transferGroupOwnership(w http.ResponseWriter, r *http.Request) {
+	agentID, token, ok := server.agentCredentials(w, r, "")
+	if !ok {
+		return
+	}
+	var request groupOwnershipRequest
+	if !decodeJSON(w, r, server.maxBodyBytes, &request) {
+		return
+	}
+	if strings.TrimSpace(request.AgentID) == "" {
+		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "agentId is required")
+		return
+	}
+	groupID := r.PathValue("groupId")
+	if err := server.service.TransferOwnership(r.Context(), agentID, token, groupID, request.AgentID); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"groupId": groupID, "ownerAgentId": request.AgentID})
+}
+
+func (server *HTTPServer) removeGroupMember(w http.ResponseWriter, r *http.Request) {
+	agentID, token, ok := server.agentCredentials(w, r, "")
+	if !ok {
+		return
+	}
+	if !decodeEmptyOrJSON(w, r, server.maxBodyBytes) {
+		return
+	}
+	groupID, targetID := r.PathValue("groupId"), r.PathValue("agentId")
+	if err := server.service.RemoveMember(r.Context(), agentID, token, groupID, targetID); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"groupId": groupID, "agentId": targetID, "state": string(hub.MembershipRemoved)})
+}
+
+func (server *HTTPServer) groupRoster(w http.ResponseWriter, r *http.Request) {
+	agentID, token, ok := server.agentCredentials(w, r, "")
+	if !ok {
+		return
+	}
+	members, err := server.service.GroupRoster(r.Context(), agentID, token, r.PathValue("groupId"), server.baseURLFor(r))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"groupId": r.PathValue("groupId"), "members": members})
+}
+
+func (server *HTTPServer) groupHistory(w http.ResponseWriter, r *http.Request) {
+	agentID, token, ok := server.agentCredentials(w, r, "")
+	if !ok {
+		return
+	}
+	afterID, err := parseUintQuery(r, "afterId", 0)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_QUERY", "afterId must be a non-negative integer")
+		return
+	}
+	limit, err := parseIntQuery(r, "limit", server.service.maxGroupHistoryPage())
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_QUERY", "limit must be an integer")
+		return
+	}
+	messages, next, err := server.service.GroupHistory(r.Context(), agentID, token, r.PathValue("groupId"), server.baseURLFor(r), afterID, limit)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"groupId": r.PathValue("groupId"), "messages": messages, "nextId": next})
+}
+
+func (server *HTTPServer) sendGroupMessage(w http.ResponseWriter, r *http.Request) {
+	agentID, token, ok := server.agentCredentials(w, r, "")
+	if !ok {
+		return
+	}
+	if !server.taskLimiter.allow(agentID) {
+		writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "group message rate limit exceeded")
+		return
+	}
+	var request groupMessageRequest
+	if !decodeJSON(w, r, server.maxBodyBytes, &request) {
+		return
+	}
+	message, duplicate, err := server.service.SendGroupMessage(r.Context(), agentID, token, r.PathValue("groupId"), hub.GroupMessageInput{
+		ContextID: request.ContextID, IdempotencyKey: request.IdempotencyKey, Message: request.Message,
+	})
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	outcome := "QUEUED"
+	if duplicate {
+		outcome = "DUPLICATE"
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"message": message, "deliveryOutcome": outcome})
+}
+
 func (server *HTTPServer) setRegistration(w http.ResponseWriter, r *http.Request) {
 	if !server.operatorCredentials(w, r) {
 		return
@@ -661,6 +925,18 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusTooManyRequests, "AGENT_LIMIT_REACHED", "agent limit reached")
 	case errors.Is(err, ErrTaskLimit):
 		writeError(w, http.StatusTooManyRequests, "TASK_LIMIT_REACHED", "task limit reached")
+	case errors.Is(err, ErrGroupLimit):
+		writeError(w, http.StatusTooManyRequests, "GROUP_LIMIT_REACHED", "group limit reached")
+	case errors.Is(err, ErrGroupArchived):
+		writeError(w, http.StatusConflict, "GROUP_ARCHIVED", "group is archived")
+	case errors.Is(err, ErrGroupUnavailable):
+		writeError(w, http.StatusNotFound, "GROUP_UNAVAILABLE", "group is unavailable")
+	case errors.Is(err, ErrInvitationInvalid):
+		writeError(w, http.StatusConflict, "INVITATION_INVALID", "invitation is invalid")
+	case errors.Is(err, store.ErrInvalidState):
+		writeError(w, http.StatusConflict, "INVALID_STATE", "resource state does not allow this operation")
+	case errors.Is(err, store.ErrForbidden):
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "operation is not permitted")
 	case errors.Is(err, ErrAgentUnavailable):
 		writeError(w, http.StatusNotFound, "AGENT_UNAVAILABLE", "agent is unavailable")
 	case errors.Is(err, ErrForbidden):

@@ -11,23 +11,23 @@
 
 ## 3. Group domain service
 
-- [ ] 3.1 Implement authenticated group create/list/get/archive operations with owner assignment and bounded names; verify archived groups reject future mutation
-- [ ] 3.2 Implement invitation creation, explicit accept, member leave, admin authorization, owner transfer, and member removal; verify revoked/expired Agents cannot join and repeated operations are idempotent
-- [ ] 3.3 Build member-only roster responses from existing Agent safe cards and heartbeat lease state; verify ONLINE/OFFLINE/EXPIRED/REVOKED status and absence of tokens, paths, and secrets
-- [ ] 3.4 Implement member-only group history with monotonic group message IDs, `afterId`, bounded `limit`, next cursor, and visibility rules; verify removed members cannot read post-removal content
+- [x] 3.1 Implement authenticated group create/list/get/archive operations with owner assignment and bounded names; verify archived groups reject future mutation
+- [x] 3.2 Implement invitation creation, explicit accept, member leave, admin authorization, owner transfer, and member removal; verify revoked/expired Agents cannot join and repeated operations are idempotent
+- [x] 3.3 Build member-only roster responses from existing Agent safe cards and heartbeat lease state; verify ONLINE/OFFLINE/EXPIRED/REVOKED status and absence of tokens, paths, and secrets
+- [x] 3.4 Implement member-only group history with monotonic group message IDs, `afterId`, bounded `limit`, next cursor, and visibility rules; verify removed members cannot read post-removal content
 
 ## 4. Group mailbox behavior
 
-- [ ] 4.1 Extend delivery idempotency and sender authorization for `(hubId, groupId, requesterAgentId, idempotencyKey)`; verify duplicate group requests return the original group message without new sequences
-- [ ] 4.2 Implement transaction-atomic fan-out to the membership snapshot at send time, excluding the sender inbox while retaining sender-visible history; verify recipient summaries and independent ACK state
-- [ ] 4.3 Reuse direct inbox polling for group deliveries while preventing cross-recipient state access; verify offline recipients recover the same message and sequence after reconnect and Hub restart
-- [ ] 4.4 Cancel pending group deliveries when a member is removed, without changing other recipients or already-polled data; verify audit events capture safe group/message/member identities only
+- [x] 4.1 Extend delivery idempotency and sender authorization for `(hubId, groupId, requesterAgentId, idempotencyKey)`; verify duplicate group requests return the original group message without new sequences
+- [x] 4.2 Implement transaction-atomic fan-out to the membership snapshot at send time, excluding the sender inbox while retaining sender-visible history; verify recipient summaries and independent ACK state
+- [x] 4.3 Reuse direct inbox polling for group deliveries while preventing cross-recipient state access; verify offline recipients recover the same message and sequence after reconnect and Hub restart
+- [x] 4.4 Cancel pending group deliveries when a member is removed, without changing other recipients or already-polled data; verify audit events capture safe group/message/member identities only
 
 ## 5. HTTP and system discovery
 
-- [ ] 5.1 Add `/hub/v1/groups` lifecycle, membership, roster, history, and message routes with existing error envelopes and authentication; verify member/non-member/owner authorization through HTTP tests
-- [ ] 5.2 Enforce body, page, group size, fan-out, rate, and concurrency limits before mutation; verify oversized or malformed requests leave no database changes
-- [ ] 5.3 Extend the dynamic system card with optional versioned group extension links, limits, and trust semantics; verify alternate Host and configured public URL responses remain dynamic
+- [x] 5.1 Add `/hub/v1/groups` lifecycle, membership, roster, history, and message routes with existing error envelopes and authentication; verify member/non-member/owner authorization through HTTP tests
+- [x] 5.2 Enforce body, page, group size, fan-out, rate, and concurrency limits before mutation; verify oversized or malformed requests leave no database changes
+- [x] 5.3 Extend the dynamic system card with optional versioned group extension links, limits, and trust semantics; verify alternate Host and configured public URL responses remain dynamic
 - [ ] 5.4 Record group lifecycle, membership, message, delivery, and authorization events in the durable operator audit feed without secrets or full sensitive payloads; verify retrieval after restart
 
 ## 6. Client and adapter support

@@ -127,6 +127,32 @@ SELECT id, hub_id, group_id, inviter_agent_id, invitee_agent_id, state, created_
 FROM group_invitation WHERE id = ?`, id))
 }
 
+func (repository *Repository) FindPendingInvitation(ctx context.Context, groupID, inviteeAgentID string) (hub.GroupInvitation, error) {
+	return scanInvitation(repository.executor().QueryRowContext(ctx, `
+SELECT id, hub_id, group_id, inviter_agent_id, invitee_agent_id, state, created_at, expires_at, responded_at
+FROM group_invitation WHERE group_id = ? AND invitee_agent_id = ? AND state = 'PENDING'
+ORDER BY id DESC LIMIT 1`, groupID, inviteeAgentID))
+}
+
+func (repository *Repository) ListInvitations(ctx context.Context, inviteeAgentID string) ([]hub.GroupInvitation, error) {
+	rows, err := repository.executor().QueryContext(ctx, `
+SELECT id, hub_id, group_id, inviter_agent_id, invitee_agent_id, state, created_at, expires_at, responded_at
+FROM group_invitation WHERE invitee_agent_id = ? ORDER BY id`, inviteeAgentID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	invitations := make([]hub.GroupInvitation, 0)
+	for rows.Next() {
+		invitation, err := scanInvitation(rows)
+		if err != nil {
+			return nil, err
+		}
+		invitations = append(invitations, invitation)
+	}
+	return invitations, rows.Err()
+}
+
 func (repository *Repository) AcceptInvitation(ctx context.Context, id uint64, agentID string, acceptedAt time.Time) (hub.GroupMember, error) {
 	var member hub.GroupMember
 	err := repository.withTransaction(ctx, func(tx *Repository) error {

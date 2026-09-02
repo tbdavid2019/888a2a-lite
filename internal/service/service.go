@@ -320,14 +320,21 @@ func (service *Service) BuildSystemCard(baseURL string) hub.HubSystemCard {
 		RemoteExecution:      false,
 		SystemCardURL:        baseURL + "/hub/v1/system-card.json",
 		AnnouncementFeedURL:  baseURL + "/hub/v1/announcements",
+		GroupBaseURL:         baseURL + "/hub/v1/groups",
 		Limits: map[string]int64{
 			"maxRegisteredAgents": int64(service.config.MaxRegisteredAgents),
 			"maxTasksPerMinute":   int64(service.config.MaxTasksPerMinute),
 			"maxConcurrentTasks":  int64(service.config.MaxConcurrentTasks),
 			"maxPayloadBytes":     service.config.MaxPayloadBytes,
+			"maxGroupMembers":     int64(service.maxGroupMembers()),
+			"maxGroupFanout":      int64(service.maxGroupFanout()),
+			"maxGroupHistoryPage": int64(service.maxGroupHistoryPage()),
 		},
-		Extensions: []hub.SystemCardExtension{{URI: hub.AnnouncementExtensionURI, Required: false}},
-		UpdatedAt:  service.now().UTC(),
+		Extensions: []hub.SystemCardExtension{
+			{URI: hub.AnnouncementExtensionURI, Required: false},
+			{URI: hub.GroupExtensionURI, Required: false},
+		},
+		UpdatedAt: service.now().UTC(),
 	}
 }
 
