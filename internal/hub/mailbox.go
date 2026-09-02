@@ -43,6 +43,9 @@ type InboxItem struct {
 	ContextID        string        `json:"contextId"`
 	IdempotencyKey   string        `json:"idempotencyKey"`
 	Message          string        `json:"message"`
+	GroupID          string        `json:"groupId,omitempty"`
+	GroupMessageID   uint64        `json:"groupMessageId,omitempty"`
+	Trust            string        `json:"trust,omitempty"`
 	State            DeliveryState `json:"state"`
 	CreatedAt        time.Time     `json:"createdAt"`
 	AcknowledgedAt   *time.Time    `json:"acknowledgedAt,omitempty"`

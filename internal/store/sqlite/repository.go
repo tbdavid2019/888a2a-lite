@@ -40,6 +40,8 @@ func (repository *Repository) Events() store.EventStore { return repository }
 
 func (repository *Repository) Announcements() store.AnnouncementStore { return repository }
 
+func (repository *Repository) Groups() store.GroupStore { return repository }
+
 func (repository *Repository) WithTransaction(ctx context.Context, fn func(store.TxStore) error) error {
 	if repository.tx != nil {
 		return fn(repository)
@@ -269,11 +271,13 @@ func (repository *Repository) GetPolicy(ctx context.Context) (hub.HubPolicy, err
 	)
 	err := repository.executor().QueryRowContext(ctx, `
 SELECT hub_id, registration_enabled, registration_ttl_seconds, peer_lease_seconds,
-       max_registered_agents, max_tasks_per_minute, max_concurrent_tasks, max_payload_bytes
+       max_registered_agents, max_tasks_per_minute, max_concurrent_tasks, max_payload_bytes,
+       max_group_members, max_group_fanout, max_group_history_page
 FROM hub_policy ORDER BY updated_at DESC LIMIT 1`).Scan(
 		&policy.HubID, &registrationEnabled, &registrationTTLSeconds, &peerLeaseSeconds,
 		&policy.MaxRegisteredAgents, &policy.MaxTasksPerMinute, &policy.MaxConcurrentTasks,
-		&policy.MaxPayloadBytes)
+		&policy.MaxPayloadBytes, &policy.MaxGroupMembers, &policy.MaxGroupFanout,
+		&policy.MaxGroupHistoryPage)
 	if errors.Is(err, sql.ErrNoRows) {
 		return hub.HubPolicy{}, ErrNotFound
 	}
@@ -294,8 +298,8 @@ func (repository *Repository) SavePolicy(ctx context.Context, policy hub.HubPoli
 INSERT INTO hub_policy (
     hub_id, registration_enabled, registration_ttl_seconds, peer_lease_seconds,
     max_registered_agents, max_tasks_per_minute, max_concurrent_tasks,
-    max_payload_bytes, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    max_payload_bytes, max_group_members, max_group_fanout, max_group_history_page, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (hub_id) DO UPDATE SET
     registration_enabled = excluded.registration_enabled,
     registration_ttl_seconds = excluded.registration_ttl_seconds,
@@ -304,10 +308,14 @@ ON CONFLICT (hub_id) DO UPDATE SET
     max_tasks_per_minute = excluded.max_tasks_per_minute,
     max_concurrent_tasks = excluded.max_concurrent_tasks,
     max_payload_bytes = excluded.max_payload_bytes,
+    max_group_members = excluded.max_group_members,
+    max_group_fanout = excluded.max_group_fanout,
+    max_group_history_page = excluded.max_group_history_page,
     updated_at = excluded.updated_at`,
 		policy.HubID, boolInt(policy.RegistrationEnabled), int64(policy.RegistrationTTL/time.Second),
 		int64(policy.PeerLease/time.Second), policy.MaxRegisteredAgents, policy.MaxTasksPerMinute,
-		policy.MaxConcurrentTasks, policy.MaxPayloadBytes, formatTime(time.Now().UTC()))
+		policy.MaxConcurrentTasks, policy.MaxPayloadBytes, policy.MaxGroupMembers,
+		policy.MaxGroupFanout, policy.MaxGroupHistoryPage, formatTime(time.Now().UTC()))
 	return err
 }
 
@@ -348,11 +356,12 @@ func (repository *Repository) Enqueue(ctx context.Context, item hub.InboxItem) (
 		result, insertErr := tx.executor().ExecContext(ctx, `
 INSERT INTO inbox_item (
     hub_id, target_agent_id, requester_agent_id, task_id, context_id,
-    idempotency_key, message, state, created_at, acknowledged_at, canceled_at, cancel_reason
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    idempotency_key, message, state, created_at, acknowledged_at, canceled_at, cancel_reason,
+    group_id, group_message_id
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			item.HubID, item.TargetAgentID, item.RequesterAgentID, item.TaskID, item.ContextID,
 			item.IdempotencyKey, item.Message, string(item.State), formatTime(item.CreatedAt),
-			nullTimePtr(item.AcknowledgedAt), nullTimePtr(item.CanceledAt), "")
+			nullTimePtr(item.AcknowledgedAt), nullTimePtr(item.CanceledAt), "", item.GroupID, item.GroupMessageID)
 		if insertErr != nil {
 			return insertErr
 		}
@@ -370,7 +379,8 @@ INSERT INTO inbox_item (
 func (repository *Repository) FindByIdempotencyKey(ctx context.Context, key hub.IdempotencyKey) (hub.InboxItem, bool, error) {
 	item, err := repository.findInbox(ctx, `
 SELECT sequence, hub_id, target_agent_id, requester_agent_id, task_id, context_id,
-       idempotency_key, message, state, created_at, acknowledged_at, canceled_at
+       idempotency_key, message, state, created_at, acknowledged_at, canceled_at,
+       group_id, group_message_id
 FROM inbox_item
 WHERE hub_id = ? AND target_agent_id = ? AND requester_agent_id = ? AND idempotency_key = ?`,
 		key.HubID, key.TargetAgentID, key.RequesterAgentID, key.Key)
@@ -383,14 +393,14 @@ WHERE hub_id = ? AND target_agent_id = ? AND requester_agent_id = ? AND idempote
 func (repository *Repository) Poll(ctx context.Context, targetAgentID string, afterSequence uint64, limit int) ([]hub.InboxItem, error) {
 	rows, err := repository.executor().QueryContext(ctx, `
 SELECT sequence, hub_id, target_agent_id, requester_agent_id, task_id, context_id,
-       idempotency_key, message, state, created_at, acknowledged_at, canceled_at
+       idempotency_key, message, state, created_at, acknowledged_at, canceled_at,
+       group_id, group_message_id
 FROM inbox_item
 WHERE target_agent_id = ? AND sequence > ? AND state = 'PENDING'
 ORDER BY sequence LIMIT ?`, targetAgentID, afterSequence, limit)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
 	items := make([]hub.InboxItem, 0, limit)
 	for rows.Next() {
 		item, err := scanInbox(rows)
@@ -399,7 +409,22 @@ ORDER BY sequence LIMIT ?`, targetAgentID, afterSequence, limit)
 		}
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	for _, item := range items {
+		if item.GroupMessageID == 0 {
+			continue
+		}
+		if _, err := repository.executor().ExecContext(ctx, "UPDATE group_delivery SET polled_at = COALESCE(polled_at, ?) WHERE sequence = ? AND state = 'PENDING'", formatTime(time.Now().UTC()), item.Sequence); err != nil {
+			return nil, err
+		}
+	}
+	return items, nil
 }
 
 func (repository *Repository) findInbox(ctx context.Context, query string, args ...any) (hub.InboxItem, error) {
@@ -431,6 +456,11 @@ WHERE target_agent_id = ? AND sequence = ? AND state = 'PENDING'`,
 	}
 	if affected, _ := result.RowsAffected(); affected != 1 {
 		return ErrNotFound
+	}
+	if _, err := repository.executor().ExecContext(ctx, `
+UPDATE group_delivery SET state = 'ACKNOWLEDGED', acknowledged_at = ?
+WHERE sequence = ? AND state = 'PENDING'`, formatTime(acknowledgedAt), sequence); err != nil {
+		return err
 	}
 	return nil
 }
@@ -683,7 +713,7 @@ func scanInbox(row scanner) (hub.InboxItem, error) {
 	err := row.Scan(
 		&item.Sequence, &item.HubID, &item.TargetAgentID, &item.RequesterAgentID,
 		&item.TaskID, &item.ContextID, &item.IdempotencyKey, &item.Message, &state,
-		&created, &acknowledged, &canceled)
+		&created, &acknowledged, &canceled, &item.GroupID, &item.GroupMessageID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return hub.InboxItem{}, ErrNotFound
 	}

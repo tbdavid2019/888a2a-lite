@@ -5,9 +5,9 @@
 
 ## 2. Durable SQLite storage
 
-- [ ] 2.1 Add additive SQLite WAL migration for groups, memberships, invitations, group messages, and group deliveries with foreign keys and indexes; verify migration preserves existing Agent, direct inbox, announcement, and event rows in CI
-- [ ] 2.2 Implement repository transactions for group lifecycle, invitations, membership changes, and ownership transfer; verify idempotent accept/leave/remove/archive behavior and rollback on invalid mutations
-- [ ] 2.3 Implement atomic group message fan-out and per-recipient delivery lookup/ACK/cancel persistence; verify no partial fan-out occurs when a limit, membership, or storage check fails
+- [x] 2.1 Add additive SQLite WAL migration for groups, memberships, invitations, group messages, and group deliveries with foreign keys and indexes; verify migration preserves existing Agent, direct inbox, announcement, and event rows in CI
+- [x] 2.2 Implement repository transactions for group lifecycle, invitations, membership changes, and ownership transfer; verify idempotent accept/leave/remove/archive behavior and rollback on invalid mutations
+- [x] 2.3 Implement atomic group message fan-out and per-recipient delivery lookup/ACK/cancel persistence; verify no partial fan-out occurs when a limit, membership, or storage check fails
 
 ## 3. Group domain service
 

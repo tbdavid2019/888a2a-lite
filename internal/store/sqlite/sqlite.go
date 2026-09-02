@@ -12,6 +12,12 @@ import (
 
 const defaultBusyTimeout = 5000
 
+const (
+	MaxGroupMembersDefault     = 32
+	MaxGroupFanoutDefault      = 32
+	MaxGroupHistoryPageDefault = 100
+)
+
 type DB struct {
 	db *sql.DB
 }
@@ -69,7 +75,50 @@ func sqliteQuery() string {
 }
 
 func (database *DB) migrate(ctx context.Context) error {
-	_, err := database.db.ExecContext(ctx, schemaSQL)
+	if _, err := database.db.ExecContext(ctx, schemaSQL); err != nil {
+		return err
+	}
+	for _, column := range []struct {
+		table string
+		name  string
+		ddl   string
+	}{
+		{table: "hub_policy", name: "max_group_members", ddl: "INTEGER NOT NULL DEFAULT 32"},
+		{table: "hub_policy", name: "max_group_fanout", ddl: "INTEGER NOT NULL DEFAULT 32"},
+		{table: "hub_policy", name: "max_group_history_page", ddl: "INTEGER NOT NULL DEFAULT 100"},
+		{table: "inbox_item", name: "group_id", ddl: "TEXT NOT NULL DEFAULT ''"},
+		{table: "inbox_item", name: "group_message_id", ddl: "INTEGER NOT NULL DEFAULT 0"},
+	} {
+		if err := ensureColumn(ctx, database.db, column.table, column.name, column.ddl); err != nil {
+			return err
+		}
+	}
+	_, err := database.db.ExecContext(ctx, `INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (3, CURRENT_TIMESTAMP)`)
+	return err
+}
+
+func ensureColumn(ctx context.Context, database *sql.DB, table, column, definition string) error {
+	rows, err := database.QueryContext(ctx, "PRAGMA table_info("+table+")")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var cid int
+		var name, columnType string
+		var notNull, primaryKey int
+		var defaultValue sql.NullString
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			return err
+		}
+		if name == column {
+			return rows.Err()
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	_, err = database.ExecContext(ctx, "ALTER TABLE "+table+" ADD COLUMN "+column+" "+definition)
 	return err
 }
 
@@ -83,6 +132,9 @@ CREATE TABLE IF NOT EXISTS hub_policy (
     max_tasks_per_minute INTEGER NOT NULL,
     max_concurrent_tasks INTEGER NOT NULL,
     max_payload_bytes INTEGER NOT NULL,
+    max_group_members INTEGER NOT NULL DEFAULT 32,
+    max_group_fanout INTEGER NOT NULL DEFAULT 32,
+    max_group_history_page INTEGER NOT NULL DEFAULT 100,
     updated_at TEXT NOT NULL
 );
 
@@ -125,6 +177,8 @@ CREATE TABLE IF NOT EXISTS inbox_item (
     acknowledged_at TEXT,
     canceled_at TEXT,
     cancel_reason TEXT NOT NULL DEFAULT '',
+    group_id TEXT NOT NULL DEFAULT '',
+    group_message_id INTEGER NOT NULL DEFAULT 0,
     UNIQUE (hub_id, target_agent_id, requester_agent_id, idempotency_key),
     FOREIGN KEY (hub_id, target_agent_id) REFERENCES agent (hub_id, agent_id),
     FOREIGN KEY (hub_id, requester_agent_id) REFERENCES agent (hub_id, agent_id)
@@ -132,6 +186,9 @@ CREATE TABLE IF NOT EXISTS inbox_item (
 
 CREATE INDEX IF NOT EXISTS idx_inbox_pending
     ON inbox_item (hub_id, target_agent_id, state, sequence);
+
+CREATE INDEX IF NOT EXISTS idx_inbox_group_message
+    ON inbox_item (hub_id, group_id, group_message_id, target_agent_id, state);
 
 CREATE TABLE IF NOT EXISTS event_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -170,6 +227,95 @@ CREATE TABLE IF NOT EXISTS announcement (
 
 CREATE INDEX IF NOT EXISTS idx_announcement_active
     ON announcement (hub_id, status, id);
+
+CREATE TABLE IF NOT EXISTS agent_group (
+    hub_id TEXT NOT NULL,
+    group_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('ACTIVE', 'ARCHIVED')),
+    owner_agent_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    archived_at TEXT,
+    PRIMARY KEY (hub_id, group_id),
+    FOREIGN KEY (hub_id, owner_agent_id) REFERENCES agent (hub_id, agent_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_group_owner
+    ON agent_group (hub_id, owner_agent_id, state, created_at);
+
+CREATE TABLE IF NOT EXISTS group_member (
+    hub_id TEXT NOT NULL,
+    group_id TEXT NOT NULL,
+    agent_id TEXT NOT NULL,
+    role TEXT NOT NULL CHECK (role IN ('OWNER', 'ADMIN', 'MEMBER')),
+    state TEXT NOT NULL CHECK (state IN ('ACTIVE', 'LEFT', 'REMOVED')),
+    joined_at TEXT NOT NULL,
+    left_at TEXT,
+    removed_at TEXT,
+    PRIMARY KEY (hub_id, group_id, agent_id),
+    FOREIGN KEY (hub_id, group_id) REFERENCES agent_group (hub_id, group_id),
+    FOREIGN KEY (hub_id, agent_id) REFERENCES agent (hub_id, agent_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_group_member_agent
+    ON group_member (hub_id, agent_id, state, group_id);
+
+CREATE TABLE IF NOT EXISTS group_invitation (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    hub_id TEXT NOT NULL,
+    group_id TEXT NOT NULL,
+    inviter_agent_id TEXT NOT NULL,
+    invitee_agent_id TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('PENDING', 'ACCEPTED', 'DECLINED', 'EXPIRED', 'REVOKED')),
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    responded_at TEXT,
+    FOREIGN KEY (hub_id, group_id) REFERENCES agent_group (hub_id, group_id),
+    FOREIGN KEY (hub_id, inviter_agent_id) REFERENCES agent (hub_id, agent_id),
+    FOREIGN KEY (hub_id, invitee_agent_id) REFERENCES agent (hub_id, agent_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_group_invitation_recipient
+    ON group_invitation (hub_id, invitee_agent_id, state, expires_at);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_group_invitation_pending
+    ON group_invitation (hub_id, group_id, invitee_agent_id) WHERE state = 'PENDING';
+
+CREATE TABLE IF NOT EXISTS group_message (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    hub_id TEXT NOT NULL,
+    group_id TEXT NOT NULL,
+    sender_agent_id TEXT NOT NULL,
+    context_id TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL,
+    message TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE (hub_id, group_id, sender_agent_id, idempotency_key),
+    FOREIGN KEY (hub_id, group_id) REFERENCES agent_group (hub_id, group_id),
+    FOREIGN KEY (hub_id, sender_agent_id) REFERENCES agent (hub_id, agent_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_group_message_history
+    ON group_message (hub_id, group_id, id);
+
+CREATE TABLE IF NOT EXISTS group_delivery (
+    sequence INTEGER PRIMARY KEY,
+    hub_id TEXT NOT NULL,
+    group_id TEXT NOT NULL,
+    group_message_id INTEGER NOT NULL,
+    target_agent_id TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('PENDING', 'ACKNOWLEDGED', 'CANCELED')),
+    polled_at TEXT,
+    acknowledged_at TEXT,
+    canceled_at TEXT,
+    FOREIGN KEY (sequence) REFERENCES inbox_item (sequence),
+    FOREIGN KEY (hub_id, group_id) REFERENCES agent_group (hub_id, group_id),
+    FOREIGN KEY (group_message_id) REFERENCES group_message (id),
+    FOREIGN KEY (hub_id, target_agent_id) REFERENCES agent (hub_id, agent_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_group_delivery_target
+    ON group_delivery (hub_id, target_agent_id, state, sequence);
 
 INSERT OR IGNORE INTO schema_migrations (version, applied_at)
 VALUES (2, CURRENT_TIMESTAMP);

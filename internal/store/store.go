@@ -12,6 +12,7 @@ var (
 	ErrNotFound     = errors.New("store record not found")
 	ErrCanceled     = errors.New("store inbox item is canceled")
 	ErrInvalidState = errors.New("store record has an invalid state")
+	ErrForbidden    = errors.New("store operation is forbidden")
 )
 
 type AgentStore interface {
@@ -56,12 +57,31 @@ type AnnouncementStore interface {
 	CreateRevision(context.Context, uint64, hub.AnnouncementInput, time.Time) (hub.Announcement, error)
 }
 
+type GroupStore interface {
+	CreateGroup(context.Context, hub.Group) (hub.Group, error)
+	FindGroup(context.Context, string) (hub.Group, error)
+	ListGroups(context.Context, string) ([]hub.Group, error)
+	FindMember(context.Context, string, string) (hub.GroupMember, error)
+	ListMembers(context.Context, string) ([]hub.GroupMember, error)
+	CreateInvitation(context.Context, hub.GroupInvitation) (hub.GroupInvitation, error)
+	FindInvitation(context.Context, uint64) (hub.GroupInvitation, error)
+	AcceptInvitation(context.Context, uint64, string, time.Time) (hub.GroupMember, error)
+	LeaveGroup(context.Context, string, string, time.Time) error
+	RemoveMember(context.Context, string, string, time.Time) error
+	TransferOwnership(context.Context, string, string, string) error
+	ArchiveGroup(context.Context, string, time.Time) error
+	SendGroupMessage(context.Context, hub.GroupMessage, int) (hub.GroupMessage, bool, error)
+	ListGroupMessages(context.Context, string, string, uint64, int) ([]hub.GroupMessage, error)
+	CancelPendingGroupDeliveries(context.Context, string, string, time.Time) error
+}
+
 type TxStore interface {
 	Agents() AgentStore
 	Policy() PolicyStore
 	Inbox() InboxStore
 	Events() EventStore
 	Announcements() AnnouncementStore
+	Groups() GroupStore
 }
 
 type Store interface {
