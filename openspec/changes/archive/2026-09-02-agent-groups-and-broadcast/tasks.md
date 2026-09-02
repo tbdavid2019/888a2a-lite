@@ -28,7 +28,7 @@
 - [x] 5.1 Add `/hub/v1/groups` lifecycle, membership, roster, history, and message routes with existing error envelopes and authentication; verify member/non-member/owner authorization through HTTP tests
 - [x] 5.2 Enforce body, page, group size, fan-out, rate, and concurrency limits before mutation; verify oversized or malformed requests leave no database changes
 - [x] 5.3 Extend the dynamic system card with optional versioned group extension links, limits, and trust semantics; verify alternate Host and configured public URL responses remain dynamic
-- [ ] 5.4 Record group lifecycle, membership, message, delivery, and authorization events in the durable operator audit feed without secrets or full sensitive payloads; verify retrieval after restart
+- [x] 5.4 Record group lifecycle, membership, message, delivery, and authorization events in the durable operator audit feed without secrets or full sensitive payloads; verify retrieval after restart
 
 ## 6. Client and adapter support
 
@@ -38,12 +38,12 @@
 
 ## 7. Security and integration tests
 
-- [ ] 7.1 Add unit and integration coverage for credential separation, invitation consent, role boundaries, removed-member visibility, injection-like content, and no-secret responses; verify all tests pass in GitHub Actions
-- [ ] 7.2 Add a three-Agent end-to-end flow covering group creation, invite/accept, roster online state, group message fan-out, partial ACK, offline recovery, duplicate send, leave/remove, and archive; verify no duplicate deliveries
-- [ ] 7.3 Add Hub restart recovery coverage for group history, pending deliveries, cursors, and existing direct mailbox data; verify the same SQLite volume preserves all required state
+- [x] 7.1 Add unit and integration coverage for credential separation, invitation consent, role boundaries, removed-member visibility, injection-like content, and no-secret responses; verify all tests pass in GitHub Actions
+- [x] 7.2 Add a three-Agent end-to-end flow covering group creation, invite/accept, roster online state, group message fan-out, partial ACK, offline recovery, duplicate send, leave/remove, and archive; verify no duplicate deliveries
+- [x] 7.3 Add Hub restart recovery coverage for group history, pending deliveries, cursors, and existing direct mailbox data; verify the same SQLite volume preserves all required state
 
 ## 8. Documentation and remote delivery
 
 - [x] 8.1 Update README, `llms.txt`, system-card examples, API documentation, and CHANGELOG with group routes, optional A2A extension boundary, membership model, cursor/ACK behavior, and prompt-injection defenses; verify links and llmstxt format in CI
-- [ ] 8.2 Run the group smoke flow on `david@10.9.0.11` against the image deployment, verify health, group routes, `/data/hub.db` persistence, and that the old `888a2a` service remains stopped; redact all credentials
-- [ ] 8.3 Verify GitHub Actions tests, static checks, container build, multi-platform Docker publish, and scoped Watchtower update; verify the remote Hub is healthy after image replacement and the group history/feed survives
+- [x] 8.2 Run the group smoke flow on `david@10.9.0.11` against the image deployment, verify health, group routes, `/data/hub.db` persistence, and that the old `888a2a` service remains stopped; redact all credentials
+- [x] 8.3 Verify GitHub Actions tests, static checks, container build, multi-platform Docker publish, and scoped Watchtower update; verify the remote Hub is healthy after image replacement and the group history/feed survives

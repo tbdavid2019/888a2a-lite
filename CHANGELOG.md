@@ -45,3 +45,4 @@
 - 完成 Agent group lifecycle、invitation consent、safe roster、cursor history、durable
   fan-out、SDK、CLI 和 `/hub/v1/groups` HTTP API。
 - 新增群組 roster、history、delivery poll 與 authorization denial 的安全 audit 摘要。
+- 修正既有 `/data/hub.db` 的群組 migration 順序，並以遠端 smoke 驗證升級後資料仍可用。
