@@ -85,6 +85,7 @@ func runServer(args []string) error {
 		return fmt.Errorf("read hub policy: %w", err)
 	}
 	hubService := service.New(repository, cfg)
+	hubService.RecordEvent(ctx, hub.EventHubStarted)
 	httpServer := &http.Server{
 		Addr:              cfg.ListenAddr,
 		Handler:           service.NewHTTPServer(hubService).Handler(),
@@ -102,6 +103,7 @@ func runServer(args []string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		_ = httpServer.Shutdown(ctx)
+		hubService.RecordEvent(context.Background(), hub.EventHubStopped)
 	}()
 	log.Printf("888a2a-lite listening on %s", cfg.ListenAddr)
 	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
