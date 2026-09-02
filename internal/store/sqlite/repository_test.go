@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"path/filepath"
 	"sync"
@@ -386,17 +387,47 @@ func TestRepositoryPersistsGroupLifecycleAndFanout(t *testing.T) {
 func TestRepositoryMigratesExistingDatabaseForGroups(t *testing.T) {
 	ctx := context.Background()
 	databasePath := filepath.Join(t.TempDir(), "hub.db")
-	database, err := Open(ctx, databasePath)
+	legacy, err := sql.Open("sqlite", sqliteDSN(databasePath))
 	if err != nil {
-		t.Fatalf("initial Open: %v", err)
+		t.Fatalf("open legacy database: %v", err)
 	}
-	if _, err := database.SQL().ExecContext(ctx, "INSERT INTO hub_policy (hub_id, registration_enabled, registration_ttl_seconds, peer_lease_seconds, max_registered_agents, max_tasks_per_minute, max_concurrent_tasks, max_payload_bytes, updated_at) VALUES (?, 1, 86400, 90, 10, 20, 4, 1024, ?)", "legacy", time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
-		t.Fatalf("insert legacy policy: %v", err)
+	_, err = legacy.ExecContext(ctx, `
+CREATE TABLE hub_policy (
+    hub_id TEXT PRIMARY KEY NOT NULL,
+    registration_enabled INTEGER NOT NULL,
+    registration_ttl_seconds INTEGER NOT NULL,
+    peer_lease_seconds INTEGER NOT NULL,
+    max_registered_agents INTEGER NOT NULL,
+    max_tasks_per_minute INTEGER NOT NULL,
+    max_concurrent_tasks INTEGER NOT NULL,
+    max_payload_bytes INTEGER NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE agent (
+    hub_id TEXT NOT NULL, agent_id TEXT NOT NULL, registration_key_hash TEXT NOT NULL,
+    token_hash TEXT NOT NULL, display_name TEXT NOT NULL, provider_family TEXT NOT NULL,
+    transport_id TEXT NOT NULL, capabilities_json TEXT NOT NULL, agent_card_json TEXT NOT NULL DEFAULT '',
+    automatic_execution INTEGER NOT NULL DEFAULT 0, state TEXT NOT NULL, last_seen_at TEXT,
+    expires_at TEXT NOT NULL, lease_expires_at TEXT, created_at TEXT NOT NULL, revoked_at TEXT,
+    revoke_reason TEXT NOT NULL DEFAULT '', PRIMARY KEY (hub_id, agent_id)
+);
+CREATE TABLE inbox_item (
+    sequence INTEGER PRIMARY KEY AUTOINCREMENT, hub_id TEXT NOT NULL, target_agent_id TEXT NOT NULL,
+    requester_agent_id TEXT NOT NULL, task_id TEXT NOT NULL, context_id TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL, message TEXT NOT NULL, state TEXT NOT NULL,
+    created_at TEXT NOT NULL, acknowledged_at TEXT, canceled_at TEXT,
+    cancel_reason TEXT NOT NULL DEFAULT '', UNIQUE (hub_id, target_agent_id, requester_agent_id, idempotency_key)
+);
+CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
+INSERT INTO hub_policy VALUES ('legacy', 1, 86400, 90, 10, 20, 4, 1024, ?);
+INSERT INTO schema_migrations VALUES (2, ?);`, time.Now().UTC().Format(time.RFC3339Nano), time.Now().UTC().Format(time.RFC3339Nano))
+	if err != nil {
+		t.Fatalf("create legacy schema: %v", err)
 	}
-	if err := database.Close(); err != nil {
+	if err := legacy.Close(); err != nil {
 		t.Fatalf("close legacy database: %v", err)
 	}
-	database, err = Open(ctx, databasePath)
+	database, err := Open(ctx, databasePath)
 	if err != nil {
 		t.Fatalf("reopen legacy database: %v", err)
 	}

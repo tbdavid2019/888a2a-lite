@@ -93,6 +93,10 @@ func (database *DB) migrate(ctx context.Context) error {
 			return err
 		}
 	}
+	if _, err := database.db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_inbox_group_message
+ON inbox_item (hub_id, group_id, group_message_id, target_agent_id, state)`); err != nil {
+		return err
+	}
 	_, err := database.db.ExecContext(ctx, `INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (3, CURRENT_TIMESTAMP)`)
 	return err
 }
@@ -186,9 +190,6 @@ CREATE TABLE IF NOT EXISTS inbox_item (
 
 CREATE INDEX IF NOT EXISTS idx_inbox_pending
     ON inbox_item (hub_id, target_agent_id, state, sequence);
-
-CREATE INDEX IF NOT EXISTS idx_inbox_group_message
-    ON inbox_item (hub_id, group_id, group_message_id, target_agent_id, state);
 
 CREATE TABLE IF NOT EXISTS event_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
