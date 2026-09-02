@@ -61,7 +61,11 @@ func runServer(args []string) error {
 	if err != nil {
 		return err
 	}
-	defer database.Close()
+	defer func() {
+		if err := database.Close(); err != nil {
+			log.Printf("close database: %v", err)
+		}
+	}()
 	repository := sqlite.NewRepository(database)
 	defaultPolicy := hub.HubPolicy{
 		HubID:               cfg.HubID,

@@ -23,7 +23,11 @@ func TestHTTPThreeAgentDeliveryAndAuthorizationBoundaries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sqlite.Open: %v", err)
 	}
-	defer database.Close()
+	defer func() {
+		if err := database.Close(); err != nil {
+			t.Errorf("close database: %v", err)
+		}
+	}()
 	repository := sqlite.NewRepository(database)
 	cfg := config.Config{
 		HubID:                 "public",
