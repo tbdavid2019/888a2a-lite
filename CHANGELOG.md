@@ -40,3 +40,5 @@
 - 將公告 system card 與 announcement specs 同步至主規格，並封存已完成的 OpenSpec change。
 - 補充公告管理頁的 Operator Token 說明，明確區分部署管理密鑰、Docker Hub／GitHub Token
   和 Agent Token。
+- 新增 `agent-groups-and-broadcast` OpenSpec，定義 Agent 群組、邀請／成員權限、presence、
+  群聊歷史、fan-out delivery、ACK／retry、重啟恢復與安全邊界。
