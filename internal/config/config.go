@@ -106,10 +106,10 @@ func (config Config) Validate() error {
 	if config.RegistrationTTL <= 0 || config.PeerLease <= 0 || config.PeerLease > config.RegistrationTTL {
 		return fmt.Errorf("peer lease and registration ttl are invalid")
 	}
-	if config.MaxRegisteredAgents <= 0 || config.MaxTasksPerMinute <= 0 || config.MaxConcurrentTasks <= 0 || config.RegistrationPerMinute <= 0 || config.MaxGroupMembers <= 0 || config.MaxGroupFanout <= 0 || config.MaxGroupHistoryPage <= 0 {
+	if config.MaxRegisteredAgents <= 0 || config.MaxTasksPerMinute <= 0 || config.MaxConcurrentTasks <= 0 || config.RegistrationPerMinute <= 0 || config.MaxGroupMembers < 0 || config.MaxGroupFanout < 0 || config.MaxGroupHistoryPage < 0 {
 		return fmt.Errorf("agent and rate limits must be positive")
 	}
-	if config.MaxGroupMembers > hubMaxGroupMembers() || config.MaxGroupFanout > hubMaxGroupMembers() || config.MaxGroupHistoryPage > hubMaxGroupHistoryPage() {
+	if (config.MaxGroupMembers != 0 && config.MaxGroupMembers > hubMaxGroupMembers()) || (config.MaxGroupFanout != 0 && config.MaxGroupFanout > hubMaxGroupMembers()) || (config.MaxGroupHistoryPage != 0 && config.MaxGroupHistoryPage > hubMaxGroupHistoryPage()) {
 		return fmt.Errorf("group limits exceed safe maximums")
 	}
 	if config.MaxPayloadBytes <= 0 || config.MaxPayloadBytes > 16<<20 {
