@@ -1,6 +1,7 @@
 package service
 
 import (
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"io"
@@ -14,6 +15,9 @@ import (
 	"github.com/tbdavid2019/888a2a-lite/internal/hub"
 	"github.com/tbdavid2019/888a2a-lite/internal/store"
 )
+
+//go:embed llms.txt
+var llmsText []byte
 
 type HTTPServer struct {
 	service             *Service
@@ -36,6 +40,7 @@ func NewHTTPServer(service *Service) *HTTPServer {
 func (server *HTTPServer) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", server.health)
+	mux.HandleFunc("GET /llms.txt", server.llms)
 	mux.HandleFunc("GET /hub/v1/status", server.status)
 	mux.HandleFunc("POST /hub/v1/agents/register", server.register)
 	mux.HandleFunc("GET /hub/v1/agents", server.listAgents)
@@ -55,6 +60,12 @@ func (server *HTTPServer) Handler() http.Handler {
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		mux.ServeHTTP(w, r)
 	})
+}
+
+func (server *HTTPServer) llms(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(llmsText)
 }
 
 func (server *HTTPServer) health(w http.ResponseWriter, r *http.Request) {
