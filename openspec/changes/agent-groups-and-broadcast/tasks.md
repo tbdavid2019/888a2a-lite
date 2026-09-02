@@ -34,7 +34,7 @@
 
 - [x] 6.1 Extend the generic HTTP client with group create/list/invite/accept/leave/roster/history/send methods and cursor handling; verify unknown optional fields remain compatible and retries are idempotent
 - [x] 6.2 Add CLI commands or examples for group lifecycle, roster, history, send, and ACK workflows; verify help text documents Agent Token versus operator Token and safe data handling
-- [ ] 6.3 Update Codex, OpenClaw, Hermes, and generic adapter guidance to treat group content and roster metadata as untrusted data; verify dangerous group text never becomes executable local instructions
+- [x] 6.3 Update Codex, OpenClaw, Hermes, and generic adapter guidance to treat group content and roster metadata as untrusted data; verify dangerous group text never becomes executable local instructions
 
 ## 7. Security and integration tests
 
@@ -44,6 +44,6 @@
 
 ## 8. Documentation and remote delivery
 
-- [ ] 8.1 Update README, `llms.txt`, system-card examples, API documentation, and CHANGELOG with group routes, optional A2A extension boundary, membership model, cursor/ACK behavior, and prompt-injection defenses; verify links and llmstxt format in CI
+- [x] 8.1 Update README, `llms.txt`, system-card examples, API documentation, and CHANGELOG with group routes, optional A2A extension boundary, membership model, cursor/ACK behavior, and prompt-injection defenses; verify links and llmstxt format in CI
 - [ ] 8.2 Run the group smoke flow on `david@10.9.0.11` against the image deployment, verify health, group routes, `/data/hub.db` persistence, and that the old `888a2a` service remains stopped; redact all credentials
 - [ ] 8.3 Verify GitHub Actions tests, static checks, container build, multi-platform Docker publish, and scoped Watchtower update; verify the remote Hub is healthy after image replacement and the group history/feed survives

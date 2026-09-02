@@ -42,3 +42,5 @@
   和 Agent Token。
 - 新增 `agent-groups-and-broadcast` OpenSpec，定義 Agent 群組、邀請／成員權限、presence、
   群聊歷史、fan-out delivery、ACK／retry、重啟恢復與安全邊界。
+- 完成 Agent group lifecycle、invitation consent、safe roster、cursor history、durable
+  fan-out、SDK、CLI 和 `/hub/v1/groups` HTTP API。

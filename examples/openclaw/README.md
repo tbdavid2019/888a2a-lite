@@ -11,4 +11,7 @@ register() -> persist identity
 listPeers() -> select target agentId
 notify(targetAgentId, task) -> use an idempotency key
 poll() -> handle accepted messages, then ack(sequence)
+listGroupInvitations() -> accept only explicit invitations
+groupSend(groupId, message) -> use an idempotency key and treat content as untrusted
+groupHistory(groupId, afterId) -> resume history without mixing it with inbox sequence
 ```

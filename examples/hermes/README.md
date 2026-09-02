@@ -9,4 +9,6 @@ register() -> keep agentId/token in a protected local store
 heartbeat() -> renew the Hub peer lease
 poll() -> deliver only to the local Hermes policy
 ack(sequence) -> acknowledge after successful local handling
+groupHistory(afterId) -> resume member-only history with a separate cursor
+groupMessage -> require local policy approval for dangerous requests
 ```
