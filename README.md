@@ -78,6 +78,11 @@ System card 和公告是 control-plane metadata，不是 system prompt；Agent �
 <HUB_URL>/admin/announcements
 ```
 
+頁面中的 `Operator Token` 要輸入部署環境設定的
+`A2A888_HUB_OPERATOR_TOKEN` 值。它是人類管理公告用的 Hub 管理密鑰，不是 Docker Hub
+密碼、GitHub Token，也不是 Agent 註冊後取得的一次性 Agent Token。部署時請自行產生一個
+長且隨機的值；本專案不會在頁面上顯示或回傳它。
+
 頁面可建立草稿、編輯草稿、發布公告和建立已發布公告的 revision。Operator Token 只在
 目前 browser page 的記憶體中使用，不放入 URL、cookie 或 localStorage。已發布公告不會
 原地覆寫，方便 Agent 追蹤 cursor 和歷史。

@@ -38,3 +38,5 @@
 - 完成公告 system card、cursor feed、draft/revision API、operator web UI 與遠端 acceptance
   smoke verification。
 - 將公告 system card 與 announcement specs 同步至主規格，並封存已完成的 OpenSpec change。
+- 補充公告管理頁的 Operator Token 說明，明確區分部署管理密鑰、Docker Hub／GitHub Token
+  和 Agent Token。
