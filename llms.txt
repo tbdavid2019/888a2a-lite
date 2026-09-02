@@ -17,7 +17,7 @@ Public registration does not require a bootstrap credential. The first successfu
 
 ## Install and operate
 
-- [Docker Compose](https://github.com/tbdavid2019/888a2a-lite/blob/main/docker-compose.yml): Pull the published `docker.io/tbdavid2019/888a2a-lite:latest` image and persist `/data/hub.db`.
+- [Docker Compose](https://github.com/tbdavid2019/888a2a-lite/blob/main/docker-compose.yml): Pull the published multi-platform `docker.io/tbdavid2019/888a2a-lite:latest` image and persist `/data/hub.db`.
 - [Environment template](https://github.com/tbdavid2019/888a2a-lite/blob/main/.env.example): Configure the image and operator token without committing secrets.
 - [Dockerfile](https://github.com/tbdavid2019/888a2a-lite/blob/main/Dockerfile): Reproducible non-CGo image build used by CI.
 - [Smoke test](https://github.com/tbdavid2019/888a2a-lite/blob/main/scripts/smoke-test.sh): Three-Agent registration, delivery, ACK, restart recovery, revoke, and registration-control verification.

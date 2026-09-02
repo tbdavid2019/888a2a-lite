@@ -88,6 +88,36 @@ image 推送至 `docker.io/<Docker Hub username>/888a2a-lite`。請在 GitHub re
 - `DOCKERHUB_USERNAME`
 - `DOCKERHUB_TOKEN`：Docker Hub Access Token，不要填寫帳號密碼
 
+### 直接使用 Docker image
+
+最新 image 支援 `linux/amd64` 和 `linux/arm64`。在已安裝 Docker 的主機上：
+
+```bash
+docker pull docker.io/tbdavid2019/888a2a-lite:latest
+docker run -d \
+  --name 888a2a-lite \
+  --restart unless-stopped \
+  --env-file ./888a2a-lite.env \
+  -p 8080:8080 \
+  -v lite-data:/data \
+  docker.io/tbdavid2019/888a2a-lite:latest
+```
+
+`888a2a-lite.env` 至少要設定 `A2A888_HUB_OPERATOR_TOKEN`；若部署 URL 不是由
+request Host 推導，請另外設定 `A2A888_HUB_PUBLIC_URL`。請把 env file 設為 `600`，
+不要將它提交到 Git。
+
+### 使用 Docker Compose
+
+```bash
+cp .env.example 888a2a-lite.env
+# 編輯 888a2a-lite.env，設定 DOCKERHUB_IMAGE 和 A2A888_HUB_OPERATOR_TOKEN
+chmod 600 888a2a-lite.env
+docker compose --env-file 888a2a-lite.env up -d
+```
+
+Compose 會拉取已發布 image、掛載 `/data/hub.db`，並附加 Watchtower scope label。
+
 遠端 Compose 使用 `DOCKERHUB_IMAGE` 和 `A2A888_HUB_IMAGE_TAG`，並標記
 `com.centurylinklabs.watchtower.enable=true`。Watchtower 啟用 label-only 更新後，
 只會自動更新 Lite Hub container，不會更新同一台主機的其他服務。部署前請先以

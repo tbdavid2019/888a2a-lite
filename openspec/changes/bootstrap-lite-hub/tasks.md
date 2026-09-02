@@ -46,3 +46,7 @@
 
 - [x] 7.1 Generate `/llms.txt` links from configured public URL or request origin and verify alternate deployment hosts in CI.
 - [x] 7.2 Persist safe Hub audit events in SQLite and expose operator-only cursor retrieval; verify restart recovery and secret/payload exclusion in CI.
+
+## 8. Multi-platform image delivery
+
+- [ ] 8.1 Build and publish Docker image manifests for `linux/amd64` and `linux/arm64`, document both `docker run` and Compose installation paths, and verify both platforms in GitHub Actions.

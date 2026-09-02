@@ -29,3 +29,5 @@
 - `/llms.txt` 改為依 `A2A888_HUB_PUBLIC_URL` 或目前 request origin 動態產生部署連結。
 - 新增持久化 `event_log` 與 operator-only `GET /hub/v1/admin/events`，供日後調閱 Hub
   操作摘要。
+- README 新增 Docker image／Compose 安裝方式，並將 Docker Hub publish 改為
+  `linux/amd64` 與 `linux/arm64` 雙平台 image。
