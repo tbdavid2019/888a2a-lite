@@ -1,6 +1,7 @@
 # Local configuration and credentials
 .env
 .env.*
+!.env.example
 *.credentials.json
 *.token
 

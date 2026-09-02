@@ -31,3 +31,17 @@ SQLite 資料庫位於 `/data/hub.db`，HTTP API 使用 `/hub/v1` 路徑。
 依 [`AGENTS.md`](AGENTS.md) 規定，本專案不在本機執行測試或 build。Go format、static
 checks、tests、container checks 與 smoke verification 會由 GitHub Actions 或指定的
 `david@10.9.0.11` 遠端環境執行。
+
+## Docker Hub 與 Watchtower
+
+`.github/workflows/docker-publish.yml` 會在 `main` 或 release tag 通過驗證後，將
+image 推送至 `docker.io/<Docker Hub username>/888a2a-lite`。請在 GitHub repository
+設定以下 Actions secrets：
+
+- `DOCKERHUB_USERNAME`
+- `DOCKERHUB_TOKEN`：Docker Hub Access Token，不要填寫帳號密碼
+
+遠端 Compose 使用 `DOCKERHUB_IMAGE` 和 `A2A888_HUB_IMAGE_TAG`，並標記
+`com.centurylinklabs.watchtower.enable=true`。Watchtower 啟用 label-only 更新後，
+只會自動更新 Lite Hub container，不會更新同一台主機的其他服務。部署前請先以
+`.env.example` 建立遠端環境設定，並將該檔案權限設為 `600`。

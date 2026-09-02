@@ -18,3 +18,5 @@
   Docker Compose 和三種 adapter 文件範例的第一版實作。
 - 在 `david@10.9.0.11` 完成三-Agent註冊、Peer discovery、通知、ACK、重啟恢復、revoke
   和 registration control smoke verification。
+- 新增 Docker Hub publish workflow、image-based Compose 設定與 Watchtower label-only
+  更新設定。
