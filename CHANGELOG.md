@@ -37,3 +37,4 @@
   editor 的 OpenSpec change，準備進入實作。
 - 完成公告 system card、cursor feed、draft/revision API、operator web UI 與遠端 acceptance
   smoke verification。
+- 將公告 system card 與 announcement specs 同步至主規格，並封存已完成的 OpenSpec change。
