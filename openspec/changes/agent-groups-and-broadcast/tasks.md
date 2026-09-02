@@ -1,7 +1,7 @@
 ## 1. Contract and policy foundation
 
-- [ ] 1.1 Define group, membership, invitation, roster, group message, history cursor, and per-recipient delivery types; verify JSON compatibility and package tests in GitHub Actions
-- [ ] 1.2 Define group roles, membership states, stable error codes, group size/fan-out/history limits, and optional extension identifiers; verify invalid transitions and limit values are rejected in CI
+- [x] 1.1 Define group, membership, invitation, roster, group message, history cursor, and per-recipient delivery types; verify JSON compatibility and package tests in GitHub Actions
+- [x] 1.2 Define group roles, membership states, stable error codes, group size/fan-out/history limits, and optional extension identifiers; verify invalid transitions and limit values are rejected in CI
 
 ## 2. Durable SQLite storage
 

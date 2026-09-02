@@ -56,6 +56,9 @@ type HubPolicy struct {
 	MaxTasksPerMinute   int           `json:"maxTasksPerMinute"`
 	MaxConcurrentTasks  int           `json:"maxConcurrentTasks"`
 	MaxPayloadBytes     int64         `json:"maxPayloadBytes"`
+	MaxGroupMembers     int           `json:"maxGroupMembers"`
+	MaxGroupFanout      int           `json:"maxGroupFanout"`
+	MaxGroupHistoryPage int           `json:"maxGroupHistoryPage"`
 }
 
 type RegisteredAgent struct {

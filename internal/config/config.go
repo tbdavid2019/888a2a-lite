@@ -18,6 +18,9 @@ const (
 	DefaultMaxTasksPerMinute     = 60
 	DefaultMaxConcurrentTasks    = 4
 	DefaultMaxPayloadBytes       = 1 << 20
+	DefaultMaxGroupMembers       = 32
+	DefaultMaxGroupFanout        = 32
+	DefaultMaxGroupHistoryPage   = 100
 	DefaultRegistrationPerMinute = 10
 )
 
@@ -33,6 +36,9 @@ type Config struct {
 	MaxTasksPerMinute     int
 	MaxConcurrentTasks    int
 	MaxPayloadBytes       int64
+	MaxGroupMembers       int
+	MaxGroupFanout        int
+	MaxGroupHistoryPage   int
 	RegistrationPerMinute int
 	OperatorToken         string
 }
@@ -50,6 +56,9 @@ func Load() (Config, error) {
 		MaxTasksPerMinute:     DefaultMaxTasksPerMinute,
 		MaxConcurrentTasks:    DefaultMaxConcurrentTasks,
 		MaxPayloadBytes:       DefaultMaxPayloadBytes,
+		MaxGroupMembers:       DefaultMaxGroupMembers,
+		MaxGroupFanout:        DefaultMaxGroupFanout,
+		MaxGroupHistoryPage:   DefaultMaxGroupHistoryPage,
 		RegistrationPerMinute: DefaultRegistrationPerMinute,
 		OperatorToken:         os.Getenv("A2A888_HUB_OPERATOR_TOKEN"),
 	}
@@ -75,6 +84,15 @@ func Load() (Config, error) {
 	if config.RegistrationPerMinute, err = envInt("A2A888_HUB_REGISTRATION_PER_MINUTE", config.RegistrationPerMinute); err != nil {
 		return Config{}, err
 	}
+	if config.MaxGroupMembers, err = envInt("A2A888_HUB_MAX_GROUP_MEMBERS", config.MaxGroupMembers); err != nil {
+		return Config{}, err
+	}
+	if config.MaxGroupFanout, err = envInt("A2A888_HUB_MAX_GROUP_FANOUT", config.MaxGroupFanout); err != nil {
+		return Config{}, err
+	}
+	if config.MaxGroupHistoryPage, err = envInt("A2A888_HUB_MAX_GROUP_HISTORY_PAGE", config.MaxGroupHistoryPage); err != nil {
+		return Config{}, err
+	}
 	if err := config.Validate(); err != nil {
 		return Config{}, err
 	}
@@ -88,14 +106,21 @@ func (config Config) Validate() error {
 	if config.RegistrationTTL <= 0 || config.PeerLease <= 0 || config.PeerLease > config.RegistrationTTL {
 		return fmt.Errorf("peer lease and registration ttl are invalid")
 	}
-	if config.MaxRegisteredAgents <= 0 || config.MaxTasksPerMinute <= 0 || config.MaxConcurrentTasks <= 0 || config.RegistrationPerMinute <= 0 {
+	if config.MaxRegisteredAgents <= 0 || config.MaxTasksPerMinute <= 0 || config.MaxConcurrentTasks <= 0 || config.RegistrationPerMinute <= 0 || config.MaxGroupMembers <= 0 || config.MaxGroupFanout <= 0 || config.MaxGroupHistoryPage <= 0 {
 		return fmt.Errorf("agent and rate limits must be positive")
+	}
+	if config.MaxGroupMembers > hubMaxGroupMembers() || config.MaxGroupFanout > hubMaxGroupMembers() || config.MaxGroupHistoryPage > hubMaxGroupHistoryPage() {
+		return fmt.Errorf("group limits exceed safe maximums")
 	}
 	if config.MaxPayloadBytes <= 0 || config.MaxPayloadBytes > 16<<20 {
 		return fmt.Errorf("max payload bytes must be between 1 and 16777216")
 	}
 	return nil
 }
+
+func hubMaxGroupMembers() int { return 32 }
+
+func hubMaxGroupHistoryPage() int { return 100 }
 
 func valueOr(name, fallback string) string {
 	if value := strings.TrimSpace(os.Getenv(name)); value != "" {
