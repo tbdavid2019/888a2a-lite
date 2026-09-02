@@ -44,6 +44,12 @@ type AnnouncementResponse struct {
 	NextID        uint64                    `json:"nextId"`
 }
 
+type GroupHistoryResponse struct {
+	GroupID  string                 `json:"groupId"`
+	Messages []hub.GroupHistoryItem `json:"messages"`
+	NextID   uint64                 `json:"nextId"`
+}
+
 type APIError struct {
 	StatusCode int
 	Code       string
@@ -153,6 +159,147 @@ func (client *Client) ListAnnouncements(ctx context.Context, afterID uint64, lim
 		return AnnouncementResponse{}, fmt.Errorf("decode announcement response: %w", err)
 	}
 	return response, nil
+}
+
+func (client *Client) CreateGroup(ctx context.Context, input hub.CreateGroupInput) (hub.Group, error) {
+	body, err := client.request(ctx, http.MethodPost, "/hub/v1/groups", input, true)
+	if err != nil {
+		return hub.Group{}, err
+	}
+	var group hub.Group
+	if err := json.Unmarshal(body, &group); err != nil {
+		return hub.Group{}, fmt.Errorf("decode group response: %w", err)
+	}
+	return group, nil
+}
+
+func (client *Client) ListGroups(ctx context.Context) ([]hub.Group, error) {
+	body, err := client.request(ctx, http.MethodGet, "/hub/v1/groups", nil, true)
+	if err != nil {
+		return nil, err
+	}
+	var response struct {
+		Groups []hub.Group `json:"groups"`
+	}
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, fmt.Errorf("decode groups response: %w", err)
+	}
+	return response.Groups, nil
+}
+
+func (client *Client) GetGroup(ctx context.Context, groupID string) (hub.Group, []hub.GroupMember, error) {
+	body, err := client.request(ctx, http.MethodGet, "/hub/v1/groups/"+url.PathEscape(groupID), nil, true)
+	if err != nil {
+		return hub.Group{}, nil, err
+	}
+	var response struct {
+		Group   hub.Group         `json:"group"`
+		Members []hub.GroupMember `json:"members"`
+	}
+	if err := json.Unmarshal(body, &response); err != nil {
+		return hub.Group{}, nil, fmt.Errorf("decode group response: %w", err)
+	}
+	return response.Group, response.Members, nil
+}
+
+func (client *Client) InviteGroupMember(ctx context.Context, groupID, agentID string) (hub.GroupInvitation, error) {
+	body, err := client.request(ctx, http.MethodPost, "/hub/v1/groups/"+url.PathEscape(groupID)+"/invitations", map[string]string{"agentId": agentID}, true)
+	if err != nil {
+		return hub.GroupInvitation{}, err
+	}
+	var invitation hub.GroupInvitation
+	if err := json.Unmarshal(body, &invitation); err != nil {
+		return hub.GroupInvitation{}, fmt.Errorf("decode invitation response: %w", err)
+	}
+	return invitation, nil
+}
+
+func (client *Client) ListGroupInvitations(ctx context.Context) ([]hub.GroupInvitation, error) {
+	body, err := client.request(ctx, http.MethodGet, "/hub/v1/groups/invitations", nil, true)
+	if err != nil {
+		return nil, err
+	}
+	var response struct {
+		Invitations []hub.GroupInvitation `json:"invitations"`
+	}
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, fmt.Errorf("decode invitations response: %w", err)
+	}
+	return response.Invitations, nil
+}
+
+func (client *Client) AcceptGroupInvitation(ctx context.Context, invitationID uint64) (hub.GroupMember, error) {
+	body, err := client.request(ctx, http.MethodPost, "/hub/v1/groups/invitations/"+strconv.FormatUint(invitationID, 10)+"/accept", nil, true)
+	if err != nil {
+		return hub.GroupMember{}, err
+	}
+	var member hub.GroupMember
+	if err := json.Unmarshal(body, &member); err != nil {
+		return hub.GroupMember{}, fmt.Errorf("decode membership response: %w", err)
+	}
+	return member, nil
+}
+
+func (client *Client) LeaveGroup(ctx context.Context, groupID string) error {
+	_, err := client.request(ctx, http.MethodPost, "/hub/v1/groups/"+url.PathEscape(groupID)+"/leave", nil, true)
+	return err
+}
+
+func (client *Client) ArchiveGroup(ctx context.Context, groupID string) error {
+	_, err := client.request(ctx, http.MethodPost, "/hub/v1/groups/"+url.PathEscape(groupID)+"/archive", nil, true)
+	return err
+}
+
+func (client *Client) TransferGroupOwnership(ctx context.Context, groupID, agentID string) error {
+	_, err := client.request(ctx, http.MethodPost, "/hub/v1/groups/"+url.PathEscape(groupID)+"/ownership", map[string]string{"agentId": agentID}, true)
+	return err
+}
+
+func (client *Client) RemoveGroupMember(ctx context.Context, groupID, agentID string) error {
+	_, err := client.request(ctx, http.MethodPost, "/hub/v1/groups/"+url.PathEscape(groupID)+"/members/"+url.PathEscape(agentID)+"/remove", nil, true)
+	return err
+}
+
+func (client *Client) GroupRoster(ctx context.Context, groupID string) ([]hub.GroupMember, error) {
+	body, err := client.request(ctx, http.MethodGet, "/hub/v1/groups/"+url.PathEscape(groupID)+"/roster", nil, true)
+	if err != nil {
+		return nil, err
+	}
+	var response struct {
+		Members []hub.GroupMember `json:"members"`
+	}
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, fmt.Errorf("decode group roster response: %w", err)
+	}
+	return response.Members, nil
+}
+
+func (client *Client) GroupHistory(ctx context.Context, groupID string, afterID uint64, limit int) (GroupHistoryResponse, error) {
+	path := "/hub/v1/groups/" + url.PathEscape(groupID) + "/history?afterId=" + strconv.FormatUint(afterID, 10) + "&limit=" + strconv.Itoa(limit)
+	body, err := client.request(ctx, http.MethodGet, path, nil, true)
+	if err != nil {
+		return GroupHistoryResponse{}, err
+	}
+	var response GroupHistoryResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return GroupHistoryResponse{}, fmt.Errorf("decode group history response: %w", err)
+	}
+	return response, nil
+}
+
+func (client *Client) SendGroupMessage(ctx context.Context, groupID string, input hub.GroupMessageInput) (hub.GroupMessage, bool, error) {
+	body, err := client.request(ctx, http.MethodPost, "/hub/v1/groups/"+url.PathEscape(groupID)+"/messages", input, true)
+	if err != nil {
+		return hub.GroupMessage{}, false, err
+	}
+	var response struct {
+		Message         hub.GroupMessage `json:"message"`
+		DeliveryOutcome string           `json:"deliveryOutcome"`
+	}
+	if err := json.Unmarshal(body, &response); err != nil {
+		return hub.GroupMessage{}, false, fmt.Errorf("decode group message response: %w", err)
+	}
+	return response.Message, response.DeliveryOutcome == "DUPLICATE", nil
 }
 
 func (client *Client) SendTask(ctx context.Context, task hub.TaskDelivery) (hub.InboxItem, bool, error) {

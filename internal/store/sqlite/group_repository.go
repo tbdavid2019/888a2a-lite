@@ -419,12 +419,33 @@ ORDER BY m.id LIMIT ?`, groupID, agentID, afterID, limit)
 		return nil, err
 	}
 	for index := range messages {
-		messages[index].Deliveries, err = repository.listGroupDeliveries(ctx, messages[index].ID)
+		messages[index].Deliveries, err = repository.listGroupDeliveriesForAgent(ctx, messages[index].ID, agentID)
 		if err != nil {
 			return nil, err
 		}
 	}
 	return messages, nil
+}
+
+func (repository *Repository) listGroupDeliveriesForAgent(ctx context.Context, messageID uint64, agentID string) ([]hub.GroupDeliverySummary, error) {
+	rows, err := repository.executor().QueryContext(ctx, `
+SELECT target_agent_id, sequence, state FROM group_delivery
+WHERE group_message_id = ? AND target_agent_id = ? ORDER BY sequence`, messageID, agentID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	deliveries := make([]hub.GroupDeliverySummary, 0, 1)
+	for rows.Next() {
+		var delivery hub.GroupDeliverySummary
+		var state string
+		if err := rows.Scan(&delivery.TargetAgentID, &delivery.Sequence, &state); err != nil {
+			return nil, err
+		}
+		delivery.State = hub.DeliveryState(state)
+		deliveries = append(deliveries, delivery)
+	}
+	return deliveries, rows.Err()
 }
 
 func (repository *Repository) CancelPendingGroupDeliveries(ctx context.Context, groupID, agentID string, at time.Time) error {

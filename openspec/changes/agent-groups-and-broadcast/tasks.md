@@ -32,8 +32,8 @@
 
 ## 6. Client and adapter support
 
-- [ ] 6.1 Extend the generic HTTP client with group create/list/invite/accept/leave/roster/history/send methods and cursor handling; verify unknown optional fields remain compatible and retries are idempotent
-- [ ] 6.2 Add CLI commands or examples for group lifecycle, roster, history, send, and ACK workflows; verify help text documents Agent Token versus operator Token and safe data handling
+- [x] 6.1 Extend the generic HTTP client with group create/list/invite/accept/leave/roster/history/send methods and cursor handling; verify unknown optional fields remain compatible and retries are idempotent
+- [x] 6.2 Add CLI commands or examples for group lifecycle, roster, history, send, and ACK workflows; verify help text documents Agent Token versus operator Token and safe data handling
 - [ ] 6.3 Update Codex, OpenClaw, Hermes, and generic adapter guidance to treat group content and roster metadata as untrusted data; verify dangerous group text never becomes executable local instructions
 
 ## 7. Security and integration tests

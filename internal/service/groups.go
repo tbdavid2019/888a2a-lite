@@ -62,7 +62,7 @@ func (service *Service) GetGroup(ctx context.Context, agentID, token, groupID st
 }
 
 func (service *Service) InviteMember(ctx context.Context, agentID, token, groupID, inviteeAgentID string) (hub.GroupInvitation, error) {
-	actor, err := service.requireGroupMember(ctx, agentID, token, groupID)
+	actor, err := service.requireActiveGroupMember(ctx, agentID, token, groupID)
 	if err != nil {
 		return hub.GroupInvitation{}, err
 	}
@@ -131,7 +131,7 @@ func (service *Service) AcceptInvitation(ctx context.Context, agentID, token str
 }
 
 func (service *Service) LeaveGroup(ctx context.Context, agentID, token, groupID string) error {
-	if _, err := service.requireGroupMember(ctx, agentID, token, groupID); err != nil {
+	if _, err := service.requireActiveGroupMember(ctx, agentID, token, groupID); err != nil {
 		return err
 	}
 	err := service.store.Groups().LeaveGroup(ctx, groupID, agentID, service.now().UTC())
@@ -142,7 +142,7 @@ func (service *Service) LeaveGroup(ctx context.Context, agentID, token, groupID 
 }
 
 func (service *Service) RemoveMember(ctx context.Context, agentID, token, groupID, targetAgentID string) error {
-	actor, err := service.requireGroupMember(ctx, agentID, token, groupID)
+	actor, err := service.requireActiveGroupMember(ctx, agentID, token, groupID)
 	if err != nil {
 		return err
 	}
@@ -157,7 +157,7 @@ func (service *Service) RemoveMember(ctx context.Context, agentID, token, groupI
 }
 
 func (service *Service) TransferOwnership(ctx context.Context, agentID, token, groupID, targetAgentID string) error {
-	actor, err := service.requireGroupMember(ctx, agentID, token, groupID)
+	actor, err := service.requireActiveGroupMember(ctx, agentID, token, groupID)
 	if err != nil {
 		return err
 	}
@@ -172,7 +172,7 @@ func (service *Service) TransferOwnership(ctx context.Context, agentID, token, g
 }
 
 func (service *Service) ArchiveGroup(ctx context.Context, agentID, token, groupID string) error {
-	actor, err := service.requireGroupMember(ctx, agentID, token, groupID)
+	actor, err := service.requireActiveGroupMember(ctx, agentID, token, groupID)
 	if err != nil {
 		return err
 	}
@@ -235,7 +235,7 @@ func (service *Service) GroupHistory(ctx context.Context, agentID, token, groupI
 }
 
 func (service *Service) SendGroupMessage(ctx context.Context, agentID, token, groupID string, input hub.GroupMessageInput) (hub.GroupMessage, bool, error) {
-	if _, err := service.requireGroupMember(ctx, agentID, token, groupID); err != nil {
+	if _, err := service.requireActiveGroupMember(ctx, agentID, token, groupID); err != nil {
 		return hub.GroupMessage{}, false, err
 	}
 	if err := hub.ValidateGroupMessage(input, service.config.MaxPayloadBytes); err != nil {
@@ -260,16 +260,24 @@ func (service *Service) requireGroupMember(ctx context.Context, agentID, token, 
 	if _, err := service.AuthenticateAgent(ctx, agentID, token); err != nil {
 		return hub.GroupMember{}, err
 	}
+	member, err := service.store.Groups().FindMember(ctx, groupID, agentID)
+	if err != nil || !member.IsActive() {
+		return hub.GroupMember{}, ErrForbidden
+	}
+	return member, nil
+}
+
+func (service *Service) requireActiveGroupMember(ctx context.Context, agentID, token, groupID string) (hub.GroupMember, error) {
+	member, err := service.requireGroupMember(ctx, agentID, token, groupID)
+	if err != nil {
+		return hub.GroupMember{}, err
+	}
 	group, err := service.store.Groups().FindGroup(ctx, groupID)
 	if err != nil {
 		return hub.GroupMember{}, err
 	}
 	if !group.IsActive() {
 		return hub.GroupMember{}, ErrGroupArchived
-	}
-	member, err := service.store.Groups().FindMember(ctx, groupID, agentID)
-	if err != nil || !member.IsActive() {
-		return hub.GroupMember{}, ErrForbidden
 	}
 	return member, nil
 }
