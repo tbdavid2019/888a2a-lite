@@ -35,3 +35,5 @@
   更新成功。
 - 新增 system card、公告 feed、register response Hub metadata 和 operator announcement
   editor 的 OpenSpec change，準備進入實作。
+- 完成公告 system card、cursor feed、draft/revision API、operator web UI 與遠端 acceptance
+  smoke verification。

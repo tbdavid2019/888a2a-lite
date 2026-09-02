@@ -17,12 +17,12 @@
 
 ## 4. Client and adapter integration
 
-- [ ] 4.1 Extend the generic HTTP client to fetch the system card and announcement feed incrementally, preserving the existing registration API; verify cursor handling, retry behavior, and response compatibility in CI.
-- [ ] 4.2 Update CLI or adapter startup guidance to read system metadata as untrusted control-plane data and never promote announcement text to executable instructions; verify documentation and safe handling tests.
-- [ ] 4.3 Add embedded `/admin/announcements` operator UI with in-memory Token handling, draft editing, publish/revision/expiry actions, escaped rendering, CSP, and no-store headers; verify browser behavior and credential non-persistence in CI.
+- [x] 4.1 Extend the generic HTTP client to fetch the system card and announcement feed incrementally, preserving the existing registration API; verify cursor handling, retry behavior, and response compatibility in CI.
+- [x] 4.2 Update CLI or adapter startup guidance to read system metadata as untrusted control-plane data and never promote announcement text to executable instructions; verify documentation and safe handling tests.
+- [x] 4.3 Add embedded `/admin/announcements` operator UI with in-memory Token handling, draft editing, publish/revision/expiry actions, escaped rendering, CSP, and no-store headers; verify browser behavior and credential non-persistence in CI.
 
 ## 5. Deployment and verification
 
-- [ ] 5.1 Update README, `llms.txt`, API documentation, and changelog with the system card, announcement publish/read flows, A2A extension boundary, and no-secret rules; verify links and format in CI.
-- [ ] 5.2 Run the three-Agent remote smoke flow on `david@10.9.0.11`, publish a non-sensitive announcement, verify registration summaries and cursor recovery after restart, and confirm audit records remain available; redact all credentials from output.
-- [ ] 5.3 Verify GitHub Actions CI and multi-platform Docker publish are green, then confirm Watchtower updates the remote image while preserving `/data/hub.db`; mark complete only after health and announcement feed checks pass.
+- [x] 5.1 Update README, `llms.txt`, API documentation, and changelog with the system card, announcement publish/read flows, A2A extension boundary, and no-secret rules; verify links and format in CI.
+- [x] 5.2 Run the three-Agent remote smoke flow on `david@10.9.0.11`, publish a non-sensitive announcement, verify registration summaries and cursor recovery after restart, and confirm audit records remain available; redact all credentials from output.
+- [x] 5.3 Verify GitHub Actions CI and multi-platform Docker publish are green, then confirm Watchtower updates the remote image while preserving `/data/hub.db`; mark complete only after health and announcement feed checks pass.
