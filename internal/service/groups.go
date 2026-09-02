@@ -203,6 +203,7 @@ func (service *Service) GroupRoster(ctx context.Context, agentID, token, groupID
 		view.State = agent.StateAt(service.now().UTC())
 		members[index].Agent = &view
 	}
+	service.audit(ctx, hub.Event{Type: hub.EventGroupRosterViewed, ActorAgentID: agentID, Details: map[string]any{"groupId": groupID, "count": len(members)}})
 	return members, nil
 }
 
@@ -231,6 +232,7 @@ func (service *Service) GroupHistory(ctx context.Context, agentID, token, groupI
 			next = message.ID
 		}
 	}
+	service.audit(ctx, hub.Event{Type: hub.EventGroupHistoryViewed, ActorAgentID: agentID, Details: map[string]any{"groupId": groupID, "count": len(items), "afterId": afterID}})
 	return items, next, nil
 }
 
@@ -262,6 +264,7 @@ func (service *Service) requireGroupMember(ctx context.Context, agentID, token, 
 	}
 	member, err := service.store.Groups().FindMember(ctx, groupID, agentID)
 	if err != nil || !member.IsActive() {
+		service.audit(ctx, hub.Event{Type: hub.EventGroupAuthorizationDenied, ActorAgentID: agentID, Details: map[string]any{"groupId": groupID}})
 		return hub.GroupMember{}, ErrForbidden
 	}
 	return member, nil

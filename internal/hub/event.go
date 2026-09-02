@@ -40,4 +40,8 @@ const (
 	EventGroupArchived               = "group.archived"
 	EventGroupMessageQueued          = "group.message_queued"
 	EventGroupMessageDuplicate       = "group.message_duplicate"
+	EventGroupRosterViewed           = "group.roster_viewed"
+	EventGroupHistoryViewed          = "group.history_viewed"
+	EventGroupDeliveryPolled         = "group.delivery_polled"
+	EventGroupAuthorizationDenied    = "group.authorization_denied"
 )

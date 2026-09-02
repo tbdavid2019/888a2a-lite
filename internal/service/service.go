@@ -233,6 +233,15 @@ func (service *Service) Poll(ctx context.Context, agentID, token string, after u
 	items, err := service.store.Inbox().Poll(ctx, agentID, after, limit)
 	if err == nil {
 		service.audit(ctx, hub.Event{Type: hub.EventInboxPolled, ActorAgentID: agentID, Details: map[string]any{"count": len(items)}})
+		groupCounts := make(map[string]int)
+		for _, item := range items {
+			if item.GroupID != "" {
+				groupCounts[item.GroupID]++
+			}
+		}
+		for groupID, count := range groupCounts {
+			service.audit(ctx, hub.Event{Type: hub.EventGroupDeliveryPolled, ActorAgentID: agentID, Details: map[string]any{"groupId": groupID, "count": count}})
+		}
 	}
 	return items, err
 }

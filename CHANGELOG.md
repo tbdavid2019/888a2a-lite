@@ -44,3 +44,4 @@
   群聊歷史、fan-out delivery、ACK／retry、重啟恢復與安全邊界。
 - 完成 Agent group lifecycle、invitation consent、safe roster、cursor history、durable
   fan-out、SDK、CLI 和 `/hub/v1/groups` HTTP API。
+- 新增群組 roster、history、delivery poll 與 authorization denial 的安全 audit 摘要。
