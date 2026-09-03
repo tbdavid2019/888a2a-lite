@@ -21,7 +21,7 @@ func TestRepositoryPersistsInboxAndRecoversPendingItems(t *testing.T) {
 		t.Fatalf("Open returned an error: %v", err)
 	}
 	repository := NewRepository(database)
-	createdAt := time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC)
+	createdAt := time.Now().UTC().Truncate(time.Second)
 	for _, agentID := range []string{"sender", "target"} {
 		if err := repository.CreateAgent(ctx, testAgent(agentID, createdAt)); err != nil {
 			t.Fatalf("CreateAgent(%q): %v", agentID, err)
@@ -210,7 +210,7 @@ func TestRepositoryPersistsSafeAuditEvents(t *testing.T) {
 		}
 	}()
 	repository := NewRepository(database)
-	createdAt := time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC)
+	createdAt := time.Now().UTC().Truncate(time.Second)
 	if err := repository.AppendEvent(ctx, hub.Event{
 		HubID: "public", Type: hub.EventAgentRegistered, ActorAgentID: "agent-1",
 		Details: map[string]any{"count": 1}, CreatedAt: createdAt,
@@ -239,7 +239,7 @@ func TestRepositoryPersistsAnnouncementLifecycle(t *testing.T) {
 		}
 	}()
 	repository := NewRepository(database)
-	now := time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC)
+	now := time.Now().UTC().Truncate(time.Second)
 	expires := now.Add(time.Hour)
 	created, err := repository.CreateAnnouncement(ctx, hub.Announcement{
 		HubID: "public", Revision: 1, Status: hub.AnnouncementPublished, Severity: hub.AnnouncementInfo,
@@ -295,7 +295,7 @@ func TestRepositoryPersistsGroupLifecycleAndFanout(t *testing.T) {
 		t.Fatalf("Open returned an error: %v", err)
 	}
 	repository := NewRepository(database)
-	now := time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC)
+	now := time.Now().UTC().Truncate(time.Second)
 	for _, agentID := range []string{"owner", "member", "other"} {
 		if err := repository.CreateAgent(ctx, testAgent(agentID, now)); err != nil {
 			t.Fatalf("CreateAgent(%q): %v", agentID, err)
@@ -471,7 +471,7 @@ func TestRepositoryListMessagesAdmin(t *testing.T) {
 	}
 	defer func() { _ = database.Close() }()
 	repo := NewRepository(database)
-	now := time.Date(2026, 9, 3, 10, 0, 0, 0, time.UTC)
+	now := time.Now().UTC().Truncate(time.Second)
 	for _, id := range []string{"s-agent", "t-agent"} {
 		if err := repo.CreateAgent(ctx, testAgent(id, now)); err != nil {
 			t.Fatalf("CreateAgent: %v", err)

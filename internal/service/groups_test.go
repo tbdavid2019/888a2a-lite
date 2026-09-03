@@ -163,7 +163,7 @@ func TestExpiredGroupInvitationRenewalAndReinvitation(t *testing.T) {
 	}
 	defer func() { _ = database.Close() }()
 	repo := sqlite.NewRepository(database)
-	now := time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC)
+	now := time.Now().UTC().Truncate(time.Second)
 	for _, agentID := range []string{"owner-1", "member-1"} {
 		if err := repo.CreateAgent(ctx, hub.RegisteredAgent{
 			HubID: "public", AgentID: agentID, RegistrationKeyHash: hub.HashToken("reg-" + agentID),

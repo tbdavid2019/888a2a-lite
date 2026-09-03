@@ -971,6 +971,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "resource not found")
 	case errors.Is(err, store.ErrCanceled):
 		writeError(w, http.StatusConflict, "TASK_CANCELED", "task is canceled")
+	case errors.Is(err, ErrValidation):
+		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
 	default:
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "hub operation failed")
 	}

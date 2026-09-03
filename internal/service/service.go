@@ -22,6 +22,7 @@ var (
 	ErrAgentUnavailable     = errors.New("agent is unavailable")
 	ErrAgentLimit           = errors.New("registered agent limit reached")
 	ErrTaskLimit            = errors.New("task limit reached")
+	ErrValidation           = errors.New("validation failed")
 )
 
 type HubStatus struct {
@@ -48,7 +49,7 @@ func New(database store.Store, cfg config.Config) *Service {
 
 func (service *Service) Register(ctx context.Context, declaration hub.AgentDeclaration) (hub.AgentIdentity, bool, error) {
 	if err := hub.ValidateDeclaration(declaration); err != nil {
-		return hub.AgentIdentity{}, false, err
+		return hub.AgentIdentity{}, false, fmt.Errorf("%w: %s", ErrValidation, err.Error())
 	}
 	policy, err := service.store.Policy().GetPolicy(ctx)
 	if errors.Is(err, store.ErrNotFound) {
@@ -177,7 +178,7 @@ func (service *Service) SendTask(ctx context.Context, requesterID, token string,
 		return hub.InboxItem{}, false, err
 	}
 	if err := hub.ValidateTaskDelivery(task); err != nil {
-		return hub.InboxItem{}, false, err
+		return hub.InboxItem{}, false, fmt.Errorf("%w: %s", ErrValidation, err.Error())
 	}
 	target, err := service.store.Agents().FindAgent(ctx, task.TargetAgentID)
 	if err != nil {
@@ -395,7 +396,7 @@ func (service *Service) PublishAnnouncement(ctx context.Context, token string, i
 	}
 	now := service.now().UTC()
 	if err := input.Validate(now); err != nil {
-		return hub.Announcement{}, err
+		return hub.Announcement{}, fmt.Errorf("%w: %s", ErrValidation, err.Error())
 	}
 	announcement, err := service.store.Announcements().CreateAnnouncement(ctx, hub.Announcement{
 		HubID: service.config.HubID, Revision: 1, Status: hub.AnnouncementPublished,
@@ -434,7 +435,7 @@ func (service *Service) CreateDraft(ctx context.Context, token string, input hub
 		return hub.Announcement{}, err
 	}
 	if err := input.Validate(service.now().UTC()); err != nil {
-		return hub.Announcement{}, err
+		return hub.Announcement{}, fmt.Errorf("%w: %s", ErrValidation, err.Error())
 	}
 	announcement, err := service.store.Announcements().CreateAnnouncement(ctx, hub.Announcement{
 		HubID: service.config.HubID, Revision: 1, Status: hub.AnnouncementDraft,
@@ -453,7 +454,7 @@ func (service *Service) UpdateDraft(ctx context.Context, token string, id uint64
 		return hub.Announcement{}, err
 	}
 	if err := input.Validate(service.now().UTC()); err != nil {
-		return hub.Announcement{}, err
+		return hub.Announcement{}, fmt.Errorf("%w: %s", ErrValidation, err.Error())
 	}
 	announcement, err := service.store.Announcements().UpdateDraft(ctx, id, input, service.now().UTC())
 	if err == nil {
@@ -478,7 +479,7 @@ func (service *Service) CreateRevision(ctx context.Context, token string, id uin
 		return hub.Announcement{}, err
 	}
 	if err := input.Validate(service.now().UTC()); err != nil {
-		return hub.Announcement{}, err
+		return hub.Announcement{}, fmt.Errorf("%w: %s", ErrValidation, err.Error())
 	}
 	announcement, err := service.store.Announcements().CreateRevision(ctx, id, input, service.now().UTC())
 	if err == nil {

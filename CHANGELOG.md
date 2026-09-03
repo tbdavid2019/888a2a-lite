@@ -13,6 +13,11 @@
 - 管理介面路由擴充支援 `GET /admin`、`GET /admin/announcements` 與 `GET /admin/messages`。
 - SQLite store 新增 `ListDirectMessagesAdmin` 與 `ListGroupMessagesAdmin` 查詢方法。
 
+### Fixed
+
+- 修正任務投遞與群組訊息驗證失敗時未被 `writeServiceError` 辨識為 `VALIDATION_ERROR`（HTTP 400）而誤報為 `INTERNAL_ERROR`（HTTP 500）之問題。
+- 修正單元測試中硬編碼日期造成公告過期時間（TTL）跨日後測試失效之問題，統一改為動態 UTC 時間。
+
 ## 2026-09-02
 
 ### Added

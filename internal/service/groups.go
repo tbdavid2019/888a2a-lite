@@ -25,7 +25,7 @@ func (service *Service) CreateGroup(ctx context.Context, agentID, token string, 
 		return hub.Group{}, err
 	}
 	if err := hub.ValidateCreateGroup(input); err != nil {
-		return hub.Group{}, err
+		return hub.Group{}, fmt.Errorf("%w: %s", ErrValidation, err.Error())
 	}
 	groupID, err := generateGroupID()
 	if err != nil {
@@ -241,7 +241,7 @@ func (service *Service) SendGroupMessage(ctx context.Context, agentID, token, gr
 		return hub.GroupMessage{}, false, err
 	}
 	if err := hub.ValidateGroupMessage(input, service.config.MaxPayloadBytes); err != nil {
-		return hub.GroupMessage{}, false, err
+		return hub.GroupMessage{}, false, fmt.Errorf("%w: %s", ErrValidation, err.Error())
 	}
 	message, duplicate, err := service.store.Groups().SendGroupMessage(ctx, hub.GroupMessage{
 		HubID: service.config.HubID, GroupID: groupID, SenderAgentID: agentID,
