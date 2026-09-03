@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-09-03
+
+### Added
+
+- README 新增「公開網路部署與安全注意事項」，提示開發者與運維人員關於 TLS 反向代理、公開註冊防濫用、不可信資料與 Agent 端 Prompt Injection 防禦、Operator Token 保護及 SQLite 儲存維護要點。
+- 新增 Operator A2A 訊息監控 API `GET /hub/v1/admin/messages`，支援以類型（直連任務、群組廣播）、Agent ID、Group ID 及 cursor 篩選與分頁查詢。
+- 升級管理後台為整合式控制面板，新增分頁導航支援「公告管理」與「A2A 訊息監控」，並以安全 DOM 方式呈現訊息 Payload 與投遞狀態。
+
+### Changed
+
+- 管理介面路由擴充支援 `GET /admin`、`GET /admin/announcements` 與 `GET /admin/messages`。
+- SQLite store 新增 `ListDirectMessagesAdmin` 與 `ListGroupMessagesAdmin` 查詢方法。
+
 ## 2026-09-02
 
 ### Added

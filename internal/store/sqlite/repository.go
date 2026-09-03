@@ -485,6 +485,39 @@ func (repository *Repository) PendingCount(ctx context.Context, targetAgentID st
 	return count, err
 }
 
+func (repository *Repository) ListDirectMessagesAdmin(ctx context.Context, beforeSequence uint64, limit int, agentID string) ([]hub.InboxItem, error) {
+	if limit < 1 || limit > 200 {
+		limit = 50
+	}
+	agentID = strings.TrimSpace(agentID)
+	query := `
+SELECT sequence, hub_id, target_agent_id, requester_agent_id, task_id, context_id,
+       idempotency_key, message, state, created_at, acknowledged_at, canceled_at,
+       group_id, group_message_id
+FROM inbox_item
+WHERE group_id = ''
+  AND (? = 0 OR sequence < ?)
+  AND (? = '' OR requester_agent_id = ? OR target_agent_id = ?)
+ORDER BY sequence DESC LIMIT ?`
+	rows, err := repository.executor().QueryContext(ctx, query, beforeSequence, beforeSequence, agentID, agentID, agentID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	items := make([]hub.InboxItem, 0, limit)
+	for rows.Next() {
+		item, err := scanInbox(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 func (repository *Repository) AppendEvent(ctx context.Context, event hub.Event) error {
 	if strings.TrimSpace(event.HubID) == "" || strings.TrimSpace(event.Type) == "" {
 		return errors.New("event requires hub id and type")

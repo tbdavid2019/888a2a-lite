@@ -487,6 +487,38 @@ func (service *Service) CreateRevision(ctx context.Context, token string, id uin
 	return announcement, err
 }
 
+type AdminMessagesResult struct {
+	DirectMessages []hub.InboxItem    `json:"directMessages"`
+	GroupMessages  []hub.GroupMessage `json:"groupMessages"`
+}
+
+func (service *Service) ListMessagesAdmin(ctx context.Context, token string, msgType string, beforeSequence, beforeID uint64, limit int, groupID, agentID string) (AdminMessagesResult, error) {
+	if err := service.AuthenticateOperator(token); err != nil {
+		return AdminMessagesResult{}, err
+	}
+	if limit < 1 || limit > 200 {
+		limit = 50
+	}
+	result := AdminMessagesResult{
+		DirectMessages: []hub.InboxItem{},
+		GroupMessages:  []hub.GroupMessage{},
+	}
+	var err error
+	if msgType == "" || msgType == "all" || msgType == "direct" {
+		result.DirectMessages, err = service.store.Inbox().ListDirectMessagesAdmin(ctx, beforeSequence, limit, agentID)
+		if err != nil {
+			return AdminMessagesResult{}, err
+		}
+	}
+	if msgType == "" || msgType == "all" || msgType == "group" {
+		result.GroupMessages, err = service.store.Groups().ListGroupMessagesAdmin(ctx, beforeID, limit, groupID, agentID)
+		if err != nil {
+			return AdminMessagesResult{}, err
+		}
+	}
+	return result, nil
+}
+
 func (service *Service) RecordEvent(ctx context.Context, eventType string) {
 	service.audit(ctx, hub.Event{Type: eventType})
 }

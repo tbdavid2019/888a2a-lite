@@ -195,6 +195,28 @@ func TestHTTPThreeAgentDeliveryAndAuthorizationBoundaries(t *testing.T) {
 	if unauthAnnounce.Code != http.StatusUnauthorized {
 		t.Fatalf("unauthorized publish announcement status = %d, want 401; body=%s", unauthAnnounce.Code, unauthAnnounce.Body.String())
 	}
+
+	// Admin: List messages requires operator token
+	unauthMessages := doJSONWithBearer(t, handler, http.MethodGet, "/hub/v1/admin/messages", "invalid-token", nil)
+	if unauthMessages.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthorized admin messages status = %d, want 401; body=%s", unauthMessages.Code, unauthMessages.Body.String())
+	}
+
+	// Admin: List messages with valid operator token returns direct tasks
+	adminMessages := doJSONWithBearer(t, handler, http.MethodGet, "/hub/v1/admin/messages?type=direct&limit=10", "operator-fixture", nil)
+	if adminMessages.Code != http.StatusOK || !strings.Contains(adminMessages.Body.String(), "hello from codex") {
+		t.Fatalf("admin messages status/body = %d/%s", adminMessages.Code, adminMessages.Body.String())
+	}
+
+	// Admin UI: /admin and /admin/messages should serve html
+	adminUI := doJSON(t, handler, http.MethodGet, "/admin", "", "", nil)
+	if adminUI.Code != http.StatusOK || !strings.Contains(adminUI.Body.String(), "888a2a-lite 管理後台") {
+		t.Fatalf("admin UI status/body = %d/%s", adminUI.Code, adminUI.Body.String())
+	}
+	adminMsgUI := doJSON(t, handler, http.MethodGet, "/admin/messages", "", "", nil)
+	if adminMsgUI.Code != http.StatusOK || !strings.Contains(adminMsgUI.Body.String(), "A2A 訊息監控") {
+		t.Fatalf("admin msg UI status/body = %d/%s", adminMsgUI.Code, adminMsgUI.Body.String())
+	}
 }
 
 type registeredTestAgent struct {

@@ -462,3 +462,96 @@ func testAgent(agentID string, createdAt time.Time) hub.RegisteredAgent {
 		CreatedAt:           createdAt,
 	}
 }
+
+func TestRepositoryListMessagesAdmin(t *testing.T) {
+	ctx := context.Background()
+	database, err := Open(ctx, filepath.Join(t.TempDir(), "hub.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer func() { _ = database.Close() }()
+	repo := NewRepository(database)
+	now := time.Date(2026, 9, 3, 10, 0, 0, 0, time.UTC)
+	for _, id := range []string{"s-agent", "t-agent"} {
+		if err := repo.CreateAgent(ctx, testAgent(id, now)); err != nil {
+			t.Fatalf("CreateAgent: %v", err)
+		}
+	}
+
+	// Enqueue direct tasks
+	task1 := hub.InboxItem{
+		HubID: "public", TargetAgentID: "t-agent", RequesterAgentID: "s-agent",
+		TaskID: "task-adm-1", ContextID: "ctx-1", IdempotencyKey: "key-1",
+		Message: "hello direct", CreatedAt: now,
+	}
+	if _, _, err := repo.Enqueue(ctx, task1); err != nil {
+		t.Fatalf("Enqueue task1: %v", err)
+	}
+	task2 := hub.InboxItem{
+		HubID: "public", TargetAgentID: "t-agent", RequesterAgentID: "s-agent",
+		TaskID: "task-adm-2", ContextID: "ctx-2", IdempotencyKey: "key-2",
+		Message: "second direct", CreatedAt: now.Add(time.Second),
+	}
+	if _, _, err := repo.Enqueue(ctx, task2); err != nil {
+		t.Fatalf("Enqueue task2: %v", err)
+	}
+
+	directs, err := repo.ListDirectMessagesAdmin(ctx, 0, 10, "")
+	if err != nil {
+		t.Fatalf("ListDirectMessagesAdmin: %v", err)
+	}
+	if len(directs) != 2 {
+		t.Fatalf("expected 2 direct messages, got %d", len(directs))
+	}
+	if directs[0].TaskID != "task-adm-2" {
+		t.Fatalf("expected newest task-adm-2 first, got %s", directs[0].TaskID)
+	}
+
+	// Filter by agentID
+	filtered, err := repo.ListDirectMessagesAdmin(ctx, 0, 10, "t-agent")
+	if err != nil || len(filtered) != 2 {
+		t.Fatalf("filter by t-agent: len=%d err=%v", len(filtered), err)
+	}
+	filteredEmpty, err := repo.ListDirectMessagesAdmin(ctx, 0, 10, "unknown-agent")
+	if err != nil || len(filteredEmpty) != 0 {
+		t.Fatalf("filter by unknown: len=%d err=%v", len(filteredEmpty), err)
+	}
+
+	// Create group and group message
+	grp, err := repo.Groups().CreateGroup(ctx, hub.Group{
+		HubID: "public", GroupID: "g-adm", Name: "adm-group", State: hub.GroupStateActive,
+		OwnerAgentID: "s-agent", CreatedAt: now,
+	})
+	if err != nil {
+		t.Fatalf("CreateGroup: %v", err)
+	}
+	inv, err := repo.Groups().CreateInvitation(ctx, hub.GroupInvitation{
+		HubID: "public", GroupID: grp.GroupID, InviterAgentID: "s-agent", InviteeAgentID: "t-agent",
+		State: hub.InvitationPending, CreatedAt: now, ExpiresAt: now.Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("CreateInvitation: %v", err)
+	}
+	if _, err := repo.Groups().AcceptInvitation(ctx, inv.ID, "t-agent", now.Add(time.Minute)); err != nil {
+		t.Fatalf("AcceptInvitation: %v", err)
+	}
+
+	msg, _, err := repo.Groups().SendGroupMessage(ctx, hub.GroupMessage{
+		HubID: "public", GroupID: grp.GroupID, SenderAgentID: "s-agent", ContextID: "ctx-grp",
+		IdempotencyKey: "grp-msg-1", Message: "hello group admin", CreatedAt: now.Add(2 * time.Minute),
+	}, 10)
+	if err != nil {
+		t.Fatalf("SendGroupMessage: %v", err)
+	}
+
+	grpMsgs, err := repo.Groups().ListGroupMessagesAdmin(ctx, 0, 10, "g-adm", "")
+	if err != nil {
+		t.Fatalf("ListGroupMessagesAdmin: %v", err)
+	}
+	if len(grpMsgs) != 1 || grpMsgs[0].ID != msg.ID {
+		t.Fatalf("expected 1 group message with id %d, got %+v", msg.ID, grpMsgs)
+	}
+	if len(grpMsgs[0].Deliveries) != 1 || grpMsgs[0].Deliveries[0].TargetAgentID != "t-agent" {
+		t.Fatalf("expected deliveries for t-agent, got %+v", grpMsgs[0].Deliveries)
+	}
+}

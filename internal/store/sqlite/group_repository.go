@@ -489,6 +489,46 @@ SELECT id, hub_id, group_id, sender_agent_id, context_id, idempotency_key, messa
 FROM group_message WHERE group_id = ? AND sender_agent_id = ? AND idempotency_key = ?`, groupID, senderID, key))
 }
 
+func (repository *Repository) ListGroupMessagesAdmin(ctx context.Context, beforeID uint64, limit int, groupID, agentID string) ([]hub.GroupMessage, error) {
+	if limit < 1 || limit > 200 {
+		limit = 50
+	}
+	groupID = strings.TrimSpace(groupID)
+	agentID = strings.TrimSpace(agentID)
+	query := `
+SELECT id, hub_id, group_id, sender_agent_id, context_id, idempotency_key, message, created_at
+FROM group_message
+WHERE (? = 0 OR id < ?)
+  AND (? = '' OR group_id = ?)
+  AND (? = '' OR sender_agent_id = ?)
+ORDER BY id DESC LIMIT ?`
+	rows, err := repository.executor().QueryContext(ctx, query, beforeID, beforeID, groupID, groupID, agentID, agentID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	messages := make([]hub.GroupMessage, 0, limit)
+	for rows.Next() {
+		message, err := scanGroupMessage(rows)
+		if err != nil {
+			return nil, err
+		}
+		message.Trust = "UNTRUSTED_DATA"
+		messages = append(messages, message)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for index := range messages {
+		deliveries, err := repository.listGroupDeliveries(ctx, messages[index].ID)
+		if err != nil {
+			return nil, err
+		}
+		messages[index].Deliveries = deliveries
+	}
+	return messages, nil
+}
+
 func (repository *Repository) listGroupDeliveries(ctx context.Context, messageID uint64) ([]hub.GroupDeliverySummary, error) {
 	rows, err := repository.executor().QueryContext(ctx, `
 SELECT target_agent_id, sequence, state FROM group_delivery

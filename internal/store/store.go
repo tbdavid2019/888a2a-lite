@@ -40,6 +40,7 @@ type InboxStore interface {
 	Acknowledge(context.Context, string, uint64, time.Time) error
 	CancelTask(context.Context, string, string, time.Time) error
 	PendingCount(context.Context, string) (int, error)
+	ListDirectMessagesAdmin(context.Context, uint64, int, string) ([]hub.InboxItem, error)
 }
 
 type EventStore interface {
@@ -75,6 +76,7 @@ type GroupStore interface {
 	SendGroupMessage(context.Context, hub.GroupMessage, int) (hub.GroupMessage, bool, error)
 	ListGroupMessages(context.Context, string, string, uint64, int) ([]hub.GroupMessage, error)
 	CancelPendingGroupDeliveries(context.Context, string, string, time.Time) error
+	ListGroupMessagesAdmin(context.Context, uint64, int, string, string) ([]hub.GroupMessage, error)
 }
 
 type TxStore interface {

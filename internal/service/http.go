@@ -48,10 +48,13 @@ func (server *HTTPServer) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", server.health)
 	mux.HandleFunc("GET /llms.txt", server.llms)
+	mux.HandleFunc("GET /admin", server.adminAnnouncementsUI)
 	mux.HandleFunc("GET /admin/announcements", server.adminAnnouncementsUI)
+	mux.HandleFunc("GET /admin/messages", server.adminAnnouncementsUI)
 	mux.HandleFunc("GET /hub/v1/system-card.json", server.systemCard)
 	mux.HandleFunc("GET /hub/v1/announcements", server.announcements)
 	mux.HandleFunc("GET /hub/v1/admin/announcements", server.adminListAnnouncements)
+	mux.HandleFunc("GET /hub/v1/admin/messages", server.adminListMessages)
 	mux.HandleFunc("POST /hub/v1/admin/announcements", server.adminCreateAnnouncement)
 	mux.HandleFunc("PATCH /hub/v1/admin/announcements/{announcementId}", server.adminUpdateDraft)
 	mux.HandleFunc("POST /hub/v1/admin/announcements/{announcementId}/publish", server.adminPublishDraft)
@@ -826,6 +829,29 @@ func (server *HTTPServer) listEvents(w http.ResponseWriter, r *http.Request) {
 		next = events[len(events)-1].ID
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"events": events, "nextId": next})
+}
+
+func (server *HTTPServer) adminListMessages(w http.ResponseWriter, r *http.Request) {
+	token, ok := server.operatorToken(w, r)
+	if !ok {
+		return
+	}
+	msgType := strings.TrimSpace(r.URL.Query().Get("type"))
+	agentID := strings.TrimSpace(r.URL.Query().Get("agentId"))
+	groupID := strings.TrimSpace(r.URL.Query().Get("groupId"))
+	beforeSequence, _ := parseUintQuery(r, "beforeSequence", 0)
+	beforeID, _ := parseUintQuery(r, "beforeId", 0)
+	limit, err := parseIntQuery(r, "limit", 50)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_QUERY", "limit must be an integer")
+		return
+	}
+	messages, err := server.service.ListMessagesAdmin(r.Context(), token, msgType, beforeSequence, beforeID, limit, groupID, agentID)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, messages)
 }
 
 func (server *HTTPServer) agentCredentials(w http.ResponseWriter, r *http.Request, pathAgentID string) (string, string, bool) {
