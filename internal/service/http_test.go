@@ -208,7 +208,23 @@ func TestHTTPThreeAgentDeliveryAndAuthorizationBoundaries(t *testing.T) {
 		t.Fatalf("admin messages status/body = %d/%s", adminMessages.Code, adminMessages.Body.String())
 	}
 
-	// Admin UI: /admin and /admin/messages should serve html
+	// Admin: List agents with valid operator token
+	adminAgents := doJSONWithBearer(t, handler, http.MethodGet, "/hub/v1/admin/agents", "operator-fixture", nil)
+	if adminAgents.Code != http.StatusOK || !strings.Contains(adminAgents.Body.String(), "codex") {
+		t.Fatalf("admin list agents status/body = %d/%s", adminAgents.Code, adminAgents.Body.String())
+	}
+	var agentListResp struct {
+		Agents       []hub.AgentAdminDetail `json:"agents"`
+		Total        int                    `json:"total"`
+		OnlineCount  int                    `json:"onlineCount"`
+		OfflineCount int                    `json:"offlineCount"`
+	}
+	decodeResponse(t, adminAgents, &agentListResp)
+	if agentListResp.Total != 3 {
+		t.Fatalf("agent count = %d, want 3", agentListResp.Total)
+	}
+
+	// Admin UI: /admin, /admin/messages, and /admin/agents should serve html
 	adminUI := doJSON(t, handler, http.MethodGet, "/admin", "", "", nil)
 	if adminUI.Code != http.StatusOK || !strings.Contains(adminUI.Body.String(), "888a2a-lite 管理後台") {
 		t.Fatalf("admin UI status/body = %d/%s", adminUI.Code, adminUI.Body.String())
@@ -216,6 +232,29 @@ func TestHTTPThreeAgentDeliveryAndAuthorizationBoundaries(t *testing.T) {
 	adminMsgUI := doJSON(t, handler, http.MethodGet, "/admin/messages", "", "", nil)
 	if adminMsgUI.Code != http.StatusOK || !strings.Contains(adminMsgUI.Body.String(), "A2A 訊息監控") {
 		t.Fatalf("admin msg UI status/body = %d/%s", adminMsgUI.Code, adminMsgUI.Body.String())
+	}
+	adminAgentsUI := doJSON(t, handler, http.MethodGet, "/admin/agents", "", "", nil)
+	if adminAgentsUI.Code != http.StatusOK || !strings.Contains(adminAgentsUI.Body.String(), "Agent 管理與在線監控") {
+		t.Fatalf("admin agents UI status/body = %d/%s", adminAgentsUI.Code, adminAgentsUI.Body.String())
+	}
+
+	// Admin: Delete an agent
+	delResp := doJSONWithBearer(t, handler, http.MethodDelete, "/hub/v1/admin/agents/"+agents[2].ID, "operator-fixture", nil)
+	if delResp.Code != http.StatusOK || !strings.Contains(delResp.Body.String(), "DELETED") {
+		t.Fatalf("delete agent status/body = %d/%s", delResp.Code, delResp.Body.String())
+	}
+
+	// Verify count is now 2
+	adminAgentsAfterDel := doJSONWithBearer(t, handler, http.MethodGet, "/hub/v1/admin/agents", "operator-fixture", nil)
+	decodeResponse(t, adminAgentsAfterDel, &agentListResp)
+	if agentListResp.Total != 2 {
+		t.Fatalf("agent count after delete = %d, want 2", agentListResp.Total)
+	}
+
+	// Admin: Prune agents
+	pruneResp := doJSONWithBearer(t, handler, http.MethodPost, "/hub/v1/admin/agents/prune", "operator-fixture", nil)
+	if pruneResp.Code != http.StatusOK {
+		t.Fatalf("prune agents status/body = %d/%s", pruneResp.Code, pruneResp.Body.String())
 	}
 }
 

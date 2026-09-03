@@ -25,6 +25,8 @@ type AgentStore interface {
 	HeartbeatAgent(context.Context, string, time.Time, time.Time) (hub.RegisteredAgent, error)
 	DisconnectAgent(context.Context, string, time.Time) error
 	RevokeAgent(context.Context, string, string, time.Time) error
+	DeleteAgent(context.Context, string) error
+	PruneInactiveAgents(context.Context, time.Time) (int64, error)
 }
 
 type PolicyStore interface {

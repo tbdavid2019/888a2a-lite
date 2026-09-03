@@ -105,6 +105,23 @@ type AgentView struct {
 	Card               AgentCard  `json:"card"`
 }
 
+type AgentAdminDetail struct {
+	HubID          string     `json:"hubId"`
+	AgentID        string     `json:"agentId"`
+	DisplayName    string     `json:"displayName"`
+	ProviderFamily string     `json:"providerFamily"`
+	TransportID    string     `json:"transportId"`
+	Capabilities   []string   `json:"capabilities"`
+	State          AgentState `json:"state"`
+	IsOnline       bool       `json:"isOnline"`
+	LastSeenAt     *time.Time `json:"lastSeenAt,omitempty"`
+	LeaseExpiresAt *time.Time `json:"leaseExpiresAt,omitempty"`
+	ExpiresAt      time.Time  `json:"expiresAt"`
+	CreatedAt      time.Time  `json:"createdAt"`
+	RevokedAt      *time.Time `json:"revokedAt,omitempty"`
+	RevokeReason   string     `json:"revokeReason,omitempty"`
+}
+
 func GenerateToken() (string, error) {
 	bytes := make([]byte, 32)
 	if _, err := rand.Read(bytes); err != nil {

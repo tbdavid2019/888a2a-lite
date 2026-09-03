@@ -44,4 +44,7 @@ const (
 	EventGroupHistoryViewed          = "group.history_viewed"
 	EventGroupDeliveryPolled         = "group.delivery_polled"
 	EventGroupAuthorizationDenied    = "group.authorization_denied"
+	EventAgentDeleted                = "agent.deleted"
+	EventAgentsPruned                = "agents.pruned"
 )
+

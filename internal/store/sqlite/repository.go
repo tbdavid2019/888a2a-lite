@@ -262,6 +262,75 @@ WHERE agent_id = ? AND revoked_at IS NULL`, formatTime(revokedAt), reason, agent
 	return nil
 }
 
+func (repository *Repository) DeleteAgent(ctx context.Context, agentID string) error {
+	return repository.withTransaction(ctx, func(tx *Repository) error {
+		if _, err := tx.executor().ExecContext(ctx, `DELETE FROM inbox_item WHERE target_agent_id = ? OR requester_agent_id = ?`, agentID, agentID); err != nil {
+			return err
+		}
+		if _, err := tx.executor().ExecContext(ctx, `DELETE FROM group_delivery WHERE target_agent_id = ?`, agentID); err != nil {
+			return err
+		}
+		if _, err := tx.executor().ExecContext(ctx, `DELETE FROM group_member WHERE agent_id = ?`, agentID); err != nil {
+			return err
+		}
+		if _, err := tx.executor().ExecContext(ctx, `DELETE FROM group_invitation WHERE inviter_agent_id = ? OR invitee_agent_id = ?`, agentID, agentID); err != nil {
+			return err
+		}
+		result, err := tx.executor().ExecContext(ctx, `DELETE FROM agent WHERE agent_id = ?`, agentID)
+		if err != nil {
+			return err
+		}
+		if affected, _ := result.RowsAffected(); affected == 0 {
+			return ErrNotFound
+		}
+		return nil
+	})
+}
+
+func (repository *Repository) PruneInactiveAgents(ctx context.Context, now time.Time) (int64, error) {
+	var pruned int64
+	err := repository.withTransaction(ctx, func(tx *Repository) error {
+		rows, err := tx.executor().QueryContext(ctx, `
+SELECT agent_id FROM agent
+WHERE revoked_at IS NOT NULL OR expires_at <= ?`, formatTime(now))
+		if err != nil {
+			return err
+		}
+		defer func() { _ = rows.Close() }()
+		var agentIDs []string
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				return err
+			}
+			agentIDs = append(agentIDs, id)
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		for _, id := range agentIDs {
+			if _, err := tx.executor().ExecContext(ctx, `DELETE FROM inbox_item WHERE target_agent_id = ? OR requester_agent_id = ?`, id, id); err != nil {
+				return err
+			}
+			if _, err := tx.executor().ExecContext(ctx, `DELETE FROM group_delivery WHERE target_agent_id = ?`, id); err != nil {
+				return err
+			}
+			if _, err := tx.executor().ExecContext(ctx, `DELETE FROM group_member WHERE agent_id = ?`, id); err != nil {
+				return err
+			}
+			if _, err := tx.executor().ExecContext(ctx, `DELETE FROM group_invitation WHERE inviter_agent_id = ? OR invitee_agent_id = ?`, id, id); err != nil {
+				return err
+			}
+			if _, err := tx.executor().ExecContext(ctx, `DELETE FROM agent WHERE agent_id = ?`, id); err != nil {
+				return err
+			}
+			pruned++
+		}
+		return nil
+	})
+	return pruned, err
+}
+
 func (repository *Repository) GetPolicy(ctx context.Context) (hub.HubPolicy, error) {
 	var (
 		policy                 hub.HubPolicy

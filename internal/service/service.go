@@ -297,6 +297,71 @@ func (service *Service) Revoke(ctx context.Context, agentID, reason string) erro
 	return err
 }
 
+func (service *Service) ListAgentsAdmin(ctx context.Context, token string) ([]hub.AgentAdminDetail, error) {
+	if err := service.AuthenticateOperator(token); err != nil {
+		return nil, err
+	}
+	agents, err := service.store.Agents().ListAgents(ctx)
+	if err != nil {
+		return nil, err
+	}
+	now := service.now().UTC()
+	details := make([]hub.AgentAdminDetail, 0, len(agents))
+	for _, agent := range agents {
+		state := agent.StateAt(now)
+		var lastSeen *time.Time
+		if !agent.LastSeenAt.IsZero() {
+			t := agent.LastSeenAt
+			lastSeen = &t
+		}
+		var leaseExpires *time.Time
+		if !agent.LeaseExpiresAt.IsZero() {
+			t := agent.LeaseExpiresAt
+			leaseExpires = &t
+		}
+		details = append(details, hub.AgentAdminDetail{
+			HubID:          agent.HubID,
+			AgentID:        agent.AgentID,
+			DisplayName:    agent.DisplayName,
+			ProviderFamily: agent.ProviderFamily,
+			TransportID:    agent.TransportID,
+			Capabilities:   append([]string(nil), agent.Capabilities...),
+			State:          state,
+			IsOnline:       state == hub.AgentStateOnline,
+			LastSeenAt:     lastSeen,
+			LeaseExpiresAt: leaseExpires,
+			ExpiresAt:      agent.ExpiresAt,
+			CreatedAt:      agent.CreatedAt,
+			RevokedAt:      agent.RevokedAt,
+			RevokeReason:   agent.RevokeReason,
+		})
+	}
+	return details, nil
+}
+
+func (service *Service) DeleteAgent(ctx context.Context, token, agentID string) error {
+	if err := service.AuthenticateOperator(token); err != nil {
+		return err
+	}
+	err := service.store.Agents().DeleteAgent(ctx, agentID)
+	if err == nil {
+		service.audit(ctx, hub.Event{Type: hub.EventAgentDeleted, TargetAgentID: agentID})
+	}
+	return err
+}
+
+func (service *Service) PruneInactiveAgents(ctx context.Context, token string) (int64, error) {
+	if err := service.AuthenticateOperator(token); err != nil {
+		return 0, err
+	}
+	now := service.now().UTC()
+	pruned, err := service.store.Agents().PruneInactiveAgents(ctx, now)
+	if err == nil && pruned > 0 {
+		service.audit(ctx, hub.Event{Type: hub.EventAgentsPruned, Details: map[string]any{"count": pruned}})
+	}
+	return pruned, err
+}
+
 func (service *Service) CancelTask(ctx context.Context, taskID, reason string) error {
 	err := service.store.Inbox().CancelTask(ctx, taskID, reason, service.now().UTC())
 	if err == nil {

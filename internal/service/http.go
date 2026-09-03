@@ -51,6 +51,7 @@ func (server *HTTPServer) Handler() http.Handler {
 	mux.HandleFunc("GET /admin", server.adminAnnouncementsUI)
 	mux.HandleFunc("GET /admin/announcements", server.adminAnnouncementsUI)
 	mux.HandleFunc("GET /admin/messages", server.adminAnnouncementsUI)
+	mux.HandleFunc("GET /admin/agents", server.adminAnnouncementsUI)
 	mux.HandleFunc("GET /hub/v1/system-card.json", server.systemCard)
 	mux.HandleFunc("GET /hub/v1/announcements", server.announcements)
 	mux.HandleFunc("GET /hub/v1/admin/announcements", server.adminListAnnouncements)
@@ -84,7 +85,10 @@ func (server *HTTPServer) Handler() http.Handler {
 	mux.HandleFunc("GET /hub/v1/groups/{groupId}/history", server.groupHistory)
 	mux.HandleFunc("POST /hub/v1/groups/{groupId}/messages", server.sendGroupMessage)
 	mux.HandleFunc("POST /hub/v1/admin/registration", server.setRegistration)
+	mux.HandleFunc("GET /hub/v1/admin/agents", server.adminListAgents)
 	mux.HandleFunc("POST /hub/v1/admin/agents/{agentId}/revoke", server.revokeAgent)
+	mux.HandleFunc("DELETE /hub/v1/admin/agents/{agentId}", server.adminDeleteAgent)
+	mux.HandleFunc("POST /hub/v1/admin/agents/prune", server.adminPruneAgents)
 	mux.HandleFunc("POST /hub/v1/admin/tasks/{taskId}/cancel", server.cancelTask)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -784,6 +788,59 @@ func (server *HTTPServer) revokeAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"agentId": r.PathValue("agentId"), "state": string(hub.AgentStateRevoked)})
+}
+
+func (server *HTTPServer) adminListAgents(w http.ResponseWriter, r *http.Request) {
+	token, ok := server.operatorToken(w, r)
+	if !ok {
+		return
+	}
+	agents, err := server.service.ListAgentsAdmin(r.Context(), token)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	onlineCount := 0
+	offlineCount := 0
+	for _, a := range agents {
+		if a.IsOnline {
+			onlineCount++
+		} else {
+			offlineCount++
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"agents":       agents,
+		"total":        len(agents),
+		"onlineCount":  onlineCount,
+		"offlineCount": offlineCount,
+	})
+}
+
+func (server *HTTPServer) adminDeleteAgent(w http.ResponseWriter, r *http.Request) {
+	token, ok := server.operatorToken(w, r)
+	if !ok {
+		return
+	}
+	agentID := r.PathValue("agentId")
+	if err := server.service.DeleteAgent(r.Context(), token, agentID); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"agentId": agentID, "status": "DELETED"})
+}
+
+func (server *HTTPServer) adminPruneAgents(w http.ResponseWriter, r *http.Request) {
+	token, ok := server.operatorToken(w, r)
+	if !ok {
+		return
+	}
+	pruned, err := server.service.PruneInactiveAgents(r.Context(), token)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"prunedCount": pruned})
 }
 
 func (server *HTTPServer) cancelTask(w http.ResponseWriter, r *http.Request) {
