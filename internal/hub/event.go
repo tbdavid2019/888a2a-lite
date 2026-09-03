@@ -47,4 +47,3 @@ const (
 	EventAgentDeleted                = "agent.deleted"
 	EventAgentsPruned                = "agents.pruned"
 )
-
