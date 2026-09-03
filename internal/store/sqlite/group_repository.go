@@ -209,6 +209,13 @@ func (repository *Repository) AcceptInvitation(ctx context.Context, id uint64, a
 		if !expiresAt.After(acceptedAt) {
 			return store.ErrForbidden
 		}
+		var activeCount int
+		if err := tx.executor().QueryRowContext(ctx, `SELECT count(*) FROM group_member WHERE group_id = ? AND state = 'ACTIVE'`, invitation.GroupID).Scan(&activeCount); err != nil {
+			return err
+		}
+		if activeCount >= 32 {
+			return store.ErrInvalidState
+		}
 		_, err = tx.executor().ExecContext(ctx, `
 INSERT INTO group_member (hub_id, group_id, agent_id, role, state, joined_at, left_at, removed_at)
 VALUES (?, ?, ?, 'MEMBER', 'ACTIVE', ?, NULL, NULL)
