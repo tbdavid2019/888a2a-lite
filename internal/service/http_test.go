@@ -143,6 +143,15 @@ func TestHTTPThreeAgentDeliveryAndAuthorizationBoundaries(t *testing.T) {
 	if heartbeat.Code != http.StatusUnauthorized {
 		t.Fatalf("revoked heartbeat status/body = %d/%s", heartbeat.Code, heartbeat.Body.String())
 	}
+	peersAfterRevoke := doJSON(t, handler, http.MethodGet, "/hub/v1/agents", agents[0].ID, agents[0].Token, nil)
+	if peersAfterRevoke.Code != http.StatusOK || strings.Contains(peersAfterRevoke.Body.String(), agents[2].ID) {
+		t.Fatalf("peers after revoke still contained revoked agent: %s", peersAfterRevoke.Body.String())
+	}
+	onlinePeers := doJSON(t, handler, http.MethodGet, "/hub/v1/agents?state=online", agents[0].ID, agents[0].Token, nil)
+	if onlinePeers.Code != http.StatusOK || !strings.Contains(onlinePeers.Body.String(), agents[1].ID) {
+		t.Fatalf("online peers did not return active peer: %s", onlinePeers.Body.String())
+	}
+
 
 	registration := doJSONWithBearer(t, handler, http.MethodPost, "/hub/v1/admin/registration", "operator-fixture", map[string]bool{"enabled": false})
 	if registration.Code != http.StatusOK {

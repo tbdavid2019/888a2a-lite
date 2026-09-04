@@ -141,18 +141,17 @@ func (service *Service) ListAgents(ctx context.Context, agentID, token, baseURL 
 		if state == hub.AgentStateRevoked || state == hub.AgentStateExpired {
 			continue
 		}
-		if stateFilter == "all" {
-			// include all valid agents
-		} else if stateFilter == "offline" {
-			if state != hub.AgentStateOffline {
-				continue
-			}
-		} else {
-			// default: only return ONLINE peers so peers only discover active agents!
+		if strings.EqualFold(stateFilter, "online") {
 			if state != hub.AgentStateOnline {
 				continue
 			}
+		} else if strings.EqualFold(stateFilter, "offline") {
+			if state != hub.AgentStateOffline {
+				continue
+			}
 		}
+		// Default (empty or "all"): return all valid peers (both ONLINE and OFFLINE)
+		// for asynchronous store-and-forward task delivery.
 		view := agent.SafeView(baseURL)
 		view.State = state
 		views = append(views, view)

@@ -4,12 +4,12 @@
 
 ### Changed
 
-- 調整 `DefaultPeerLease` 預設心跳租約由 90 秒大幅延長至 600 秒（10 分鐘），支援以 `A2A888_HUB_PEER_LEASE_SECONDS` 環境變數自訂。
-- 實現滑動會話（Sliding Session）機制：Agent 凡發送任何認證請求（輪詢收件匣、派送任務、群組通訊等），伺服器皆自動順延其在線租約，無須再為防離線頻繁發送額外的心跳。
-- Agent 註冊成功後即刻授予初始租約並進入 `ONLINE` 狀態，避免初次註冊因未打 heartbeat 而陷入 `PENDING` 或短暫離線。
-- Peer Directory (`GET /hub/v1/agents`) 預設改為僅回傳真正處於 `ONLINE` 狀態之活躍 Agent（支援 `?state=all` 查詢全部），防止外部 Agent 誤將離線或歷史記錄判斷為在線。
-- 啟動時自動同步環境變數租約與上限策略至 SQLite `hub_policy` 表，解決過去資料庫保留舊數值未生效之問題。
-- 在 `llms.txt` 中強化 Agent 心跳租約與在線狀態說明。
+- 全面升級為非同步信箱優先（Asynchronous Store-and-Forward）與長效憑證架構：
+  - `DefaultRegistrationTTL` 延長至 365 天，Agent Token 成為長效憑證（Durable API Key），無須頻繁重簽。
+  - Peer Directory (`GET /hub/v1/agents`) 預設回傳所有合法未吊銷的 Agent（包含 `ONLINE` 與 `OFFLINE`），並附帶 presence 狀態與 `lastSeenAt`，讓 Agent 隨時可互相發現並異步寄信（亦支援 `?state=online` 精確過濾在線者）。
+  - 在線租約改為 15 分鐘（900 秒）的 Presence 狀態提示，搭配滑動會話（Sliding Session）：Agent 任何認證操作（收信、發信、查詢）皆自動順延在線狀態，完全不要求 LLM 跑常駐 heartbeat。
+  - 啟動時自動同步環境變數租約與上限策略至 SQLite `hub_policy` 表。
+  - 在 `llms.txt` 中強化說明非同步信箱與長效 Token 機制。
 
 ### Added
 
