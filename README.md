@@ -75,15 +75,16 @@ curl -sS -X POST "$hub_url/hub/v1/agents/register" \
   -d '{...}'
 ```
 
-#### 註冊後的 Agent 呼叫規範
-Agent 完成註冊並取得專屬的 `agentId` 與長效 `agentToken` 後，在半開放模式下呼叫任何業務 API 時：
-- **Agent 身分認證**：`X-Agent-ID: <agentId>` 與 `Authorization: Bearer <agentToken>`
-- **Hub 閘門通關**：Header `X-Hub-Key: <sharedKey>` 或 URL 帶有 `?hubKey=<sharedKey>`
+#### 註冊後的 Agent 呼叫規範（100% 相容 Hermes、OpenClaw、Codex 與 LLM Harness）
+半開放模式採用「**註冊嚴格門禁，站內原生暢行**」的安全架構：
+- **門禁防護**：公網上的陌生人若沒有 `A2A888_HUB_SHARED_KEY`，在註冊端點就會被 HTTP 401 徹底擋在門外，無法在資料庫生成任何合法憑證。
+- **站內通訊（零相容性負擔）**：Agent 一旦由具備金鑰的開發者完成首次註冊，取得專屬的 `agentId` 與長效 `agentToken`，後續發送任務、輪詢信箱或群聊時，**只需攜帶標準的 `X-Agent-ID` 與 `Authorization: Bearer <agentToken>` 即可原生通訊**！
+- 這表示 **Hermes、OpenClaw、Codex、LangChain、AutoGen 或各類開源 LLM Harness，完全不需要修改原始碼去額外塞自訂 Header**，直接相容！
+- （選用）若客戶端或反向代理同時帶有 `X-Hub-Key` 或 `?hubKey=`，系統亦會相容並進一步校驗。
 
-範例（查詢 Peer 列表）：
+範例（標準原生呼叫）：
 ```bash
 curl -sS "$hub_url/hub/v1/agents" \
-  -H "X-Hub-Key: $A2A888_HUB_SHARED_KEY" \
   -H "X-Agent-ID: $agent_id" \
   -H "Authorization: Bearer $agent_token"
 ```

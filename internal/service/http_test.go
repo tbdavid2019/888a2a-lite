@@ -459,17 +459,38 @@ func TestHTTPSemiOpenSharedKeyEnforcement(t *testing.T) {
 		t.Fatalf("bearer key register status = %d, want 201; body=%s", bearerKeyRec.Code, bearerKeyRec.Body.String())
 	}
 
-	// 7. Call agent API without X-Hub-Key (even with valid agent token) should fail with 401
-	noKeyAgentReq := httptest.NewRequest(http.MethodGet, "/hub/v1/agents", nil)
-	noKeyAgentReq.Header.Set("X-Agent-ID", agentID)
-	noKeyAgentReq.Header.Set("Authorization", "Bearer "+agentToken)
-	noKeyAgentRec := httptest.NewRecorder()
-	handler.ServeHTTP(noKeyAgentRec, noKeyAgentReq)
-	if noKeyAgentRec.Code != http.StatusUnauthorized {
-		t.Fatalf("no key agent list status = %d, want 401", noKeyAgentRec.Code)
+	// 7. Call agent API with valid agent token (standard adapter without X-Hub-Key) succeeds seamlessly
+	standardAgentReq := httptest.NewRequest(http.MethodGet, "/hub/v1/agents", nil)
+	standardAgentReq.Header.Set("X-Agent-ID", agentID)
+	standardAgentReq.Header.Set("Authorization", "Bearer "+agentToken)
+	standardAgentRec := httptest.NewRecorder()
+	handler.ServeHTTP(standardAgentRec, standardAgentReq)
+	if standardAgentRec.Code != http.StatusOK {
+		t.Fatalf("standard agent list status = %d, want 200; body=%s", standardAgentRec.Code, standardAgentRec.Body.String())
 	}
 
-	// 8. Call agent API with valid X-Hub-Key and valid agent token should succeed with 200
+	// 8. Stranger calling agent API without valid token fails with 401
+	strangerReq := httptest.NewRequest(http.MethodGet, "/hub/v1/agents", nil)
+	strangerReq.Header.Set("X-Agent-ID", "stranger-agent")
+	strangerReq.Header.Set("Authorization", "Bearer invalid-token")
+	strangerRec := httptest.NewRecorder()
+	handler.ServeHTTP(strangerRec, strangerReq)
+	if strangerRec.Code != http.StatusUnauthorized {
+		t.Fatalf("stranger agent list status = %d, want 401", strangerRec.Code)
+	}
+
+	// 9. Call agent API with valid agent token BUT explicitly bad X-Hub-Key fails with 401
+	badKeyReq2 := httptest.NewRequest(http.MethodGet, "/hub/v1/agents", nil)
+	badKeyReq2.Header.Set("X-Agent-ID", agentID)
+	badKeyReq2.Header.Set("Authorization", "Bearer "+agentToken)
+	badKeyReq2.Header.Set("X-Hub-Key", "wrong-key")
+	badKeyRec2 := httptest.NewRecorder()
+	handler.ServeHTTP(badKeyRec2, badKeyReq2)
+	if badKeyRec2.Code != http.StatusUnauthorized {
+		t.Fatalf("bad key agent list status = %d, want 401", badKeyRec2.Code)
+	}
+
+	// 10. Call agent API with valid X-Hub-Key and valid agent token succeeds with 200
 	withKeyAgentReq := httptest.NewRequest(http.MethodGet, "/hub/v1/agents", nil)
 	withKeyAgentReq.Header.Set("X-Agent-ID", agentID)
 	withKeyAgentReq.Header.Set("Authorization", "Bearer "+agentToken)
@@ -480,7 +501,7 @@ func TestHTTPSemiOpenSharedKeyEnforcement(t *testing.T) {
 		t.Fatalf("with key agent list status = %d, want 200; body=%s", withKeyAgentRec.Code, withKeyAgentRec.Body.String())
 	}
 
-	// 9. Call agent API with query param ?hubKey=... should succeed with 200
+	// 11. Call agent API with query param ?hubKey=... succeeds with 200
 	queryKeyAgentReq := httptest.NewRequest(http.MethodGet, "/hub/v1/agents?hubKey="+sharedKey, nil)
 	queryKeyAgentReq.Header.Set("X-Agent-ID", agentID)
 	queryKeyAgentReq.Header.Set("Authorization", "Bearer "+agentToken)

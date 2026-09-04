@@ -956,9 +956,33 @@ func (server *HTTPServer) verifySharedKey(r *http.Request) bool {
 }
 
 func (server *HTTPServer) agentCredentials(w http.ResponseWriter, r *http.Request, pathAgentID string) (string, string, bool) {
-	if !server.verifySharedKey(r) {
-		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "shared key required or invalid")
-		return "", "", false
+	if server.service.config.SharedKey != "" {
+		candidate := strings.TrimSpace(r.Header.Get("X-Hub-Key"))
+		if candidate == "" {
+			candidate = strings.TrimSpace(r.Header.Get("X-Shared-Key"))
+		}
+		if candidate == "" {
+			candidate = strings.TrimSpace(r.Header.Get("X-A2A-Key"))
+		}
+		if candidate == "" {
+			candidate = strings.TrimSpace(r.URL.Query().Get("hubKey"))
+		}
+		if candidate == "" {
+			candidate = strings.TrimSpace(r.URL.Query().Get("hub_key"))
+		}
+		if candidate == "" {
+			candidate = strings.TrimSpace(r.URL.Query().Get("sharedKey"))
+		}
+		if candidate == "" {
+			candidate = strings.TrimSpace(r.URL.Query().Get("shared_key"))
+		}
+		if candidate == "" {
+			candidate = strings.TrimSpace(r.URL.Query().Get("key"))
+		}
+		if candidate != "" && subtle.ConstantTimeCompare([]byte(candidate), []byte(server.service.config.SharedKey)) != 1 {
+			writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "shared key invalid")
+			return "", "", false
+		}
 	}
 	agentID := strings.TrimSpace(r.Header.Get("X-Agent-ID"))
 	if agentID == "" || (pathAgentID != "" && agentID != pathAgentID) {
