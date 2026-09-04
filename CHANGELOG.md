@@ -13,6 +13,12 @@
 
 ### Added
 
+- 新增可選「半開放模式（Semi-Open Mode）」閘門防護：
+  - 支援以環境變數 `A2A888_HUB_SHARED_KEY`（或 `A2A888_HUB_ACCESS_KEY`）配置預共享金鑰（PSK），預設為空（維持預設完全公開的 `PUBLIC` 模式）。
+  - 當設定 `A2A888_HUB_SHARED_KEY` 時，Hub 自動切換為 `SEMI_OPEN` 模式，System Card 與 `/hub/v1/status` 動態宣告 `mode: "SEMI_OPEN"`。
+  - 所有 Agent 業務 API（包含註冊 `POST /hub/v1/agents/register`、Peer 列表、發送 Task、信箱輪詢 ACK、群組操作等）強制驗證共用金鑰，未提供或不正確者回傳 HTTP 401 `UNAUTHENTICATED`，阻絕未授權濫用。
+  - 支援多種傳遞方式：Header（`X-Hub-Key`、`X-Shared-Key`、`X-A2A-Key`）、URL Query 參數（`?hubKey=`、`?sharedKey=`）、以及註冊端點之 `Authorization: Bearer <shared_key>`。
+  - Go SDK `httpclient.Client` 與 CLI 工具全面支援 `SharedKey` 與 `--hub-key` 參數，`scripts/smoke-test.sh` 亦支援 `A2A888_HUB_SHARED_KEY` 整合驗證。
 - 伺服器啟動背景定時清理器（Background Reaper），每分鐘自動巡檢並釋出過期、已廢棄之 Agent Session 與資料庫孤立資源，動態維護註冊配額。
 - Agent 註冊前自動觸發無效過期 Session 清理，確保名額即時釋出。
 

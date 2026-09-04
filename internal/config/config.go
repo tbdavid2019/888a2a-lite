@@ -41,6 +41,7 @@ type Config struct {
 	MaxGroupHistoryPage   int
 	RegistrationPerMinute int
 	OperatorToken         string
+	SharedKey             string
 }
 
 func Load() (Config, error) {
@@ -61,6 +62,7 @@ func Load() (Config, error) {
 		MaxGroupHistoryPage:   DefaultMaxGroupHistoryPage,
 		RegistrationPerMinute: DefaultRegistrationPerMinute,
 		OperatorToken:         os.Getenv("A2A888_HUB_OPERATOR_TOKEN"),
+		SharedKey:             strings.TrimSpace(valueOr("A2A888_HUB_SHARED_KEY", os.Getenv("A2A888_HUB_ACCESS_KEY"))),
 	}
 	var err error
 	if config.RegistrationTTL, err = envDurationSeconds("A2A888_HUB_REGISTRATION_TTL_SECONDS", config.RegistrationTTL); err != nil {

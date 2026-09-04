@@ -8,14 +8,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/tbdavid2019/888a2a-lite/internal/hub"
 	"github.com/tbdavid2019/888a2a-lite/sdk/httpclient"
 )
 
 type credentialFile struct {
-	HubURL   string            `json:"hubUrl"`
-	Identity hub.AgentIdentity `json:"identity"`
+	HubURL    string            `json:"hubUrl"`
+	SharedKey string            `json:"sharedKey,omitempty"`
+	Identity  hub.AgentIdentity `json:"identity"`
 }
 
 func runCLI(command string, args []string) error {
@@ -62,6 +64,7 @@ func runCLI(command string, args []string) error {
 func runRegister(args []string) error {
 	flags := flag.NewFlagSet("register", flag.ContinueOnError)
 	hubURL := flags.String("hub", "", "Hub URL")
+	hubKey := flags.String("hub-key", "", "Hub shared key (for semi-open mode)")
 	credentialPath := flags.String("credential-file", "", "0600 credential file path")
 	declaration := hub.AgentDeclaration{}
 	flags.StringVar(&declaration.DisplayName, "name", "", "Agent display name")
@@ -74,10 +77,18 @@ func runRegister(args []string) error {
 	if *hubURL == "" || *credentialPath == "" {
 		return errors.New("--hub and --credential-file are required")
 	}
+	sharedKey := strings.TrimSpace(*hubKey)
+	if sharedKey == "" {
+		sharedKey = strings.TrimSpace(os.Getenv("A2A888_HUB_SHARED_KEY"))
+	}
+	if sharedKey == "" {
+		sharedKey = strings.TrimSpace(os.Getenv("A2A888_HUB_KEY"))
+	}
 	client, err := httpclient.New(*hubURL)
 	if err != nil {
 		return err
 	}
+	client.SharedKey = sharedKey
 	response, err := client.Register(context.Background(), declaration)
 	if err != nil {
 		return err
@@ -85,7 +96,7 @@ func runRegister(args []string) error {
 	if response.Identity.AgentToken == "" {
 		return errors.New("registration did not issue a token; use the existing credential file")
 	}
-	if err := saveCredentials(*credentialPath, credentialFile{HubURL: *hubURL, Identity: response.Identity}); err != nil {
+	if err := saveCredentials(*credentialPath, credentialFile{HubURL: *hubURL, SharedKey: sharedKey, Identity: response.Identity}); err != nil {
 		return err
 	}
 	return writeOutput(map[string]any{
@@ -432,6 +443,13 @@ func loadClient(path string) (*httpclient.Client, error) {
 	}
 	client.AgentID = credentials.Identity.AgentID
 	client.AgentToken = credentials.Identity.AgentToken
+	client.SharedKey = credentials.SharedKey
+	if client.SharedKey == "" {
+		client.SharedKey = strings.TrimSpace(os.Getenv("A2A888_HUB_SHARED_KEY"))
+	}
+	if client.SharedKey == "" {
+		client.SharedKey = strings.TrimSpace(os.Getenv("A2A888_HUB_KEY"))
+	}
 	return client, nil
 }
 

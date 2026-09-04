@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/subtle"
 	_ "embed"
 	"encoding/base64"
 	"encoding/json"
@@ -342,6 +343,10 @@ func (server *HTTPServer) status(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *HTTPServer) register(w http.ResponseWriter, r *http.Request) {
+	if !server.verifySharedKey(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "shared key required or invalid")
+		return
+	}
 	if !server.registrationLimiter.allow(clientIP(r)) {
 		writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "registration rate limit exceeded")
 		return
@@ -912,7 +917,49 @@ func (server *HTTPServer) adminListMessages(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, messages)
 }
 
+func (server *HTTPServer) verifySharedKey(r *http.Request) bool {
+	sharedKey := server.service.config.SharedKey
+	if sharedKey == "" {
+		return true
+	}
+	candidate := strings.TrimSpace(r.Header.Get("X-Hub-Key"))
+	if candidate == "" {
+		candidate = strings.TrimSpace(r.Header.Get("X-Shared-Key"))
+	}
+	if candidate == "" {
+		candidate = strings.TrimSpace(r.Header.Get("X-A2A-Key"))
+	}
+	if candidate == "" {
+		candidate = strings.TrimSpace(r.URL.Query().Get("hubKey"))
+	}
+	if candidate == "" {
+		candidate = strings.TrimSpace(r.URL.Query().Get("hub_key"))
+	}
+	if candidate == "" {
+		candidate = strings.TrimSpace(r.URL.Query().Get("sharedKey"))
+	}
+	if candidate == "" {
+		candidate = strings.TrimSpace(r.URL.Query().Get("shared_key"))
+	}
+	if candidate == "" {
+		candidate = strings.TrimSpace(r.URL.Query().Get("key"))
+	}
+	if candidate == "" {
+		if bearer, ok := bearerToken(r.Header.Get("Authorization")); ok {
+			candidate = bearer
+		}
+	}
+	if candidate == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(candidate), []byte(sharedKey)) == 1
+}
+
 func (server *HTTPServer) agentCredentials(w http.ResponseWriter, r *http.Request, pathAgentID string) (string, string, bool) {
+	if !server.verifySharedKey(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "shared key required or invalid")
+		return "", "", false
+	}
 	agentID := strings.TrimSpace(r.Header.Get("X-Agent-ID"))
 	if agentID == "" || (pathAgentID != "" && agentID != pathAgentID) {
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "authentication failed")

@@ -23,6 +23,7 @@ type Client struct {
 	HTTPClient *http.Client
 	AgentID    string
 	AgentToken string
+	SharedKey  string
 	MaxRetries int
 	RetryDelay time.Duration
 }
@@ -379,6 +380,9 @@ func (client *Client) request(ctx context.Context, method, path string, payload 
 		request.Header.Set("Accept", "application/json")
 		if payload != nil {
 			request.Header.Set("Content-Type", "application/json")
+		}
+		if client.SharedKey != "" {
+			request.Header.Set("X-Hub-Key", client.SharedKey)
 		}
 		if authenticated {
 			request.Header.Set("X-Agent-ID", client.AgentID)

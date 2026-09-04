@@ -4,6 +4,7 @@ set -eu
 HUB_URL=${HUB_URL:-http://127.0.0.1:8080}
 HUB_SERVICE=${HUB_SERVICE:-hub}
 OPERATOR_TOKEN=${A2A888_HUB_OPERATOR_TOKEN:?A2A888_HUB_OPERATOR_TOKEN is required}
+SHARED_KEY=${A2A888_HUB_SHARED_KEY:-}
 RUN_ID=${SMOKE_RUN_ID:-$(date +%s)}
 
 command -v curl >/dev/null 2>&1 || { echo "curl is required" >&2; exit 1; }
@@ -22,7 +23,11 @@ request() {
 	path=$2
 	output=$3
 	shift 3
-	curl -sS -X "$method" "$HUB_URL$path" "$@" -o "$output" -w '%{http_code}'
+	if [ -n "$SHARED_KEY" ]; then
+		curl -sS -X "$method" "$HUB_URL$path" -H "X-Hub-Key: $SHARED_KEY" "$@" -o "$output" -w '%{http_code}'
+	else
+		curl -sS -X "$method" "$HUB_URL$path" "$@" -o "$output" -w '%{http_code}'
+	fi
 }
 
 register_agent() {

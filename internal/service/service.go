@@ -27,6 +27,7 @@ var (
 
 type HubStatus struct {
 	HubID               string `json:"hubId"`
+	Mode                string `json:"mode"`
 	RegistrationEnabled bool   `json:"registrationEnabled"`
 	RegisteredAgents    int    `json:"registeredAgents"`
 	PendingTasks        int    `json:"pendingTasks"`
@@ -296,7 +297,11 @@ func (service *Service) Status(ctx context.Context) (HubStatus, error) {
 	if err != nil {
 		pending = 0
 	}
-	return HubStatus{HubID: policy.HubID, RegistrationEnabled: policy.RegistrationEnabled, RegisteredAgents: registered, PendingTasks: pending}, nil
+	mode := "PUBLIC"
+	if service.config.SharedKey != "" {
+		mode = "SEMI_OPEN"
+	}
+	return HubStatus{HubID: policy.HubID, Mode: mode, RegistrationEnabled: policy.RegistrationEnabled, RegisteredAgents: registered, PendingTasks: pending}, nil
 }
 
 func (service *Service) AuthenticateOperator(token string) error {
@@ -407,10 +412,14 @@ func (service *Service) ListEvents(ctx context.Context, token string, afterID ui
 
 func (service *Service) BuildSystemCard(baseURL string) hub.HubSystemCard {
 	baseURL = strings.TrimRight(baseURL, "/")
+	mode := "PUBLIC"
+	if service.config.SharedKey != "" {
+		mode = "SEMI_OPEN"
+	}
 	return hub.HubSystemCard{
 		HubID:                service.config.HubID,
 		SelfURL:              baseURL + "/hub/v1/system-card.json",
-		Mode:                 "PUBLIC",
+		Mode:                 mode,
 		Protocol:             "a2a888-hub",
 		ProtocolVersion:      "1",
 		DeliverySemantics:    "AT_LEAST_ONCE",

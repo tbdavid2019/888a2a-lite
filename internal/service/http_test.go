@@ -313,3 +313,180 @@ func decodeResponse(t *testing.T, response *httptest.ResponseRecorder, target an
 func itoa(value uint64) string {
 	return strconv.FormatUint(value, 10)
 }
+
+func TestHTTPSemiOpenSharedKeyEnforcement(t *testing.T) {
+	ctx := context.Background()
+	database, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "hub.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open: %v", err)
+	}
+	defer func() {
+		_ = database.Close()
+	}()
+	repository := sqlite.NewRepository(database)
+	sharedKey := "semi-open-secret-key-123"
+	cfg := config.Config{
+		HubID:                 "public",
+		ListenAddr:            ":0",
+		DatabasePath:          filepath.Join(t.TempDir(), "unused.db"),
+		PublicBaseURL:         "https://hub.example",
+		RegistrationEnabled:   true,
+		RegistrationTTL:       24 * time.Hour,
+		PeerLease:             90 * time.Second,
+		MaxRegisteredAgents:   10,
+		MaxTasksPerMinute:     20,
+		MaxConcurrentTasks:    4,
+		MaxPayloadBytes:       1 << 20,
+		RegistrationPerMinute: 20,
+		OperatorToken:         "operator-fixture",
+		SharedKey:             sharedKey,
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("config.Validate: %v", err)
+	}
+	_ = repository.Policy().SavePolicy(ctx, hub.HubPolicy{
+		HubID:               cfg.HubID,
+		RegistrationEnabled: cfg.RegistrationEnabled,
+		RegistrationTTL:     cfg.RegistrationTTL,
+		PeerLease:           cfg.PeerLease,
+		MaxRegisteredAgents: cfg.MaxRegisteredAgents,
+		MaxTasksPerMinute:   cfg.MaxTasksPerMinute,
+		MaxConcurrentTasks:  cfg.MaxConcurrentTasks,
+		MaxPayloadBytes:     cfg.MaxPayloadBytes,
+	})
+	srv := New(repository, cfg)
+	handler := NewHTTPServer(srv).Handler()
+
+	// 1. Health and llms.txt should work publicly without shared key
+	healthReq := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	healthRec := httptest.NewRecorder()
+	handler.ServeHTTP(healthRec, healthReq)
+	if healthRec.Code != http.StatusOK {
+		t.Fatalf("health status = %d", healthRec.Code)
+	}
+
+	llmsReq := httptest.NewRequest(http.MethodGet, "/llms.txt", nil)
+	llmsRec := httptest.NewRecorder()
+	handler.ServeHTTP(llmsRec, llmsReq)
+	if llmsRec.Code != http.StatusOK {
+		t.Fatalf("llms status = %d", llmsRec.Code)
+	}
+
+	// 2. System card and status should report mode SEMI_OPEN
+	cardReq := httptest.NewRequest(http.MethodGet, "/hub/v1/system-card.json", nil)
+	cardRec := httptest.NewRecorder()
+	handler.ServeHTTP(cardRec, cardReq)
+	if cardRec.Code != http.StatusOK {
+		t.Fatalf("system-card status = %d", cardRec.Code)
+	}
+	var card hub.HubSystemCard
+	decodeResponse(t, cardRec, &card)
+	if card.Mode != "SEMI_OPEN" {
+		t.Fatalf("system-card mode = %q, want SEMI_OPEN", card.Mode)
+	}
+
+	statusReq := httptest.NewRequest(http.MethodGet, "/hub/v1/status", nil)
+	statusRec := httptest.NewRecorder()
+	handler.ServeHTTP(statusRec, statusReq)
+	if statusRec.Code != http.StatusOK {
+		t.Fatalf("status status = %d", statusRec.Code)
+	}
+	var status HubStatus
+	decodeResponse(t, statusRec, &status)
+	if status.Mode != "SEMI_OPEN" {
+		t.Fatalf("status mode = %q, want SEMI_OPEN", status.Mode)
+	}
+
+	// 3. Register without shared key should fail with 401 UNAUTHENTICATED
+	regBody := map[string]any{
+		"displayName":                "openclaw",
+		"providerFamily":             "openclaw",
+		"transportId":                "http-json",
+		"capabilities":               []string{"text/plain"},
+		"registrationIdempotencyKey": "test-key-1",
+	}
+	regPayload, _ := json.Marshal(regBody)
+
+	unauthReq := httptest.NewRequest(http.MethodPost, "/hub/v1/agents/register", bytes.NewReader(regPayload))
+	unauthReq.Header.Set("Content-Type", "application/json")
+	unauthRec := httptest.NewRecorder()
+	handler.ServeHTTP(unauthRec, unauthReq)
+	if unauthRec.Code != http.StatusUnauthorized {
+		t.Fatalf("unauth register status = %d, want 401", unauthRec.Code)
+	}
+
+	// 4. Register with invalid shared key should fail with 401
+	badKeyReq := httptest.NewRequest(http.MethodPost, "/hub/v1/agents/register", bytes.NewReader(regPayload))
+	badKeyReq.Header.Set("Content-Type", "application/json")
+	badKeyReq.Header.Set("X-Hub-Key", "wrong-key")
+	badKeyRec := httptest.NewRecorder()
+	handler.ServeHTTP(badKeyRec, badKeyReq)
+	if badKeyRec.Code != http.StatusUnauthorized {
+		t.Fatalf("bad key register status = %d, want 401", badKeyRec.Code)
+	}
+
+	// 5. Register with valid X-Hub-Key header should succeed with 201
+	validKeyReq := httptest.NewRequest(http.MethodPost, "/hub/v1/agents/register", bytes.NewReader(regPayload))
+	validKeyReq.Header.Set("Content-Type", "application/json")
+	validKeyReq.Header.Set("X-Hub-Key", sharedKey)
+	validKeyRec := httptest.NewRecorder()
+	handler.ServeHTTP(validKeyRec, validKeyReq)
+	if validKeyRec.Code != http.StatusCreated {
+		t.Fatalf("valid key register status = %d, want 201; body=%s", validKeyRec.Code, validKeyRec.Body.String())
+	}
+	var regResp struct {
+		Identity hub.AgentIdentity `json:"identity"`
+	}
+	decodeResponse(t, validKeyRec, &regResp)
+	agentID := regResp.Identity.AgentID
+	agentToken := regResp.Identity.AgentToken
+
+	// 6. Register with Bearer shared key should also succeed
+	regBody2 := map[string]any{
+		"displayName":                "codex",
+		"providerFamily":             "codex",
+		"transportId":                "http-json",
+		"capabilities":               []string{"text/plain"},
+		"registrationIdempotencyKey": "test-key-2",
+	}
+	regPayload2, _ := json.Marshal(regBody2)
+	bearerKeyReq := httptest.NewRequest(http.MethodPost, "/hub/v1/agents/register", bytes.NewReader(regPayload2))
+	bearerKeyReq.Header.Set("Content-Type", "application/json")
+	bearerKeyReq.Header.Set("Authorization", "Bearer "+sharedKey)
+	bearerKeyRec := httptest.NewRecorder()
+	handler.ServeHTTP(bearerKeyRec, bearerKeyReq)
+	if bearerKeyRec.Code != http.StatusCreated {
+		t.Fatalf("bearer key register status = %d, want 201; body=%s", bearerKeyRec.Code, bearerKeyRec.Body.String())
+	}
+
+	// 7. Call agent API without X-Hub-Key (even with valid agent token) should fail with 401
+	noKeyAgentReq := httptest.NewRequest(http.MethodGet, "/hub/v1/agents", nil)
+	noKeyAgentReq.Header.Set("X-Agent-ID", agentID)
+	noKeyAgentReq.Header.Set("Authorization", "Bearer "+agentToken)
+	noKeyAgentRec := httptest.NewRecorder()
+	handler.ServeHTTP(noKeyAgentRec, noKeyAgentReq)
+	if noKeyAgentRec.Code != http.StatusUnauthorized {
+		t.Fatalf("no key agent list status = %d, want 401", noKeyAgentRec.Code)
+	}
+
+	// 8. Call agent API with valid X-Hub-Key and valid agent token should succeed with 200
+	withKeyAgentReq := httptest.NewRequest(http.MethodGet, "/hub/v1/agents", nil)
+	withKeyAgentReq.Header.Set("X-Agent-ID", agentID)
+	withKeyAgentReq.Header.Set("Authorization", "Bearer "+agentToken)
+	withKeyAgentReq.Header.Set("X-Hub-Key", sharedKey)
+	withKeyAgentRec := httptest.NewRecorder()
+	handler.ServeHTTP(withKeyAgentRec, withKeyAgentReq)
+	if withKeyAgentRec.Code != http.StatusOK {
+		t.Fatalf("with key agent list status = %d, want 200; body=%s", withKeyAgentRec.Code, withKeyAgentRec.Body.String())
+	}
+
+	// 9. Call agent API with query param ?hubKey=... should succeed with 200
+	queryKeyAgentReq := httptest.NewRequest(http.MethodGet, "/hub/v1/agents?hubKey="+sharedKey, nil)
+	queryKeyAgentReq.Header.Set("X-Agent-ID", agentID)
+	queryKeyAgentReq.Header.Set("Authorization", "Bearer "+agentToken)
+	queryKeyAgentRec := httptest.NewRecorder()
+	handler.ServeHTTP(queryKeyAgentRec, queryKeyAgentReq)
+	if queryKeyAgentRec.Code != http.StatusOK {
+		t.Fatalf("query key agent list status = %d, want 200; body=%s", queryKeyAgentRec.Code, queryKeyAgentRec.Body.String())
+	}
+}
