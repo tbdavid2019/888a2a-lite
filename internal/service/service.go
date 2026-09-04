@@ -125,10 +125,15 @@ func (service *Service) ListAgents(ctx context.Context, agentID, token, baseURL 
 	if err != nil {
 		return nil, err
 	}
+	now := service.now().UTC()
 	views := make([]hub.AgentView, 0, len(agents))
 	for _, agent := range agents {
+		state := agent.StateAt(now)
+		if state == hub.AgentStateRevoked || state == hub.AgentStateExpired {
+			continue
+		}
 		view := agent.SafeView(baseURL)
-		view.State = agent.StateAt(service.now().UTC())
+		view.State = state
 		views = append(views, view)
 	}
 	return views, nil

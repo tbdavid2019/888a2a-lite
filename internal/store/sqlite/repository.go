@@ -262,28 +262,75 @@ WHERE agent_id = ? AND revoked_at IS NULL`, formatTime(revokedAt), reason, agent
 	return nil
 }
 
+func (repository *Repository) cleanupAgentDependencies(ctx context.Context, tx *Repository, agentID string) error {
+	groupRows, err := tx.executor().QueryContext(ctx, `SELECT group_id FROM agent_group WHERE owner_agent_id = ?`, agentID)
+	if err != nil {
+		return err
+	}
+	var ownedGroups []string
+	for groupRows.Next() {
+		var gid string
+		if err := groupRows.Scan(&gid); err != nil {
+			_ = groupRows.Close()
+			return err
+		}
+		ownedGroups = append(ownedGroups, gid)
+	}
+	if err := groupRows.Err(); err != nil {
+		_ = groupRows.Close()
+		return err
+	}
+	_ = groupRows.Close()
+
+	for _, gid := range ownedGroups {
+		if _, err := tx.executor().ExecContext(ctx, `DELETE FROM group_delivery WHERE group_id = ?`, gid); err != nil {
+			return err
+		}
+		if _, err := tx.executor().ExecContext(ctx, `DELETE FROM group_message WHERE group_id = ?`, gid); err != nil {
+			return err
+		}
+		if _, err := tx.executor().ExecContext(ctx, `DELETE FROM group_invitation WHERE group_id = ?`, gid); err != nil {
+			return err
+		}
+		if _, err := tx.executor().ExecContext(ctx, `DELETE FROM group_member WHERE group_id = ?`, gid); err != nil {
+			return err
+		}
+		if _, err := tx.executor().ExecContext(ctx, `DELETE FROM agent_group WHERE group_id = ?`, gid); err != nil {
+			return err
+		}
+	}
+
+	if _, err := tx.executor().ExecContext(ctx, `DELETE FROM group_delivery WHERE group_message_id IN (SELECT id FROM group_message WHERE sender_agent_id = ?)`, agentID); err != nil {
+		return err
+	}
+	if _, err := tx.executor().ExecContext(ctx, `DELETE FROM group_message WHERE sender_agent_id = ?`, agentID); err != nil {
+		return err
+	}
+	if _, err := tx.executor().ExecContext(ctx, `DELETE FROM inbox_item WHERE target_agent_id = ? OR requester_agent_id = ?`, agentID, agentID); err != nil {
+		return err
+	}
+	if _, err := tx.executor().ExecContext(ctx, `DELETE FROM group_delivery WHERE target_agent_id = ?`, agentID); err != nil {
+		return err
+	}
+	if _, err := tx.executor().ExecContext(ctx, `DELETE FROM group_member WHERE agent_id = ?`, agentID); err != nil {
+		return err
+	}
+	if _, err := tx.executor().ExecContext(ctx, `DELETE FROM group_invitation WHERE inviter_agent_id = ? OR invitee_agent_id = ?`, agentID, agentID); err != nil {
+		return err
+	}
+	res, err := tx.executor().ExecContext(ctx, `DELETE FROM agent WHERE agent_id = ?`, agentID)
+	if err != nil {
+		return err
+	}
+	if affected, _ := res.RowsAffected(); affected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (repository *Repository) DeleteAgent(ctx context.Context, agentID string) error {
 	return repository.withTransaction(ctx, func(tx *Repository) error {
-		if _, err := tx.executor().ExecContext(ctx, `DELETE FROM inbox_item WHERE target_agent_id = ? OR requester_agent_id = ?`, agentID, agentID); err != nil {
-			return err
-		}
-		if _, err := tx.executor().ExecContext(ctx, `DELETE FROM group_delivery WHERE target_agent_id = ?`, agentID); err != nil {
-			return err
-		}
-		if _, err := tx.executor().ExecContext(ctx, `DELETE FROM group_member WHERE agent_id = ?`, agentID); err != nil {
-			return err
-		}
-		if _, err := tx.executor().ExecContext(ctx, `DELETE FROM group_invitation WHERE inviter_agent_id = ? OR invitee_agent_id = ?`, agentID, agentID); err != nil {
-			return err
-		}
-		result, err := tx.executor().ExecContext(ctx, `DELETE FROM agent WHERE agent_id = ?`, agentID)
-		if err != nil {
-			return err
-		}
-		if affected, _ := result.RowsAffected(); affected == 0 {
-			return ErrNotFound
-		}
-		return nil
+		return repository.cleanupAgentDependencies(ctx, tx, agentID)
 	})
 }
 
@@ -296,32 +343,25 @@ WHERE revoked_at IS NOT NULL OR expires_at <= ?`, formatTime(now))
 		if err != nil {
 			return err
 		}
-		defer func() { _ = rows.Close() }()
 		var agentIDs []string
 		for rows.Next() {
 			var id string
 			if err := rows.Scan(&id); err != nil {
+				_ = rows.Close()
 				return err
 			}
 			agentIDs = append(agentIDs, id)
 		}
 		if err := rows.Err(); err != nil {
+			_ = rows.Close()
 			return err
 		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
+
 		for _, id := range agentIDs {
-			if _, err := tx.executor().ExecContext(ctx, `DELETE FROM inbox_item WHERE target_agent_id = ? OR requester_agent_id = ?`, id, id); err != nil {
-				return err
-			}
-			if _, err := tx.executor().ExecContext(ctx, `DELETE FROM group_delivery WHERE target_agent_id = ?`, id); err != nil {
-				return err
-			}
-			if _, err := tx.executor().ExecContext(ctx, `DELETE FROM group_member WHERE agent_id = ?`, id); err != nil {
-				return err
-			}
-			if _, err := tx.executor().ExecContext(ctx, `DELETE FROM group_invitation WHERE inviter_agent_id = ? OR invitee_agent_id = ?`, id, id); err != nil {
-				return err
-			}
-			if _, err := tx.executor().ExecContext(ctx, `DELETE FROM agent WHERE agent_id = ?`, id); err != nil {
+			if err := repository.cleanupAgentDependencies(ctx, tx, id); err != nil {
 				return err
 			}
 			pruned++

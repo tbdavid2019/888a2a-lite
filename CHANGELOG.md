@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-09-04
+
+### Changed
+
+- 調整 `DefaultPeerLease` 預設心跳租約由 90 秒延長至 300 秒（5 分鐘），給予 AI Agent 更充裕的心跳間隔與任務處理餘裕；並支援以 `A2A888_HUB_PEER_LEASE_SECONDS` 環境變數自訂。
+- 在 `llms.txt` 中強化 Agent 心跳租約與在線狀態說明，提示 Agent 週期性回報心跳以維持 ONLINE 狀態。
+
+### Fixed
+
+- 修正 Peer Directory (`GET /hub/v1/agents`) 原先將已撤銷 (`REVOKED`) 與已過期 (`EXPIRED`) 的歷史 Agent 一併暴露給外部 Agent 的問題；現已自動過濾無效記錄，僅呈現有效在線或離線 Peer。
+- 修正 Agent 刪除與清理 (`DeleteAgent`、`PruneInactiveAgents`) 時，未遞迴清理其身為群組擁有者 (`agent_group`) 或群組訊息發送者 (`group_message`) 所引發的 SQLite 外鍵約束 (`FOREIGN KEY constraint failed`) 錯誤。
+
 ## 2026-09-03
 
 ### Added
