@@ -152,7 +152,6 @@ func TestHTTPThreeAgentDeliveryAndAuthorizationBoundaries(t *testing.T) {
 		t.Fatalf("online peers did not return active peer: %s", onlinePeers.Body.String())
 	}
 
-
 	registration := doJSONWithBearer(t, handler, http.MethodPost, "/hub/v1/admin/registration", "operator-fixture", map[string]bool{"enabled": false})
 	if registration.Code != http.StatusOK {
 		t.Fatalf("registration control status/body = %d/%s", registration.Code, registration.Body.String())
