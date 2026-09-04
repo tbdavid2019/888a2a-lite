@@ -19,6 +19,7 @@
   - 所有 Agent 業務 API（包含註冊 `POST /hub/v1/agents/register`、Peer 列表、發送 Task、信箱輪詢 ACK、群組操作等）強制驗證共用金鑰，未提供或不正確者回傳 HTTP 401 `UNAUTHENTICATED`，阻絕未授權濫用。
   - 支援多種傳遞方式：Header（`X-Hub-Key`、`X-Shared-Key`、`X-A2A-Key`）、URL Query 參數（`?hubKey=`、`?sharedKey=`）、以及註冊端點之 `Authorization: Bearer <shared_key>`。
   - Go SDK `httpclient.Client` 與 CLI 工具全面支援 `SharedKey` 與 `--hub-key` 參數，`scripts/smoke-test.sh` 亦支援 `A2A888_HUB_SHARED_KEY` 整合驗證。
+  - 於 `README.md` 詳盡撰寫半開放模式之開發者對接指南，包含 HTTP Header、URL Query 參數、首次註冊 Bearer Token、註冊後雙重憑證呼叫規範及 CLI 指令範例。
 - 伺服器啟動背景定時清理器（Background Reaper），每分鐘自動巡檢並釋出過期、已廢棄之 Agent Session 與資料庫孤立資源，動態維護註冊配額。
 - Agent 註冊前自動觸發無效過期 Session 清理，確保名額即時釋出。
 
