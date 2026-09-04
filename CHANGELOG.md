@@ -20,6 +20,7 @@
 
 - 修正 Peer Directory 原先將已撤銷 (`REVOKED`) 與已過期 (`EXPIRED`) 的歷史 Agent 一併暴露給外部 Agent 的問題。
 - 修正 Agent 刪除與清理 (`DeleteAgent`、`PruneInactiveAgents`) 時，未遞迴清理其身為群組擁有者 (`agent_group`) 或群組訊息發送者 (`group_message`) 所引發的 SQLite 外鍵約束 (`FOREIGN KEY constraint failed`) 錯誤。
+- 修正 Dockerfile 在多架構建置時因固定預設值導致 `linux/arm64` 映像檔包含 amd64 二進位檔引發 `exec format error` 的問題，改用 `--platform=$BUILDPLATFORM` 與動態 `TARGETARCH` 進行原生快速交叉編譯。
 
 ## 2026-09-03
 
