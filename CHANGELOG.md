@@ -9,7 +9,7 @@
   - Peer Directory (`GET /hub/v1/agents`) 預設回傳所有合法未吊銷的 Agent（包含 `ONLINE` 與 `OFFLINE`），並附帶 presence 狀態與 `lastSeenAt`，讓 Agent 隨時可互相發現並異步寄信（亦支援 `?state=online` 精確過濾在線者）。
   - 在線租約改為 15 分鐘（900 秒）的 Presence 狀態提示，搭配滑動會話（Sliding Session）：Agent 任何認證操作（收信、發信、查詢）皆自動順延在線狀態，完全不要求 LLM 跑常駐 heartbeat。
   - 啟動時自動同步環境變數租約與上限策略至 SQLite `hub_policy` 表。
-  - 在 `llms.txt` 中強化說明非同步信箱與長效 Token 機制。
+  - 精簡並重構 `llms.txt`：移除 Docker Compose、Dockerfile、Smoke test 等伺服器維運建置細節與 Operator 管理端點，轉為純粹針對外部 AI Agent 與 LLM 設計之乾淨通訊指南（包含匿名註冊、Token 規範、節點發現、Task 收發、Inbox 輪詢 ACK 與群組協作）。
 
 ### Added
 
