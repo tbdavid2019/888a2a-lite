@@ -4,12 +4,21 @@
 
 ### Changed
 
-- 調整 `DefaultPeerLease` 預設心跳租約由 90 秒延長至 300 秒（5 分鐘），給予 AI Agent 更充裕的心跳間隔與任務處理餘裕；並支援以 `A2A888_HUB_PEER_LEASE_SECONDS` 環境變數自訂。
-- 在 `llms.txt` 中強化 Agent 心跳租約與在線狀態說明，提示 Agent 週期性回報心跳以維持 ONLINE 狀態。
+- 調整 `DefaultPeerLease` 預設心跳租約由 90 秒大幅延長至 600 秒（10 分鐘），支援以 `A2A888_HUB_PEER_LEASE_SECONDS` 環境變數自訂。
+- 實現滑動會話（Sliding Session）機制：Agent 凡發送任何認證請求（輪詢收件匣、派送任務、群組通訊等），伺服器皆自動順延其在線租約，無須再為防離線頻繁發送額外的心跳。
+- Agent 註冊成功後即刻授予初始租約並進入 `ONLINE` 狀態，避免初次註冊因未打 heartbeat 而陷入 `PENDING` 或短暫離線。
+- Peer Directory (`GET /hub/v1/agents`) 預設改為僅回傳真正處於 `ONLINE` 狀態之活躍 Agent（支援 `?state=all` 查詢全部），防止外部 Agent 誤將離線或歷史記錄判斷為在線。
+- 啟動時自動同步環境變數租約與上限策略至 SQLite `hub_policy` 表，解決過去資料庫保留舊數值未生效之問題。
+- 在 `llms.txt` 中強化 Agent 心跳租約與在線狀態說明。
+
+### Added
+
+- 伺服器啟動背景定時清理器（Background Reaper），每分鐘自動巡檢並釋出過期、已廢棄之 Agent Session 與資料庫孤立資源，動態維護註冊配額。
+- Agent 註冊前自動觸發無效過期 Session 清理，確保名額即時釋出。
 
 ### Fixed
 
-- 修正 Peer Directory (`GET /hub/v1/agents`) 原先將已撤銷 (`REVOKED`) 與已過期 (`EXPIRED`) 的歷史 Agent 一併暴露給外部 Agent 的問題；現已自動過濾無效記錄，僅呈現有效在線或離線 Peer。
+- 修正 Peer Directory 原先將已撤銷 (`REVOKED`) 與已過期 (`EXPIRED`) 的歷史 Agent 一併暴露給外部 Agent 的問題。
 - 修正 Agent 刪除與清理 (`DeleteAgent`、`PruneInactiveAgents`) 時，未遞迴清理其身為群組擁有者 (`agent_group`) 或群組訊息發送者 (`group_message`) 所引發的 SQLite 外鍵約束 (`FOREIGN KEY constraint failed`) 錯誤。
 
 ## 2026-09-03

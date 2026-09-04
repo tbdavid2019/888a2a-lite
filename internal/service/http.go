@@ -378,7 +378,8 @@ func (server *HTTPServer) listAgents(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	agents, err := server.service.ListAgents(r.Context(), agentID, token, server.baseURLFor(r))
+	stateFilter := r.URL.Query().Get("state")
+	agents, err := server.service.ListAgents(r.Context(), agentID, token, server.baseURLFor(r), stateFilter)
 	if err != nil {
 		writeServiceError(w, err)
 		return

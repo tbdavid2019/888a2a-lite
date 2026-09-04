@@ -69,6 +69,8 @@ func (service *Service) Register(ctx context.Context, declaration hub.AgentDecla
 	} else if !errors.Is(findErr, store.ErrNotFound) {
 		return hub.AgentIdentity{}, false, findErr
 	}
+	now := service.now().UTC()
+	_, _ = service.store.Agents().PruneInactiveAgents(ctx, now)
 	count, err := service.store.Agents().CountAgents(ctx)
 	if err != nil {
 		return hub.AgentIdentity{}, false, err
@@ -84,7 +86,7 @@ func (service *Service) Register(ctx context.Context, declaration hub.AgentDecla
 	if err != nil {
 		return hub.AgentIdentity{}, false, err
 	}
-	now := service.now().UTC()
+	leaseExpiresAt := now.Add(service.config.PeerLease)
 	agent := hub.RegisteredAgent{
 		HubID:               policy.HubID,
 		AgentID:             agentID,
@@ -94,7 +96,9 @@ func (service *Service) Register(ctx context.Context, declaration hub.AgentDecla
 		ProviderFamily:      strings.TrimSpace(declaration.ProviderFamily),
 		TransportID:         strings.TrimSpace(declaration.TransportID),
 		Capabilities:        append([]string(nil), declaration.Capabilities...),
-		State:               hub.AgentStatePending,
+		State:               hub.AgentStateOnline,
+		LastSeenAt:          now,
+		LeaseExpiresAt:      leaseExpiresAt,
 		ExpiresAt:           now.Add(policy.RegistrationTTL),
 		CreatedAt:           now,
 	}
@@ -110,14 +114,19 @@ func (service *Service) AuthenticateAgent(ctx context.Context, agentID, token st
 	if err != nil {
 		return hub.RegisteredAgent{}, ErrUnauthenticated
 	}
-	state := agent.StateAt(service.now().UTC())
+	now := service.now().UTC()
+	state := agent.StateAt(now)
 	if state == hub.AgentStateExpired || state == hub.AgentStateRevoked {
 		return hub.RegisteredAgent{}, ErrUnauthenticated
+	}
+	leaseExpiresAt := now.Add(service.config.PeerLease)
+	if updated, err := service.store.Agents().HeartbeatAgent(ctx, agentID, now, leaseExpiresAt); err == nil {
+		agent = updated
 	}
 	return agent, nil
 }
 
-func (service *Service) ListAgents(ctx context.Context, agentID, token, baseURL string) ([]hub.AgentView, error) {
+func (service *Service) ListAgents(ctx context.Context, agentID, token, baseURL string, stateFilter string) ([]hub.AgentView, error) {
 	if _, err := service.AuthenticateAgent(ctx, agentID, token); err != nil {
 		return nil, err
 	}
@@ -131,6 +140,18 @@ func (service *Service) ListAgents(ctx context.Context, agentID, token, baseURL 
 		state := agent.StateAt(now)
 		if state == hub.AgentStateRevoked || state == hub.AgentStateExpired {
 			continue
+		}
+		if stateFilter == "all" {
+			// include all valid agents
+		} else if stateFilter == "offline" {
+			if state != hub.AgentStateOffline {
+				continue
+			}
+		} else {
+			// default: only return ONLINE peers so peers only discover active agents!
+			if state != hub.AgentStateOnline {
+				continue
+			}
 		}
 		view := agent.SafeView(baseURL)
 		view.State = state

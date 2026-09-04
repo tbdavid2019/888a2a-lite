@@ -76,16 +76,45 @@ func runServer(args []string) error {
 		MaxTasksPerMinute:   cfg.MaxTasksPerMinute,
 		MaxConcurrentTasks:  cfg.MaxConcurrentTasks,
 		MaxPayloadBytes:     cfg.MaxPayloadBytes,
+		MaxGroupMembers:     cfg.MaxGroupMembers,
+		MaxGroupFanout:      cfg.MaxGroupFanout,
+		MaxGroupHistoryPage: cfg.MaxGroupHistoryPage,
 	}
-	if _, err := repository.Policy().GetPolicy(ctx); errors.Is(err, store.ErrNotFound) {
+	if existing, err := repository.Policy().GetPolicy(ctx); errors.Is(err, store.ErrNotFound) {
 		if err := repository.Policy().SavePolicy(ctx, defaultPolicy); err != nil {
 			return fmt.Errorf("initialize hub policy: %w", err)
 		}
 	} else if err != nil {
 		return fmt.Errorf("read hub policy: %w", err)
+	} else {
+		existing.PeerLease = cfg.PeerLease
+		existing.RegistrationTTL = cfg.RegistrationTTL
+		existing.MaxRegisteredAgents = cfg.MaxRegisteredAgents
+		existing.MaxTasksPerMinute = cfg.MaxTasksPerMinute
+		existing.MaxConcurrentTasks = cfg.MaxConcurrentTasks
+		existing.MaxPayloadBytes = cfg.MaxPayloadBytes
+		existing.MaxGroupMembers = cfg.MaxGroupMembers
+		existing.MaxGroupFanout = cfg.MaxGroupFanout
+		existing.MaxGroupHistoryPage = cfg.MaxGroupHistoryPage
+		_ = repository.Policy().SavePolicy(ctx, existing)
 	}
 	hubService := service.New(repository, cfg)
 	hubService.RecordEvent(ctx, hub.EventHubStarted)
+
+	reaperCtx, cancelReaper := context.WithCancel(ctx)
+	defer cancelReaper()
+	go func() {
+		ticker := time.NewTicker(1 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-reaperCtx.Done():
+				return
+			case t := <-ticker.C:
+				_, _ = repository.Agents().PruneInactiveAgents(reaperCtx, t.UTC())
+			}
+		}
+	}()
 	httpServer := &http.Server{
 		Addr:              cfg.ListenAddr,
 		Handler:           service.NewHTTPServer(hubService).Handler(),

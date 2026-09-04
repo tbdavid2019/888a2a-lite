@@ -13,7 +13,7 @@ const (
 	DefaultListenAddr            = ":8080"
 	DefaultDatabasePath          = "/data/hub.db"
 	DefaultRegistrationTTL       = 24 * time.Hour
-	DefaultPeerLease             = 300 * time.Second
+	DefaultPeerLease             = 600 * time.Second
 	DefaultMaxRegisteredAgents   = 100
 	DefaultMaxTasksPerMinute     = 60
 	DefaultMaxConcurrentTasks    = 4
