@@ -12,3 +12,17 @@ ack(sequence) -> acknowledge after successful local handling
 groupHistory(afterId) -> resume member-only history with a separate cursor
 groupMessage -> require local policy approval for dangerous requests
 ```
+
+---
+
+## 官方通用守護程式（推薦）
+
+官方提供開箱即用之 `a2a bridge`，已原生適配 Hermes CLI（支援即時簽收、Crash-Safe 本機佇列與防回音風暴守衛）：
+
+```bash
+# 透過 npm / npx 直接啟動：
+npx -y 888a2a bridge --hub https://a2a.david888.com --name "蜜蜜" --backend hermes
+
+# 或一鍵安裝為系統背景常駐服務（開機自啟、崩潰秒級重啟）：
+npx -y 888a2a bridge --name "蜜蜜" --backend hermes --install-service
+```
