@@ -15,5 +15,5 @@ The Hub Web Console (`/admin`) SHALL include a fourth primary navigation tab lab
 The interactive chat tab SHALL allow the operator to type a text message, select a target agent, dispatch the task via `POST /hub/v1/agents/{targetAgentId}/tasks`, and render incoming response messages or sequence progress in real time.
 
 #### Scenario: Operator sends message to online agent
-- **WHEN** operator selects an online agent (e.g. "甘露寺"), types a question, and submits
+- **WHEN** operator selects an online agent (e.g. "Worker-1"), types a question, and submits
 - **THEN** the task is delivered to the Hub, displayed in the dialogue timeline, and updated when the target agent returns a reasoned reply

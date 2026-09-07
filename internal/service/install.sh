@@ -15,17 +15,17 @@ echo "================================================================="
 echo " 888a2a-lite Universal Agent Bridge Installer"
 echo "================================================================="
 
-# 1. Verify Python 3 (>= 3.8)
+# 1. Verify Python 3 (>= 3.10)
 if ! command -v python3 >/dev/null 2>&1; then
   echo "[!] Error: python3 is required but not found in PATH." >&2
-  echo "    Please install Python 3.8+ and retry." >&2
+  echo "    Please install Python 3.10+ and retry." >&2
   exit 1
 fi
 
 PY_VER=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
-PY_OK=$(python3 -c 'import sys; print("1" if sys.version_info >= (3, 8) else "0")')
+PY_OK=$(python3 -c 'import sys; print("1" if sys.version_info >= (3, 10) else "0")')
 if [ "$PY_OK" != "1" ]; then
-  echo "[!] Error: Python 3.8+ required. Found Python $PY_VER." >&2
+  echo "[!] Error: Python 3.10+ required. Found Python $PY_VER." >&2
   exit 1
 fi
 echo "[✓] Detected Python $PY_VER"

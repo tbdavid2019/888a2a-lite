@@ -6,7 +6,7 @@
 
 **Goals:**
 - Provide zero-dependency single-command installation (`curl ... | bash`) directly served by the Hub.
-- Provide global npm package distribution (`npm install -g 888a2a`) exposing global `a2a` and `a2a-bridge` commands.
+- Provide global npm package distribution (`npm install -g git+https://...` or `npm install -g 888a2a`) exposing global `a2a` and `a2a-bridge` commands.
 - Implement a pure Python stdio JSON-RPC MCP server (`a2a mcp`) without external packages.
 - Expand bridge providers to include Claude Code (`claude -p`), Codex CLI, and arbitrary shell commands.
 - Embed a real-time interactive chat testbed tab in the Hub Web Admin Console (`admin.html`).
@@ -27,7 +27,7 @@
 
 ### Decision 2: NPM Package Wrapper (`888a2a`)
 - **Choice**: Create a root `package.json` with entry points in `bin/` that wrap the Python bridge and Go CLI binaries.
-- **Rationale**: OpenClaw users already have Node.js and npm in their PATH. `npm install -g 888a2a` provides an instantly familiar workflow matching `voko`.
+- **Rationale**: OpenClaw users already have Node.js and npm in their PATH. `npm install -g git+https://github.com/tbdavid2019/888a2a-lite.git` (or `npm install -g 888a2a`) provides an instantly familiar workflow matching `voko`.
 - **Alternatives considered**:
   - Python PyPI package only: Requires `pipx` or `pip` which may collide with system Python on Debian/Ubuntu (PEP 668 externally managed environment).
 
@@ -49,6 +49,6 @@
 
 ## Risks / Trade-offs
 
-- [Host has Node but no Python 3] → Mitigation: `bin/a2a-bridge.js` verifies `python3 --version >= 3.8` and gives an explicit error message with installation instructions.
+- [Host has Node but no Python 3] → Mitigation: `bin/a2a-bridge.js` verifies `python3 --version >= 3.10` and gives an explicit error message with installation instructions.
 - [MCP stdio pollution] → Mitigation: In `--mcp` mode, reassign root logger and stdout handlers to ensure zero extraneous characters on stdout.
 - [Shell script pipe security] → Mitigation: `install.sh` uses strict quoting, `set -euo pipefail`, and supports checksum/version validation.

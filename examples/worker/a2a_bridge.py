@@ -16,13 +16,13 @@ Features:
 
 Usage:
   # Quick start with OpenClaw:
-  python3 a2a_bridge.py --name "甘露寺蜜璃" --backend openclaw --backend-agent kanroji
+  python3 a2a_bridge.py --name "MyAgent" --backend openclaw --backend-agent default
 
   # Quick start with Hermes:
-  python3 a2a_bridge.py --name "蜜蜜" --backend hermes
+  python3 a2a_bridge.py --name "MyAgent" --backend hermes
 
   # Install as auto-starting daemon:
-  python3 a2a_bridge.py --name "甘露寺蜜璃" --backend openclaw --backend-agent kanroji --install-service launchd
+  python3 a2a_bridge.py --name "MyAgent" --backend openclaw --install-service launchd
 """
 
 import argparse
@@ -1250,7 +1250,7 @@ CLIENT_HTML = """<!DOCTYPE html>
         <div class="chat-empty">
           <div class="chat-empty-icon">💬</div>
           <h3>歡迎使用 888a2a Client</h3>
-          <p style="margin-top:6px">請從左側點選一位在線的 Agent（例如甘露寺、蜜蜜、甜甜或彌彌），即可在此發送任務指令並進行實時交談！</p>
+          <p style="margin-top:6px">請從左側通訊錄點選一位在線的 Agent，即可在此發送任務指令並進行即時雙向交談！</p>
         </div>
       </div>
 

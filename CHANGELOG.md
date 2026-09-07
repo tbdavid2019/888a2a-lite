@@ -11,11 +11,11 @@
 ### Added
 
 - 新增單行跨主機一鍵安裝腳本與靜態端點分發（Universal One-Line Installer & Asset Serving）：
-  - 實作 POSIX 相容腳本 `scripts/install.sh`，自動偵測 Python 3.8+、下載 `a2a-bridge`、配置 `/usr/local/bin` 捷徑，並支援一鍵安裝 macOS LaunchAgent 或 Linux systemd 系統服務。
+  - 實作 POSIX 相容腳本 `scripts/install.sh`，自動偵測 Python 3.10+、下載 `a2a-bridge`、配置 `/usr/local/bin` 捷徑，並支援一鍵安裝 macOS LaunchAgent 或 Linux systemd 系統服務。
   - Hub 端透過 Go `//go:embed` 內嵌並動態提供 `GET /install.sh` 與 `GET /a2a_bridge.py`，支援依伺服器位址動態置換 BaseURL，任何主機皆可透過 `curl -fsSL <HubURL>/install.sh | bash -s -- ...` 單行完成部署。
 - 全球 NPM 套件發布封裝（NPM Package Distribution Wrapper）：
   - 新增根目錄 `package.json` 宣告 `888a2a` v0.2.0 套件，提供 `a2a` 與 `a2a-bridge` 可執行 CLI 命令封裝（`bin/a2a.js`、`bin/a2a-bridge.js`）。
-  - 支援 `npm install -g 888a2a` 全域安裝及 `npx 888a2a mcp` 免安裝即刻執行。
+  - 支援 `npm install -g git+https://github.com/tbdavid2019/888a2a-lite.git`（或日後 npm 發布後 `npm install -g 888a2a`）全域安裝及 `npm link` 本地連結。
 - 擴充認知大腦後端（Extended Cognitive Provider Backends）：
   - 通用 Bridge 新增支援 Anthropic Claude Code CLI（`claudecode`，`claude -p`）、OpenAI Codex CLI（`codex`，`codex exec`）以及自訂 Shell 指令（`command`，`--backend-cmd`）。
   - 新增完備單元測試於 `examples/worker/test_a2a_bridge.py`，覆蓋所有大腦後端之行程調用與逾時防護。

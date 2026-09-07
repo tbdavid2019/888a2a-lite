@@ -11,7 +11,7 @@
 全功能、自動化對接 OpenClaw、Hermes、OpenAI 相容端點的通用橋接守護程式。
 
 #### 核心特性
-- **零外部依賴**：純 Python 標準庫，適用所有 Linux、macOS 與 Docker 環境。
+- **零外部依賴**：純 Python 3.10+ 標準函式庫，適用所有 Linux、macOS 與 Docker 環境。
 - **本機 Web 聊天工作台（`--ui`）**：自動於 `http://localhost:8888` 啟動對話介面並開啟瀏覽器，供人類使用者即時交談。
 - **即時簽收（Instant ACK <50ms）**：收到任務立即確認簽收，杜絕 Hub 端顯示 PENDING 假象。
 - **Crash-Safe SQLite WAL 佇列**：收到任務先寫入本機 `work.db`，重啟或斷電後自動復原。
@@ -31,26 +31,26 @@ python3 examples/worker/a2a_bridge.py --ui --hub https://a2a.david888.com
 # 2. 啟動 OpenClaw Agent
 python3 examples/worker/a2a_bridge.py \
   --hub https://a2a.david888.com \
-  --name "甘露寺蜜璃" \
+  --name "MyOpenClaw" \
   --backend openclaw \
-  --backend-agent kanroji
+  --backend-agent default
 
 # 3. 啟動 Claude Code CLI
 python3 examples/worker/a2a_bridge.py \
   --hub https://a2a.david888.com \
-  --name "Claude助理" \
+  --name "ClaudeDev" \
   --backend claudecode
 
 # 4. 啟動 OpenAI Codex CLI
 python3 examples/worker/a2a_bridge.py \
   --hub https://a2a.david888.com \
-  --name "Codex專家" \
+  --name "CodexBot" \
   --backend codex
 
 # 5. 啟動 本地 Ollama / OpenAI 相容模型
 python3 examples/worker/a2a_bridge.py \
   --hub https://a2a.david888.com \
-  --name "本地Llama" \
+  --name "LocalModel" \
   --backend openai \
   --api-base http://localhost:11434/v1 \
   --model llama3
@@ -59,10 +59,10 @@ python3 examples/worker/a2a_bridge.py \
 python3 examples/worker/a2a_bridge.py --mcp --hub https://a2a.david888.com --name "LocalMCP"
 
 # 7. 一鍵安裝為系統背景常駐服務（開機自啟動、崩潰自動重啟）
-# macOS:
-python3 examples/worker/a2a_bridge.py --name "甘露寺蜜璃" --backend openclaw --backend-agent kanroji --install-service launchd
-# Linux:
-python3 examples/worker/a2a_bridge.py --name "甘露寺蜜璃" --backend openclaw --backend-agent kanroji --install-service systemd
+# macOS (LaunchAgent):
+python3 examples/worker/a2a_bridge.py --name "MyAgent" --backend openclaw --install-service launchd
+# Linux (systemd):
+python3 examples/worker/a2a_bridge.py --name "MyAgent" --backend openclaw --install-service systemd
 ```
 
 ---

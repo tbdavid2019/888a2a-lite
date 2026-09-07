@@ -99,17 +99,14 @@ flowchart TD
 專為使用者設計的本機 Web 聊天介面。無需繁雜設定，指令一鍵在本地啟動並自動開啟瀏覽器：
 
 ```bash
-# 透過 npx 免安裝直接啟動：
-npx -y 888a2a ui --hub https://a2a.david888.com
-
-# 或透過全域安裝啟動：
-a2a ui --hub https://a2a.david888.com --name "David"
-
-# 或直接使用 Python 執行：
+# 透過 Python 直接啟動：
 python3 examples/worker/a2a_bridge.py --ui --hub https://a2a.david888.com
+
+# 或透過全域 a2a 命令啟動：
+a2a ui --hub https://a2a.david888.com --name "User"
 ```
 
-- **瀏覽器直覺交談**：自動打開 `http://localhost:8888`，左側即時列出所有在線的 AI Agent（甘露寺蜜璃、蜜蜜、甜甜、彌彌等），右側隨點隨聊。
+- **瀏覽器直覺交談**：自動打開 `http://localhost:8888`，左側即時列出 Hub 上所有在線的 AI Agent，右側隨選即聊。
 - **即時 SSE 推播**：發出任務後，Agent 的 LLM 大腦思考回信透過 SSE 毫秒級推播至網頁，呈現流暢的對話泡泡。
 - **安全隔離**：工作台作為真實 Client Agent 與 Hub 通訊，使用者的私鑰與對話僅留存本機，零外部依賴。
 
@@ -121,7 +118,7 @@ python3 examples/worker/a2a_bridge.py --ui --hub https://a2a.david888.com
 
 #### 核心特性
 
-- **零外部相依性（Zero Dependencies）**：純 Python 3.8+ 標準函式庫（`urllib`、`sqlite3`、`subprocess`），無需 `pip install` 任何套件，開箱即用。
+- **零外部相依性（Zero Dependencies）**：純 Python 3.10+ 標準函式庫（`urllib`、`sqlite3`、`subprocess`），無需 `pip install` 任何套件，開箱即用。
 - **即時簽收（Instant ACK <50ms）**：收到任務後毫秒級向 Hub 確認簽收，將 Hub 上的任務狀態立即由 `PENDING` 轉為 `ACKNOWLEDGED`，徹底消除儀表板上的卡死假象。
 - **本機 SQLite WAL 佇列（Crash-Safe Local Work Queue）**：
   - 任務在簽收同時寫入本機 `work.db`，由獨立 Worker 執行 LLM 推理。
@@ -146,25 +143,25 @@ python3 examples/worker/a2a_bridge.py --ui --hub https://a2a.david888.com
 
 ```bash
 # 1. OpenClaw Agent
-a2a bridge --hub https://a2a.david888.com --name "甘露寺蜜璃" --backend openclaw --backend-agent kanroji
+a2a bridge --hub https://a2a.david888.com --name "MyOpenClaw" --backend openclaw --backend-agent default
 
 # 2. Claude Code Agent (Anthropic)
-a2a bridge --hub https://a2a.david888.com --name "Claude代碼助手" --backend claudecode
+a2a bridge --hub https://a2a.david888.com --name "ClaudeDev" --backend claudecode
 
 # 3. OpenAI Codex CLI
-a2a bridge --hub https://a2a.david888.com --name "Codex專家" --backend codex
+a2a bridge --hub https://a2a.david888.com --name "CodexBot" --backend codex
 
 # 4. 自訂 Shell 指令
-a2a bridge --hub https://a2a.david888.com --name "指令執行器" --backend command --backend-cmd "python3 /path/to/script.py"
+a2a bridge --hub https://a2a.david888.com --name "CmdRunner" --backend command --backend-cmd "python3 /path/to/script.py"
 
 # 5. 本地 Ollama / OpenAI 相容模型
-a2a bridge --hub https://a2a.david888.com --name "本地Llama" --backend openai --api-base http://localhost:11434/v1 --model llama3
+a2a bridge --hub https://a2a.david888.com --name "LocalLlama" --backend openai --api-base http://localhost:11434/v1 --model llama3
 
 # 6. 一鍵安裝為系統常駐服務（開機自啟、崩潰自動秒級重啟）
 # macOS (LaunchAgent):
-a2a bridge --name "彌彌" --backend openclaw --backend-agent main --install-service launchd
+a2a bridge --name "MyAgent" --backend openclaw --install-service launchd
 # Linux (systemd):
-a2a bridge --name "甘露寺蜜璃" --service-name kanroji --backend openclaw --backend-agent kanroji --install-service systemd
+a2a bridge --name "MyAgent" --backend openclaw --install-service systemd
 ```
 
 ---
@@ -226,39 +223,56 @@ a2a bridge --name "甘露寺蜜璃" --service-name kanroji --backend openclaw --
 
 `888a2a` 提供多種免痛苦、跨主機的分發方式：
 
-#### 方式一：NPM 全域套件（推薦，支援 `npx` / `npm install -g`）
+#### 方式一：單行 Shell 一鍵安裝（跨 Linux / macOS，推薦，免 Node.js）
 
-```bash
-npm install -g 888a2a
-
-# 啟動使用者對話介面 (Web UI)
-a2a ui
-
-# 啟動 Agent 守護程式 (Bridge Daemon)
-a2a bridge --hub https://a2a.david888.com --name "我的Agent" --backend hermes
-
-# 啟動 MCP Server (IDE 整合)
-a2a mcp --hub https://a2a.david888.com --name "MyMCP"
-```
-
-#### 方式二：單行 Shell 一鍵安裝（跨 Linux / macOS）
-
-透過 Hub 內建的安裝腳本，單行指令即可自動驗證 Python 3 環境、下載最新版 `a2a-bridge`、建立 `/usr/local/bin/a2a-bridge` 軟連結，並可一鍵安裝為系統常駐守護行程：
+透過 Hub 內建的安裝腳本，單行指令即可自動驗證 Python 3.10+ 環境、下載最新版 `a2a-bridge`、建立 `/usr/local/bin/a2a-bridge` 軟連結，並可一鍵安裝為系統常駐守護行程：
 
 ```bash
 # 1. 快速安裝為常駐服務（自動偵測 Linux systemd 或 macOS LaunchAgent）
 curl -fsSL https://a2a.david888.com/install.sh | bash -s -- \
-  --name "甘露寺蜜璃" \
+  --name "MyAgent" \
   --backend openclaw \
-  --backend-agent kanroji \
+  --backend-agent default \
   --install-service
 
 # 2. 半開放模式（帶入共用金鑰）並使用 Claude Code CLI
 curl -fsSL https://a2a.david888.com/install.sh | bash -s -- \
-  --name "Claude助理" \
+  --name "ClaudeDev" \
   --backend claudecode \
   --shared-key "your-shared-key" \
   --install-service
+```
+
+#### 方式二：純 Python 直接執行（零安裝相依）
+
+無需安裝額外套件，直接下載或呼叫 `a2a_bridge.py`：
+
+```bash
+# 啟動使用者對話介面 (Web UI)
+python3 examples/worker/a2a_bridge.py --ui --hub https://a2a.david888.com
+
+# 啟動 Agent 守護程式 (Bridge Daemon)
+python3 examples/worker/a2a_bridge.py --hub https://a2a.david888.com --name "MyAgent" --backend hermes
+
+# 啟動 MCP Server (IDE 整合)
+python3 examples/worker/a2a_bridge.py --mcp --hub https://a2a.david888.com --name "ClaudeUser"
+```
+
+#### 方式三：Git / 本地 NPM 套件安裝（Node.js 環境）
+
+在 Node.js 開發環境中，可直接透過 GitHub 倉庫或本地專案安裝全域 CLI：
+
+```bash
+# 直接從 GitHub 倉庫全域安裝：
+npm install -g git+https://github.com/tbdavid2019/888a2a-lite.git
+
+# 或在本地倉庫根目錄執行軟連結：
+npm link
+
+# 安裝後即可直接使用 a2a 指令：
+a2a ui
+a2a bridge --hub https://a2a.david888.com --name "MyAgent" --backend openclaw
+a2a mcp --hub https://a2a.david888.com --name "ClaudeUser"
 ```
 
 ---

@@ -9,13 +9,13 @@ function checkPython() {
   });
   if (res.error || res.status !== 0) {
     console.error("[!] Error: python3 is required by 888a2a but was not found in PATH.");
-    console.error("    Please install Python 3.8+ and try again.");
+    console.error("    Please install Python 3.10+ and try again.");
     process.exit(1);
   }
   const ver = res.stdout.trim();
   const [maj, min] = ver.split(".").map(Number);
-  if (maj < 3 || (maj === 3 && min < 8)) {
-    console.error(`[!] Error: Python 3.8+ required. Found Python ${ver}.`);
+  if (maj < 3 || (maj === 3 && min < 10)) {
+    console.error(`[!] Error: Python 3.10+ required. Found Python ${ver}.`);
     process.exit(1);
   }
 }
@@ -54,9 +54,8 @@ Common Options:
   --port <port>          Port for local web UI (default: 8888)
 
 Examples:
-  npx 888a2a ui
-  a2a ui --name "David"
-  a2a bridge --name "甘露寺蜜璃" --backend openclaw --backend-agent kanroji
+  a2a ui --name "User"
+  a2a bridge --name "MyAgent" --backend openclaw --backend-agent default
   a2a bridge --name "ClaudeBot" --backend claudecode
   a2a mcp --name "MyCursor"
 `);

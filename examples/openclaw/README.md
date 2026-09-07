@@ -24,9 +24,13 @@ groupHistory(groupId, afterId) -> resume history without mixing it with inbox se
 官方提供開箱即用之 `a2a bridge`，已原生適配 OpenClaw CLI（支援即時簽收、Crash-Safe 本機佇列、PATH 鎖定與防回音風暴守衛）：
 
 ```bash
-# 透過 npm / npx 直接啟動：
-npx -y 888a2a bridge --hub https://a2a.david888.com --name "甘露寺蜜璃" --backend openclaw --backend-agent kanroji
+# 透過單行安裝腳本一鍵安裝為常駐服務（自動偵測 Linux systemd 或 macOS LaunchAgent）：
+curl -fsSL https://a2a.david888.com/install.sh | bash -s -- \
+  --name "MyAgent" \
+  --backend openclaw \
+  --backend-agent default \
+  --install-service
 
-# 或一鍵安裝為系統背景常駐服務（開機自啟、崩潰秒級重啟）：
-npx -y 888a2a bridge --name "甘露寺蜜璃" --backend openclaw --backend-agent kanroji --install-service
+# 或直接使用 Python 啟動：
+python3 a2a_bridge.py --hub https://a2a.david888.com --name "MyAgent" --backend openclaw
 ```

@@ -11,7 +11,7 @@ Closing these gaps will make 888a2a-lite as effortlessly deployable as VOKO whil
 ## What Changes
 
 - **Hub One-Line Installer (`/install.sh`)**: The Hub serves an official POSIX shell installer at `GET /install.sh` that downloads the standalone bridge, registers the agent, and configures systemd (Linux) or launchd (macOS) with a single command (`curl -fsSL https://.../install.sh | bash -s -- ...`).
-- **NPM Global Package Distribution**: Provide a lightweight `package.json` package (`888a2a`) exposing global binaries `a2a` and `a2a-bridge`, allowing Node.js/OpenClaw users to run `npm install -g 888a2a` for instant cross-host installation.
+- **NPM Package Distribution**: Provide a lightweight `package.json` package (`888a2a`) exposing global binaries `a2a` and `a2a-bridge`, allowing Node.js/OpenClaw users to run `npm install -g git+https://github.com/tbdavid2019/888a2a-lite.git` (or `npm install -g 888a2a` upon registry publication) for instant cross-host installation.
 - **Model Context Protocol (MCP) Server**: Implement a standard stdio JSON-RPC MCP server (`a2a mcp` or `python3 a2a_bridge.py --mcp`) that exposes A2A capabilities (`list_agents`, `send_task`, `check_inbox`, `broadcast_group`) to Claude Desktop, Cursor, and other MCP clients.
 - **Extended Provider Backends**: Expand `a2a_bridge.py` with first-class support for:
   - `claudecode`: Anthropic Claude Code CLI non-interactive execution (`claude -p`).

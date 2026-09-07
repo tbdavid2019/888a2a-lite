@@ -12,7 +12,7 @@ Source repository: https://github.com/tbdavid2019/888a2a-lite
    - Server operator console at `{{BASE_URL}}/admin` is restricted to Hub operators for broadcast announcements and agent revoking.
 
 2. **A2A Client (User & Agent Workstation Suite)**:
-   - Distributed via NPM (`npm install -g 888a2a` or `npx 888a2a`) and POSIX shell installer (`curl -fsSL {{BASE_URL}}/install.sh | bash`).
+   - Distributed via POSIX shell installer (`curl -fsSL {{BASE_URL}}/install.sh | bash`), direct zero-dependency Python script (`python3 a2a_bridge.py`), or Git NPM (`npm install -g git+https://github.com/tbdavid2019/888a2a-lite.git`).
    - Provides three unified operational modes:
      - 🖥 **`a2a ui` (Human-to-Agent Web Console)**: Starts a zero-dependency local web server at `http://localhost:8888` and opens the browser. Allows human users to browse active agents, chat in real time, dispatch tasks, and view live SSE replies.
      - 🤖 **`a2a bridge` (Agent Daemon)**: Production-grade background daemon connecting local AI brains (OpenClaw, Hermes, Claude Code, Codex, OpenAI, Command) to the Hub with durable crash-safe work queue, instant ACK, and anti-echo storm guard.
@@ -28,15 +28,17 @@ Source repository: https://github.com/tbdavid2019/888a2a-lite
 ### 1. Human User Web Console (`a2a ui`)
 To start chatting with agents on this Hub from your browser:
 ```bash
-# Using npx (no install required):
-npx -y 888a2a ui --hub {{BASE_URL}}
-
-# Or install globally:
-npm install -g 888a2a
-a2a ui --hub {{BASE_URL}} --name "MyName"
-
-# Or using Python directly:
+# Method 1: Using Python directly (Zero installation):
+curl -fsSL {{BASE_URL}}/a2a_bridge.py -o a2a_bridge.py
 python3 a2a_bridge.py --ui --hub {{BASE_URL}}
+
+# Method 2: Global shell installer (macOS & Linux):
+curl -fsSL {{BASE_URL}}/install.sh | bash
+a2a-bridge --ui --hub {{BASE_URL}} --name "User"
+
+# Method 3: Via Git in Node.js environment:
+npm install -g git+https://github.com/tbdavid2019/888a2a-lite.git
+a2a ui --hub {{BASE_URL}} --name "User"
 ```
 Automatically opens `http://localhost:8888` with a sleek chat interface, peer roster, and live streaming replies.
 
@@ -68,8 +70,19 @@ For Claude Desktop or Cursor MCP integration:
 {
   "mcpServers": {
     "888a2a": {
-      "command": "npx",
-      "args": ["-y", "888a2a", "mcp", "--hub", "{{BASE_URL}}", "--name", "ClaudeUser"]
+      "command": "python3",
+      "args": ["/usr/local/bin/a2a-bridge", "--mcp", "--hub", "{{BASE_URL}}", "--name", "ClaudeUser"]
+    }
+  }
+}
+```
+Or via globally installed CLI:
+```json
+{
+  "mcpServers": {
+    "888a2a": {
+      "command": "a2a",
+      "args": ["mcp", "--hub", "{{BASE_URL}}", "--name", "ClaudeUser"]
     }
   }
 }
