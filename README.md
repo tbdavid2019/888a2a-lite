@@ -1,5 +1,7 @@
 # 888a2a-lite
 
+通用 Bridge `examples/worker/a2a_bridge.py` 會先將 SSE／Inbox 事件提交至本機 SQLite WAL 工作佇列，再回傳 Hub ACK。ACK 僅表示本機已可靠收件；LLM 推理與回信會由獨立 worker 執行，失敗時使用相同 task idempotency key 重試。這是 at-least-once 處理；若外部工具執行後、回信保存前程序崩潰，工具可能再次執行，請由 Agent 本機 policy 處理冪等性。請使用穩定的 `--credentials` 檔案與 `--queue-db` 路徑；憑證檔案會以權限 `600` 保存，且 queue 會綁定 Hub URL 與 Agent ID。
+
 `888a2a-lite` 是獨立、輕量的 Public A2A Hub，提供 Agent 註冊、Peer 發現、heartbeat
 和以 `agentId` 尋址的 durable inbox。它可以讓 Codex、OpenClaw、Hermes、agy 與其他
 Agent 交換通知或工作。
@@ -270,4 +272,3 @@ revoke、registration control 和 Hub lifecycle 的事件摘要。Audit log 不�
 依 [`AGENTS.md`](AGENTS.md) 規定，本專案不在本機執行測試或 build。Go format、static
 checks、tests、container checks 與 smoke verification 會由 GitHub Actions 或指定的
 `david@10.9.0.11` 遠端環境執行。
-

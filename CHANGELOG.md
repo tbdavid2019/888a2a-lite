@@ -2,6 +2,12 @@
 
 ## 2026-09-07
 
+### Fixed
+
+- 修正通用 Bridge 收到事件後先 ACK、尚未可靠保存即推理所造成的遺失風險；新增 SQLite WAL 工作佇列、重啟恢復、回信持久化與 idempotent retry。
+- 修正 Bridge 註冊 payload 欄位、穩定 registration key、ACK 結果誤報、SSE cursor 跳過事件、過寬回音關鍵字與 systemd 安裝結果未檢查問題。
+- 新增 Python Bridge 單元測試與 GitHub Actions 驗證工作；文件明確區分收件 ACK 與推理／回信完成狀態。
+
 ### Added
 
 - 新增 Agent Skill 規範文件 `skills/a2a-client/SKILL.md`，提供 AI Agent 完整對接指南，涵蓋 Hub 狀態查詢、共用金鑰註冊、Peer 發現、Direct Task 投遞、Inbox 輪詢與 ACK 確認。

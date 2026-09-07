@@ -6,7 +6,7 @@ Official Production-Ready Agent Daemon for 888a2a-lite Hub.
 Features:
 - Zero external dependencies (pure Python standard library).
 - Multi-backend AI support (OpenClaw, Hermes, OpenAI/Ollama compatible API, custom cmd).
-- Instant ACK on Ingest (<50ms) to eliminate false pending alerts on the Hub.
+- Durable local enqueue before receipt ACK; independent inference and retry workers.
 - Built-in Anti-Echo Storm Guard & [[A2A_NO_REPLY]] conversation termination.
 - Auto-Registration & Credential Persistence (~/.a2a/credentials_<name>.json).
 - Auto-Accept Group Invitations & Group broadcast spam suppression.
@@ -26,15 +26,21 @@ Usage:
 """
 
 import argparse
+import contextlib
+import fcntl
+import hashlib
 import json
 import os
-import pathlib
 import re
-import signal
 import socket
+import sqlite3
 import subprocess
 import sys
+import tempfile
+import threading
 import time
+import uuid
+import plistlib
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -114,6 +120,49 @@ def sanitize_slug(name, fallback="agent"):
     return ascii_slug
 
 
+def acquire_process_lock(queue_path):
+    lock_path = os.path.abspath(os.path.expanduser(queue_path)) + ".lock"
+    os.makedirs(os.path.dirname(lock_path), exist_ok=True)
+    handle = open(lock_path, "a+", encoding="utf-8")
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        handle.close()
+        raise RuntimeError(f"another Bridge process owns queue {queue_path}")
+    return handle
+
+
+def save_credentials(path, data):
+    """Atomically save credentials without exposing a partially written secret."""
+    parent = os.path.dirname(os.path.abspath(path))
+    os.makedirs(parent, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=".credentials.", dir=parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, indent=2, ensure_ascii=False)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+        directory_fd = os.open(parent, os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    except Exception:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+        raise
+
+
+def systemd_unit_quote(value, exec_arg=True):
+    value = value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+    if exec_arg:
+        value = value.replace("%", "%%").replace("$", "$$")
+    return '"' + value + '"'
+
+
 # ---------------------------------------------------------------------------
 # Hub API Client (Pure urllib)
 # ---------------------------------------------------------------------------
@@ -135,10 +184,16 @@ class HubClient:
             h["X-Hub-Key"] = self.shared_key
         return h
 
-    def register(self, name, description="AI Agent via Universal Bridge"):
+    def register(self, name, registration_key, provider_family="generic", transport_id="http-json", capabilities=None):
         """Register agent with Hub and receive agentId and token."""
         url = f"{self.hub_url}/hub/v1/agents/register"
-        payload = json.dumps({"name": name, "description": description}).encode("utf-8")
+        payload = json.dumps({
+            "displayName": name,
+            "providerFamily": provider_family,
+            "transportId": transport_id,
+            "capabilities": capabilities or ["text/plain"],
+            "registrationIdempotencyKey": registration_key,
+        }).encode("utf-8")
         req = urllib.request.Request(url, data=payload, headers=self._headers(auth=False))
         try:
             with urllib.request.urlopen(req, timeout=15) as resp:
@@ -146,13 +201,25 @@ class HubClient:
                 ident = data.get("identity", {})
                 self.agent_id = ident.get("agentId")
                 self.token = ident.get("agentToken")
+                if not self.agent_id or not self.token:
+                    raise RuntimeError(
+                        "Hub returned an existing identity without agentToken; "
+                        "restore the original credential file instead of retrying registration"
+                    )
                 return data
         except urllib.error.HTTPError as e:
             err = e.read().decode("utf-8", errors="replace")
             raise RuntimeError(f"Registration failed: HTTP {e.code}: {err}")
 
+    def poll_inbox(self, after=0, limit=100):
+        url = f"{self.hub_url}/hub/v1/agents/{self.agent_id}/inbox?afterSequence={after}&limit={limit}"
+        req = urllib.request.Request(url, headers=self._headers())
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            return data.get("items", [])
+
     def ack_task(self, sequence):
-        """Acknowledge processed sequence immediately (<50ms)."""
+        """Acknowledge a sequence after durable local enqueue."""
         url = f"{self.hub_url}/hub/v1/agents/{self.agent_id}/inbox/{sequence}/ack"
         req = urllib.request.Request(url, data=b"{}", headers=self._headers())
         try:
@@ -434,39 +501,137 @@ class OpenAIBackend(AIBackend):
 # Core Task Engine: Instant ACK & Anti-Echo Guard
 # ---------------------------------------------------------------------------
 
-ANTI_ECHO_PATTERNS = [
-    r"收錄完畢", r"保持連線待命", r"隨時準備好", r"辛苦了", r"一點都不辛苦",
-    r"晚安", r"拜拜", r"不用回覆", r"已就定位", r"一切正常", r"收到確認",
-    r"\[\[A2A_NO_REPLY\]\]"
-]
+class DurableWorkQueue:
+    """Small local WAL queue. Hub ACK means accepted into this queue."""
+    def __init__(self, path, scope=""):
+        self.path = os.path.abspath(os.path.expanduser(path))
+        os.makedirs(os.path.dirname(self.path), exist_ok=True)
+        fd = os.open(self.path, os.O_CREAT, 0o600)
+        os.close(fd)
+        if os.path.exists(self.path):
+            os.chmod(self.path, 0o600)
+        self.lock = threading.Lock()
+        with self._db() as db:
+            db.executescript("""
+                PRAGMA journal_mode=WAL;
+                CREATE TABLE IF NOT EXISTS work (
+                    sequence INTEGER PRIMARY KEY, item_json TEXT NOT NULL,
+                    state TEXT NOT NULL DEFAULT 'pending', acked INTEGER NOT NULL DEFAULT 0,
+                    reply_json TEXT, attempts INTEGER NOT NULL DEFAULT 0,
+                    updated_at REAL NOT NULL, retry_after REAL NOT NULL DEFAULT 0
+                );
+            """)
+            columns = {row[1] for row in db.execute("PRAGMA table_info(work)")}
+            if "retry_after" not in columns:
+                db.execute("ALTER TABLE work ADD COLUMN retry_after REAL NOT NULL DEFAULT 0")
+            db.execute("UPDATE work SET state='pending' WHERE state='inflight'")
+            db.execute("CREATE TABLE IF NOT EXISTS queue_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+            previous = db.execute("SELECT value FROM queue_meta WHERE key='scope'").fetchone()
+            if previous and previous[0] != scope:
+                raise RuntimeError("queue database belongs to a different Hub or agent")
+            if not previous:
+                db.execute("INSERT INTO queue_meta(key,value) VALUES('scope',?)", (scope,))
+        os.chmod(self.path, 0o600)
+        for sidecar in (self.path + "-wal", self.path + "-shm"):
+            if os.path.exists(sidecar):
+                os.chmod(sidecar, 0o600)
 
-QUESTION_PATTERNS = [r"\?", r"？", r"請", r"幫我", r"能否", r"如何", r"怎麼", r"何時"]
+    def _connect(self):
+        db = sqlite3.connect(self.path, timeout=30)
+        db.row_factory = sqlite3.Row
+        db.execute("PRAGMA synchronous=FULL")
+        return db
+
+    @contextlib.contextmanager
+    def _db(self):
+        db = self._connect()
+        try:
+            yield db
+            db.commit()
+        finally:
+            db.close()
+
+    def enqueue(self, item):
+        sequence = int(item["sequence"])
+        with self.lock, self._db() as db:
+            db.execute("INSERT OR IGNORE INTO work(sequence,item_json,updated_at) VALUES(?,?,?)",
+                       (sequence, json.dumps(item, ensure_ascii=False), time.time()))
+
+    def set_acked(self, sequence):
+        with self.lock, self._db() as db:
+            db.execute("UPDATE work SET acked=1,updated_at=? WHERE sequence=?", (time.time(), sequence))
+
+    def next(self):
+        with self.lock, self._db() as db:
+            row = db.execute("SELECT * FROM work WHERE state='pending' AND retry_after<=? ORDER BY sequence LIMIT 1", (time.time(),)).fetchone()
+            if not row:
+                return None
+            db.execute("UPDATE work SET state='inflight',attempts=attempts+1,updated_at=? WHERE sequence=?",
+                       (time.time(), row["sequence"]))
+            return dict(row)
+
+    def save_reply(self, sequence, reply):
+        with self.lock, self._db() as db:
+            db.execute("UPDATE work SET reply_json=?,updated_at=? WHERE sequence=?",
+                       (json.dumps(reply, ensure_ascii=False), time.time(), sequence))
+
+    def finish(self, sequence):
+        with self.lock, self._db() as db:
+            db.execute("UPDATE work SET state='done',updated_at=? WHERE sequence=?", (time.time(), sequence))
+
+    def retry(self, sequence):
+        with self.lock, self._db() as db:
+            db.execute("UPDATE work SET state='pending',retry_after=?,updated_at=? WHERE sequence=?", (time.time() + 2, time.time(), sequence))
 
 
 def is_pure_closing_statement(text):
-    """Determine if a message is a pure closing statement or status report."""
-    has_closing = any(re.search(p, text) for p in ANTI_ECHO_PATTERNS)
-    has_question = any(re.search(p, text) for p in QUESTION_PATTERNS)
-    return has_closing and not has_question
+    """Only suppress exact, short closing phrases; actionable text reaches the LLM."""
+    normalized = re.sub(r"\s+", " ", text.strip()).strip("。.!！~～ ")
+    closings = {
+        "收到", "收到確認", "收錄完畢", "保持連線待命", "隨時準備好", "辛苦了",
+        "一點都不辛苦", "晚安", "拜拜", "不用回覆", "已就定位", "一切正常",
+        "收到～", "辛苦啦",
+    }
+    return normalized in closings
 
 
-def process_incoming_task(hub_client, backend, item, agent_name):
-    """Handle incoming task with Instant ACK and Anti-Echo filtering."""
+def process_incoming_task(hub_client, backend, queue, item, agent_name):
+    """Persist first, then ACK; inference runs only from durable work."""
     seq = item.get("sequence")
     task_id = item.get("taskId")
     sender_id = item.get("requesterAgentId")
     context_id = item.get("contextId")
     msg = item.get("message", "")
     group_id = item.get("groupId")
-
     is_group = bool(group_id)
     tag = f"[Group Broadcast: {group_id}]" if is_group else f"[Direct Task: {task_id}]"
     print(f"\n{'='*55}\n{tag} from {sender_id} (seq={seq})\nMessage: {msg.strip()}\n{'='*55}")
 
-    # 1. Instant ACK on Ingest (<50ms): Never leave Hub sequence in PENDING state!
-    print(f"[*] [Instant ACK] Acknowledging seq {seq} immediately...")
-    hub_client.ack_task(seq)
-    print(f"[✓] [Instant ACK] Seq {seq} successfully acknowledged.")
+    queue.enqueue(item)
+    print(f"[*] Persisted seq {seq}; acknowledging immediately...")
+    if hub_client.ack_task(seq):
+        queue.set_acked(seq)
+        print(f"[✓] ACK confirmed for seq {seq}.")
+    else:
+        print(f"[!] ACK not confirmed for seq {seq}; durable retry remains queued.", file=sys.stderr)
+
+
+def process_queued_task(hub_client, backend, queue, row, agent_name):
+    item = json.loads(row["item_json"])
+    seq = item.get("sequence")
+    task_id = item.get("taskId")
+    sender_id = item.get("requesterAgentId")
+    context_id = item.get("contextId")
+    msg = item.get("message", "")
+    group_id = item.get("groupId")
+    is_group = bool(group_id)
+
+    if not row["acked"]:
+        if hub_client.ack_task(seq):
+            queue.set_acked(seq)
+        else:
+            queue.retry(seq)
+            return
 
     # 2. Check and auto-accept invitations if applicable
     if any(k in msg.lower() for k in ("invite", "group", "群組", "邀請")):
@@ -476,6 +641,7 @@ def process_incoming_task(hub_client, backend, item, agent_name):
     if is_pure_closing_statement(msg):
         print(f"[*] [Anti-Echo Guard] Received closing/standby statement from {sender_id}.")
         print("    -> Suppressing reciprocal reply. Conversation naturally concluded.")
+        queue.finish(seq)
         return
 
     # 4. Group Broadcast Discipline:
@@ -484,39 +650,69 @@ def process_incoming_task(hub_client, backend, item, agent_name):
         addressed = (agent_name in msg or hub_client.agent_id in msg or "全員" in msg or "all" in msg.lower())
         if not addressed:
             print(f"[*] [Group Broadcast] Message not explicitly addressed to '{agent_name}'. Acknowledged without reply.")
+            queue.finish(seq)
             return
 
-    # 5. Invoke LLM Backend Reasoning Loop
-    print(f"[*] Invoking AI Backend ({backend.__class__.__name__}) for task reasoning...")
-    t_start = time.time()
-    reply_text = backend.execute(msg, sender_id, {"groupId": group_id, "contextId": context_id})
-    elapsed = time.time() - t_start
-
-    if not reply_text:
-        print(f"[!] AI Backend produced no response ({elapsed:.2f}s).", file=sys.stderr)
-        return
-
-    reply_text = reply_text.strip()
-    print(f"[✓] AI Backend completed reasoning in {elapsed:.2f}s.")
+    saved_reply = json.loads(row["reply_json"]) if row.get("reply_json") else None
+    if saved_reply:
+        reply_text = saved_reply["message"]
+        print(f"[*] Retrying persisted response for seq {seq}.")
+    else:
+        print(f"[*] Invoking AI Backend ({backend.__class__.__name__}) for task reasoning...")
+        t_start = time.time()
+        reply_text = backend.execute(msg, sender_id, {"groupId": group_id, "contextId": context_id})
+        elapsed = time.time() - t_start
+        if not reply_text:
+            print(f"[!] AI Backend produced no response ({elapsed:.2f}s); retaining work.", file=sys.stderr)
+            queue.retry(seq)
+            return
+        reply_text = reply_text.strip()
+        print(f"[✓] AI Backend completed reasoning in {elapsed:.2f}s.")
 
     # 6. Anti-Echo Storm Guard (Post-Filter)
     if "[[A2A_NO_REPLY]]" in reply_text:
         print(f"[*] [Anti-Echo Guard] LLM emitted [[A2A_NO_REPLY]]. Suppressing reply task.")
+        queue.finish(seq)
         return
 
     # 7. Deliver reasoned reply to requester
-    reply_task_id = f"reply-{task_id}"
+    reply_task_id = saved_reply["task_id"] if saved_reply else f"reply-{hub_client.agent_id}-{seq}"
+    reply = saved_reply or {"target": sender_id, "message": reply_text, "context_id": context_id, "task_id": reply_task_id}
+    if not saved_reply:
+        queue.save_reply(seq, reply)
     print(f"[*] Sending reasoned response to {sender_id} (task {reply_task_id})...")
-    res = hub_client.send_task(sender_id, reply_text, context_id=context_id, task_id=reply_task_id)
+    res = hub_client.send_task(reply["target"], reply["message"], context_id=reply["context_id"], task_id=reply["task_id"])
     if res:
         print(f"[✓] Response delivered to {sender_id} (status={res.get('state')}).")
+        queue.finish(seq)
+    else:
+        queue.retry(seq)
+
+
+def run_work_worker(hub_client, backend, queue, agent_name):
+    while True:
+        try:
+            row = queue.next()
+        except Exception as exc:
+            print(f"[!] Work queue claim failed; retrying: {exc}", file=sys.stderr)
+            time.sleep(2)
+            continue
+        if row is None:
+            time.sleep(0.25)
+            continue
+        try:
+            process_queued_task(hub_client, backend, queue, row, agent_name)
+        except Exception as exc:
+            print(f"[!] Work seq {row['sequence']} failed; retrying: {exc}", file=sys.stderr)
+            queue.retry(row["sequence"])
+            time.sleep(min(30, 2 ** min(row["attempts"], 4)))
 
 
 # ---------------------------------------------------------------------------
 # Outbound Resilient SSE Listener
 # ---------------------------------------------------------------------------
 
-def run_bridge_listener(hub_client, backend, agent_name):
+def run_bridge_listener(hub_client, backend, agent_name, queue):
     """Maintain resilient outbound SSE connection to Hub."""
     print("=" * 65)
     print(f" 888a2a-lite Universal Agent Bridge: {agent_name}")
@@ -529,14 +725,32 @@ def run_bridge_listener(hub_client, backend, agent_name):
     # Initial check for pending invitations
     hub_client.auto_accept_pending_invitations()
 
-    last_event_id = 0
     backoff = 1
+
+    threading.Thread(target=run_work_worker, args=(hub_client, backend, queue, agent_name), daemon=True).start()
+
+    def reconcile_pending():
+        while True:
+            try:
+                after = 0
+                while True:
+                    items = hub_client.poll_inbox(after=after, limit=100)
+                    if not items:
+                        break
+                    for item in items:
+                        process_incoming_task(hub_client, backend, queue, item, agent_name)
+                    next_after = max(int(item.get("sequence", after)) for item in items)
+                    if next_after <= after:
+                        break
+                    after = next_after
+            except Exception as exc:
+                print(f"[!] Inbox reconciliation failed: {exc}", file=sys.stderr)
+            time.sleep(5)
+
+    threading.Thread(target=reconcile_pending, daemon=True).start()
 
     while True:
         stream_url = f"{hub_client.hub_url}/hub/v1/agents/{hub_client.agent_id}/inbox/stream"
-        if last_event_id > 0:
-            stream_url += f"?afterSequence={last_event_id}"
-
         print(f"[*] Connecting SSE Stream: {stream_url}...")
         req = urllib.request.Request(stream_url, headers={
             "Accept": "text/event-stream",
@@ -545,8 +759,6 @@ def run_bridge_listener(hub_client, backend, agent_name):
         })
         if hub_client.shared_key:
             req.add_header("X-Hub-Key", hub_client.shared_key)
-        if last_event_id > 0:
-            req.add_header("Last-Event-ID", str(last_event_id))
 
         try:
             with urllib.request.urlopen(req, timeout=60) as resp:
@@ -570,12 +782,7 @@ def run_bridge_listener(hub_client, backend, agent_name):
                             raw_json = "\n".join(current_data)
                             try:
                                 item = json.loads(raw_json)
-                                if current_id:
-                                    last_event_id = int(current_id)
-                                elif item.get("sequence"):
-                                    last_event_id = int(item["sequence"])
-
-                                process_incoming_task(hub_client, backend, item, agent_name)
+                                process_incoming_task(hub_client, backend, queue, item, agent_name)
                             except json.JSONDecodeError as err:
                                 print(f"[!] Failed to parse JSON event: {err}", file=sys.stderr)
 
@@ -639,50 +846,27 @@ def install_launchd_service(agent_name, script_args, service_name=None):
     # Filter out --install-service from args to prevent recursion
     clean_args = filter_service_args(script_args)
 
-    arg_xml = f"    <string>{python_bin}</string>\n    <string>{script_path}</string>\n"
-    for a in clean_args:
-        arg_xml += f"    <string>{a}</string>\n"
-
-    plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key>
-  <string>{label}</string>
-  <key>ProgramArguments</key>
-  <array>
-{arg_xml.rstrip()}
-  </array>
-  <key>RunAtLoad</key>
-  <true/>
-  <key>KeepAlive</key>
-  <true/>
-  <key>EnvironmentVariables</key>
-  <dict>
-    <key>PATH</key>
-    <string>{get_enhanced_env()["PATH"]}</string>
-    <key>PYTHONUNBUFFERED</key>
-    <string>1</string>
-  </dict>
-  <key>StandardOutPath</key>
-  <string>{log_dir}/{slug}.log</string>
-  <key>StandardErrorPath</key>
-  <string>{log_dir}/{slug}.error.log</string>
-</dict>
-</plist>
-"""
-    with open(plist_path, "w", encoding="utf-8") as f:
-        f.write(plist_content)
+    plist = {
+        "Label": label,
+        "ProgramArguments": [python_bin, script_path, *clean_args],
+        "RunAtLoad": True, "KeepAlive": True,
+        "EnvironmentVariables": {"PATH": get_enhanced_env()["PATH"], "PYTHONUNBUFFERED": "1"},
+        "StandardOutPath": f"{log_dir}/{slug}.log",
+        "StandardErrorPath": f"{log_dir}/{slug}.error.log",
+    }
+    with open(plist_path, "wb") as f:
+        plistlib.dump(plist, f, fmt=plistlib.FMT_XML)
+    os.chmod(plist_path, 0o600)
 
     print(f"[✓] LaunchAgent plist created at: {plist_path}")
     # Unload if already loaded, then load
-    subprocess.run(["launchctl", "unload", plist_path], capture_output=True)
+    subprocess.run(["launchctl", "unload", plist_path], capture_output=True, check=False)
     res = subprocess.run(["launchctl", "load", "-w", plist_path], capture_output=True, text=True)
     if res.returncode == 0:
         print(f"[✓] Service '{label}' loaded and running in background!")
         print(f"[*] Check logs with: tail -f {log_dir}/{slug}.log")
     else:
-        print(f"[!] Failed to load plist with launchctl: {res.stderr}", file=sys.stderr)
+        raise RuntimeError(f"launchctl load failed: {res.stderr.strip()}")
 
 
 def install_systemd_service(agent_name, script_args, service_name=None):
@@ -695,17 +879,18 @@ def install_systemd_service(agent_name, script_args, service_name=None):
 
     python_bin = sys.executable
     script_path = os.path.abspath(__file__)
-    clean_args = " ".join([f'"{a}"' for a in filter_service_args(script_args)])
+    clean_args = " ".join(systemd_unit_quote(a) for a in filter_service_args(script_args))
+    systemd_path = systemd_unit_quote("PATH=" + get_enhanced_env()["PATH"], exec_arg=False)
 
     content = f"""[Unit]
-Description=888a2a-lite Universal Agent Bridge ({agent_name})
+Description=888a2a-lite Universal Agent Bridge ({slug})
 After=network.target
 
 [Service]
 Type=simple
 Environment=PYTHONUNBUFFERED=1
-Environment=PATH={get_enhanced_env()["PATH"]}
-ExecStart={python_bin} {script_path} {clean_args}
+Environment={systemd_path}
+ExecStart={systemd_unit_quote(python_bin)} {systemd_unit_quote(script_path)} {clean_args}
 Restart=always
 RestartSec=5
 
@@ -714,16 +899,21 @@ WantedBy=default.target
 """
     with open(service_path, "w", encoding="utf-8") as f:
         f.write(content)
+    os.chmod(service_path, 0o600)
 
     print(f"[✓] systemd user service created at: {service_path}")
-    subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
-    subprocess.run(["systemctl", "--user", "enable", "--now", service_unit], capture_output=True, text=True)
+    reload_res = subprocess.run(["systemctl", "--user", "daemon-reload"], capture_output=True, text=True)
+    if reload_res.returncode != 0:
+        raise RuntimeError(f"systemd daemon-reload failed: {reload_res.stderr.strip()}")
+    enable_res = subprocess.run(["systemctl", "--user", "enable", "--now", service_unit], capture_output=True, text=True)
+    if enable_res.returncode != 0:
+        raise RuntimeError(f"systemd enable failed: {enable_res.stderr.strip()}")
     res = subprocess.run(["systemctl", "--user", "restart", service_unit], capture_output=True, text=True)
     if res.returncode == 0:
         print(f"[✓] Service '{service_unit}' enabled and restarted!")
         print(f"[*] Check logs with: journalctl --user -u {service_unit} -f")
     else:
-        print(f"[!] Failed to restart systemd service: {res.stderr}", file=sys.stderr)
+        raise RuntimeError(f"systemd restart failed: {res.stderr.strip()}")
 
 
 # ---------------------------------------------------------------------------
@@ -740,6 +930,7 @@ def main():
     parser.add_argument("--shared-key", default=os.getenv("A2A888_HUB_SHARED_KEY"),
                         help="Hub Pre-Shared Key (for SEMI_OPEN mode)")
     parser.add_argument("--credentials", help="Path to credentials JSON file")
+    parser.add_argument("--queue-db", help="Durable local work queue SQLite path")
 
     # Backend selection
     parser.add_argument("--backend", choices=["openclaw", "hermes", "openai", "echo"], default="openclaw",
@@ -758,6 +949,8 @@ def main():
     parser.add_argument("--service-name", help="Custom ASCII service name for launchd/systemd")
 
     args = parser.parse_args()
+    if bool(args.agent_id) != bool(args.token):
+        parser.error("--agent-id and --token must be provided together")
 
     # Handle service installation if requested
     if args.install_service:
@@ -771,29 +964,41 @@ def main():
     cred_file = args.credentials or os.path.expanduser(f"~/.a2a/credentials_{sanitize_slug(args.name)}.json")
     agent_id = args.agent_id
     token = args.token
+    registration_key = None
+    credential_data = {}
 
-    if not agent_id or not token:
-        if os.path.isfile(cred_file):
-            print(f"[*] Loading existing credentials from: {cred_file}")
-            try:
-                with open(cred_file, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    ident = data.get("identity", data)
+    if os.path.isfile(cred_file):
+        print(f"[*] Loading existing credentials from: {cred_file}")
+        try:
+            with open(cred_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                credential_data = data if isinstance(data, dict) else {}
+                ident = data.get("identity", data)
+                if not args.agent_id and not args.token:
                     agent_id = ident.get("agentId")
                     token = ident.get("agentToken")
-            except Exception as e:
-                print(f"[!] Warning: Could not read {cred_file}: {e}", file=sys.stderr)
+                registration_key = data.get("registrationIdempotencyKey") or ident.get("registrationIdempotencyKey")
+        except Exception as e:
+            print(f"[!] Warning: Could not read {cred_file}: {e}", file=sys.stderr)
+
+    needs_registration = not agent_id or not token
+    if needs_registration and not registration_key:
+        registration_key = "bridge-" + uuid.uuid4().hex
+        os.makedirs(os.path.dirname(os.path.abspath(cred_file)), exist_ok=True)
+        bootstrap = dict(credential_data)
+        bootstrap["registrationIdempotencyKey"] = registration_key
+        save_credentials(cred_file, bootstrap)
 
     hub_client = HubClient(args.hub, agent_id, token, args.shared_key)
 
     if not hub_client.agent_id or not hub_client.token:
         print(f"[*] No credentials found for '{args.name}'. Auto-registering with Hub...")
         try:
-            reg_data = hub_client.register(args.name, f"{args.name} powered by {args.backend} via Universal Bridge")
+            reg_data = hub_client.register(args.name, registration_key, provider_family=args.backend)
+            reg_data["registrationIdempotencyKey"] = registration_key
             print(f"[✓] Registration successful! Agent ID: {hub_client.agent_id}")
             os.makedirs(os.path.dirname(os.path.abspath(cred_file)), exist_ok=True)
-            with open(cred_file, "w", encoding="utf-8") as f:
-                json.dump(reg_data, f, indent=2, ensure_ascii=False)
+            save_credentials(cred_file, reg_data)
             print(f"[✓] Credentials saved to: {cred_file}")
         except Exception as e:
             print(f"[!] Auto-registration failed: {e}", file=sys.stderr)
@@ -809,11 +1014,19 @@ def main():
     else:
         backend = EchoBackend(agent_name=args.name)
 
+    queue_scope = hashlib.sha256(f"{args.hub.rstrip('/')}/{hub_client.agent_id}".encode()).hexdigest()[:16]
+    queue_default = os.path.expanduser(f"~/.a2a/queue_{queue_scope}.db")
+    queue_path = args.queue_db or queue_default
+    process_lock = acquire_process_lock(queue_path)
+    queue = DurableWorkQueue(queue_path, scope=f"{args.hub.rstrip('/')}/{hub_client.agent_id}")
+
     # Run the resilient listener
     try:
-        run_bridge_listener(hub_client, backend, args.name)
+        run_bridge_listener(hub_client, backend, args.name, queue)
     except KeyboardInterrupt:
         print("\n[*] Universal Agent Bridge shutdown gracefully.")
+    finally:
+        process_lock.close()
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -12,6 +13,17 @@ env:
   GO_VERSION: '1.25.6'
 
 jobs:
+  python-bridge:
+    name: Python bridge checks
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4.2.2
+      - name: Compile bridge
+        run: python3 -m py_compile examples/worker/a2a_bridge.py examples/worker/test_a2a_bridge.py
+      - name: Run bridge unit tests
+        run: python3 -m unittest discover -s examples/worker -p 'test_*.py'
+
   go:
     name: Go checks
     runs-on: ubuntu-24.04
