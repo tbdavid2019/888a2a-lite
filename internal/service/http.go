@@ -1056,10 +1056,14 @@ func (server *HTTPServer) adminDispatchTask(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
-	var task hub.TaskDelivery
-	if !decodeJSON(w, r, server.maxBodyBytes, &task) {
+	var req struct {
+		hub.TaskDelivery
+		RequesterAgentID string `json:"requesterAgentId"`
+	}
+	if !decodeJSON(w, r, server.maxBodyBytes, &req) {
 		return
 	}
+	task := req.TaskDelivery
 	if strings.TrimSpace(task.TaskID) == "" {
 		task.TaskID = fmt.Sprintf("task-admin-%d", time.Now().UnixNano())
 	}
@@ -1069,10 +1073,11 @@ func (server *HTTPServer) adminDispatchTask(w http.ResponseWriter, r *http.Reque
 	if strings.TrimSpace(task.IdempotencyKey) == "" {
 		task.IdempotencyKey = fmt.Sprintf("idem-%s", task.TaskID)
 	}
-	if strings.TrimSpace(task.RequesterAgentID) == "" {
-		task.RequesterAgentID = "operator"
+	requesterID := strings.TrimSpace(req.RequesterAgentID)
+	if requesterID == "" {
+		requesterID = "operator"
 	}
-	item, duplicate, err := server.service.SendTaskAdmin(r.Context(), token, task)
+	item, duplicate, err := server.service.SendTaskAdmin(r.Context(), token, task, requesterID)
 	if err != nil {
 		writeServiceError(w, err)
 		return
