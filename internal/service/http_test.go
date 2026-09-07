@@ -530,6 +530,87 @@ func TestHTTPSemiOpenSharedKeyEnforcement(t *testing.T) {
 	}
 }
 
+func TestHTTPMultiCircleIsolation(t *testing.T) {
+	ctx := context.Background()
+	database, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "hub.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open: %v", err)
+	}
+	defer func() { _ = database.Close() }()
+	repository := sqlite.NewRepository(database)
+	cfg := config.Config{
+		HubID: "public", ListenAddr: ":0", DatabasePath: filepath.Join(t.TempDir(), "unused.db"),
+		RegistrationEnabled: true, RegistrationTTL: 24 * time.Hour, PeerLease: 90 * time.Second,
+		MaxRegisteredAgents: 20, MaxTasksPerMinute: 20, MaxConcurrentTasks: 4,
+		MaxPayloadBytes: 1 << 20, RegistrationPerMinute: 20,
+		OperatorToken: "operator-fixture", CircleMode: "multi",
+		SharedKeys: "team-a:private-a,team-b:private-b", CircleDerivationSecret: "stable-hub-secret",
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("config.Validate: %v", err)
+	}
+	_ = repository.Policy().SavePolicy(ctx, hub.HubPolicy{
+		HubID: cfg.HubID, RegistrationEnabled: cfg.RegistrationEnabled,
+		RegistrationTTL: cfg.RegistrationTTL, PeerLease: cfg.PeerLease,
+		MaxRegisteredAgents: cfg.MaxRegisteredAgents, MaxTasksPerMinute: cfg.MaxTasksPerMinute,
+		MaxConcurrentTasks: cfg.MaxConcurrentTasks, MaxPayloadBytes: cfg.MaxPayloadBytes,
+	})
+	handler := NewHTTPServer(New(repository, cfg)).Handler()
+
+	register := func(name, key, registrationKey string) hub.AgentIdentity {
+		request := httptest.NewRequest(http.MethodPost, "/hub/v1/agents/register", bytes.NewReader([]byte(`{"displayName":"`+name+`","providerFamily":"test","transportId":"http","capabilities":["text/plain"],"registrationIdempotencyKey":"`+registrationKey+`"}`)))
+		request.Header.Set("Content-Type", "application/json")
+		if key != "" {
+			request.Header.Set("X-Hub-Key", key)
+		}
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusCreated {
+			t.Fatalf("register %s status/body = %d/%s", name, response.Code, response.Body.String())
+		}
+		var body struct {
+			Identity hub.AgentIdentity `json:"identity"`
+		}
+		decodeResponse(t, response, &body)
+		return body.Identity
+	}
+
+	publicAgent := register("public", "", "public-install")
+	privateA := register("private-a-1", "private-a", "private-a-1")
+	privateA2 := register("private-a-2", "private-a", "private-a-2")
+	privateB := register("private-b", "private-b", "private-b")
+	if publicAgent.CircleID != "public" || privateA.CircleID == "public" || privateA.CircleID != privateA2.CircleID || privateA.CircleID == privateB.CircleID {
+		t.Fatalf("circle assignment mismatch: public=%q privateA=%q privateA2=%q privateB=%q", publicAgent.CircleID, privateA.CircleID, privateA2.CircleID, privateB.CircleID)
+	}
+
+	publicPeers := doJSON(t, handler, http.MethodGet, "/hub/v1/agents", publicAgent.AgentID, publicAgent.AgentToken, nil)
+	if publicPeers.Code != http.StatusOK || strings.Contains(publicPeers.Body.String(), privateA.AgentID) {
+		t.Fatalf("public peers leaked private agent: %d/%s", publicPeers.Code, publicPeers.Body.String())
+	}
+	privatePeers := doJSON(t, handler, http.MethodGet, "/hub/v1/agents", privateA.AgentID, privateA.AgentToken, nil)
+	if privatePeers.Code != http.StatusOK || strings.Contains(privatePeers.Body.String(), publicAgent.AgentID) || !strings.Contains(privatePeers.Body.String(), privateA2.AgentID) {
+		t.Fatalf("private peers were not isolated: %d/%s", privatePeers.Code, privatePeers.Body.String())
+	}
+
+	crossLookup := doJSON(t, handler, http.MethodGet, "/hub/v1/agents/"+publicAgent.AgentID, privateA.AgentID, privateA.AgentToken, nil)
+	if crossLookup.Code != http.StatusNotFound {
+		t.Fatalf("cross-circle lookup status = %d, want 404", crossLookup.Code)
+	}
+	crossTask := doJSON(t, handler, http.MethodPost, "/hub/v1/agents/"+privateA.AgentID+"/tasks", publicAgent.AgentID, publicAgent.AgentToken, map[string]string{
+		"contextId": "cross", "idempotencyKey": "cross", "message": "must not cross", "taskId": "cross",
+	})
+	if crossTask.Code != http.StatusNotFound {
+		t.Fatalf("cross-circle task status = %d, want 404", crossTask.Code)
+	}
+
+	intraTask := doJSON(t, handler, http.MethodPost, "/hub/v1/agents/"+privateA2.AgentID+"/tasks", privateA.AgentID, privateA.AgentToken, map[string]string{
+		"contextId": "intra", "idempotencyKey": "intra", "message": "same circle", "taskId": "intra",
+	})
+	if intraTask.Code != http.StatusAccepted {
+		t.Fatalf("same-circle task status/body = %d/%s", intraTask.Code, intraTask.Body.String())
+	}
+}
+
 func TestHTTPSSEInboxStream(t *testing.T) {
 	ctx := context.Background()
 	database, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "hub.db"))

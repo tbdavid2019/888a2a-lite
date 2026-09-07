@@ -133,6 +133,11 @@
           </label>
         </div>
         <div class="filter-item">
+          <label for="filter-circle">Circle
+            <select id="filter-circle"><option value="">全部 Circle</option></select>
+          </label>
+        </div>
+        <div class="filter-item">
           <label for="filter-agent">Agent ID 篩選
             <input id="filter-agent" type="text" placeholder="發送或接收 Agent ID">
           </label>
@@ -216,6 +221,11 @@
           </label>
         </div>
         <div class="filter-item">
+          <label for="agent-filter-circle">Circle
+            <select id="agent-filter-circle"><option value="">全部 Circle</option></select>
+          </label>
+        </div>
+        <div class="filter-item">
           <label for="agent-filter-search">關鍵字搜尋
             <input id="agent-filter-search" type="text" placeholder="搜尋 Agent ID、名稱或架構...">
           </label>
@@ -237,6 +247,7 @@
           <thead>
             <tr>
               <th>Agent ID</th>
+              <th>Circle</th>
               <th>名稱與架構 (Provider)</th>
               <th>即時狀態</th>
               <th>最後心跳 (Last Seen)</th>
@@ -246,7 +257,7 @@
             </tr>
           </thead>
           <tbody id="agent-rows">
-            <tr><td class="empty" colspan="7">請先輸入 Operator Token 並載入。</td></tr>
+            <tr><td class="empty" colspan="8">請先輸入 Operator Token 並載入。</td></tr>
           </tbody>
         </table>
       </div>
@@ -327,6 +338,18 @@
     });
   };
   const loadAnnouncements = async () => { const body = await api("/hub/v1/admin/announcements?afterId=0&limit=100"); renderAnnouncements(body.announcements || []); };
+  const loadCircles = async () => {
+    const body = await api("/hub/v1/admin/circles");
+    [$("filter-circle"), $("agent-filter-circle")].forEach((select) => {
+      const current = select.value;
+      select.replaceChildren(new Option("全部 Circle", ""));
+      (body.circles || []).forEach((circle) => {
+        const label = circle.alias ? `${circle.alias} · ${circle.circleId}` : circle.circleId;
+        select.append(new Option(`${label} (${circle.state})`, circle.circleId));
+      });
+      select.value = current;
+    });
+  };
 
   const renderDirectMessages = (items) => {
     const rows = $("direct-rows"); rows.replaceChildren();
@@ -385,10 +408,12 @@
     const type = $("filter-type").value;
     const agentId = $("filter-agent").value.trim();
     const groupId = $("filter-group").value.trim();
+    const circleId = $("filter-circle").value;
     const limit = $("filter-limit").value;
     const params = new URLSearchParams({ type, limit });
     if (agentId) params.set("agentId", agentId);
     if (groupId) params.set("groupId", groupId);
+    if (circleId) params.set("circleId", circleId);
     $("section-direct").style.display = (type === "group") ? "none" : "block";
     $("section-group").style.display = (type === "direct") ? "none" : "block";
     const body = await api(`/hub/v1/admin/messages?${params.toString()}`);
@@ -405,7 +430,7 @@
     if (!items.length) {
       const row = document.createElement("tr");
       const cell = document.createElement("td");
-      cell.colSpan = 7;
+      cell.colSpan = 8;
       cell.className = "empty";
       cell.textContent = "沒有符合條件的 Agent。";
       row.append(cell);
@@ -427,6 +452,12 @@
         transDiv.textContent = `transport: ${agent.transportId}`;
         cId.append(transDiv);
       }
+
+      const cCircle = document.createElement("td");
+      const circleBadge = document.createElement("span");
+      circleBadge.className = "badge";
+      circleBadge.textContent = agent.circleId || "public";
+      cCircle.append(circleBadge);
 
       // Name & Provider
       const cName = document.createElement("td");
@@ -502,7 +533,7 @@
         }
       }));
 
-      row.append(cId, cName, cState, cLastSeen, cExpiry, cCreated, cActions);
+      row.append(cId, cCircle, cName, cState, cLastSeen, cExpiry, cCreated, cActions);
       rows.append(row);
     });
   };
@@ -533,7 +564,9 @@
   };
 
   const loadAgents = async () => {
-    const body = await api("/hub/v1/admin/agents");
+    const circleId = $("agent-filter-circle").value;
+    const path = circleId ? `/hub/v1/admin/agents?circleId=${encodeURIComponent(circleId)}` : "/hub/v1/admin/agents";
+    const body = await api(path);
     allAgents = body.agents || [];
     $("stat-online").textContent = body.onlineCount ?? 0;
     $("stat-offline").textContent = body.offlineCount ?? 0;
@@ -544,6 +577,7 @@
   $("load").addEventListener("click", async () => {
     operatorToken = $("token").value.trim();
     try {
+      await loadCircles();
       if (activeTab === "announcements") {
         await loadAnnouncements();
         status("已載入公告清單。", "success");
@@ -558,6 +592,8 @@
       status(error.message, "error");
     }
   });
+
+  $("btn-query-messages").addEventListener("click", async () => {
     try {
       await loadMessages();
       status("已更新 A2A 訊息清單。", "success");
@@ -588,6 +624,8 @@
 
   $("agent-filter-status").addEventListener("change", filterAgents);
   $("agent-filter-search").addEventListener("input", filterAgents);
+  $("filter-circle").addEventListener("change", () => loadMessages().catch((e) => status(e.message, "error")));
+  $("agent-filter-circle").addEventListener("change", () => loadAgents().catch((e) => status(e.message, "error")));
 
   $("refresh").addEventListener("click", async () => { try { await loadAnnouncements(); status("已重新整理。", "success"); } catch (error) { status(error.message, "error"); } });
   $("cancelEdit").addEventListener("click", () => setForm(null));

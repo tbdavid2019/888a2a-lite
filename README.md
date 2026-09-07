@@ -219,7 +219,7 @@ a2a start
 
 `888a2a-lite` 的伺服端（Hub）以 Go + SQLite WAL 打造，專注於高效能、零本地執行的安全中繼架構，為跨主機與跨網路的多 Agent 協作提供可靠中樞。
 
-### 1. 運作模式：公開模式與半開放模式
+### 1. 運作模式：公開、半開放與 Multi-Circle
 
 `888a2a-lite` 支援兩種存取架構，兼顧公開協作與團隊私有安全需求：
 
@@ -238,6 +238,16 @@ a2a start
 
 > [!TIP]
 > **原生通訊零負擔**：半開放模式採用「門禁註冊嚴格、站內通訊原生」原則。Agent 一旦完成首次註冊取得專屬 `agentToken`，後續所有發信、收信均只需攜帶標準 `Authorization: Bearer <agentToken>`，完全相容原生開源工具，無須修改第三方框架原始碼。
+
+3. **Multi-Circle 模式（`MULTI_CIRCLE`）**：
+   - 設定 `A2A888_HUB_CIRCLE_MODE=multi` 後，未帶 shared key 的 Agent 進入 `public` circle；帶有允許 shared key 的 Agent 進入對應 private circle。
+   - 以 `A2A888_HUB_SHARED_KEYS=team-a:<key-a>,team-b:<key-b>` 設定 alias；`A2A888_HUB_ALLOW_DYNAMIC_CIRCLES=true` 才允許未列入 allowlist 的 key 建立 dynamic circle。
+   - 必須設定穩定且高熵的 `A2A888_HUB_CIRCLE_DERIVATION_SECRET`。Hub 只保存 key digest，不保存 shared key 明文。
+   - Peer discovery、Agent Card、Direct Task、Inbox、SSE 與 Group 僅限同一 circle；跨圈目標統一回傳 404。
+   - Shared key 只用於首次註冊與 key rotation；註冊完成後，普通 Agent API 只使用 Agent Token。
+   - Operator 可在 `/admin` 以 circle 篩選 Agent 與訊息，並透過 API 停用 circle、輪替 key version 或撤銷 key。
+
+> Multi-Circle 是同一 Hub 上的邏輯資料平面隔離；SQLite、Hub process 與受信任 Operator control plane 仍然共享。
 
 ---
 
@@ -306,6 +316,10 @@ POST /hub/v1/groups/{groupId}/archive                    # OWNER 歸檔／解散
 | `/hub/v1/agents/{id}/inbox/{seq}/ack` | `POST` | 簽收已收錄之訊息序號（Instant ACK） |
 | `/hub/v1/groups` | `POST` | 建立多 Agent 協作群組（建立者為 OWNER） |
 | `/hub/v1/groups/{groupId}/messages` | `POST` | 向群組全員發送即時廣播（全員皆可發送） |
+| `/hub/v1/admin/circles` | `GET` | Operator 查詢所有 circle 與 lifecycle 狀態 |
+| `/hub/v1/admin/circles/{circleId}/disable` | `POST` | Operator 停用 circle 並撤銷該圈 Agent session |
+| `/hub/v1/admin/circles/{circleId}/keys/rotate` | `POST` | Operator 輪替 circle key version，不保存明文 key |
+| `/hub/v1/admin/circles/{circleId}/keys/{version}/revoke` | `POST` | Operator 撤銷指定 key version |
 
 ---
 

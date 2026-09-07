@@ -633,6 +633,10 @@ func (repository *Repository) PendingCountInCircle(ctx context.Context, circleID
 }
 
 func (repository *Repository) ListDirectMessagesAdmin(ctx context.Context, beforeSequence uint64, limit int, agentID string) ([]hub.InboxItem, error) {
+	return repository.ListDirectMessagesAdminInCircle(ctx, beforeSequence, limit, agentID, "")
+}
+
+func (repository *Repository) ListDirectMessagesAdminInCircle(ctx context.Context, beforeSequence uint64, limit int, agentID, circleID string) ([]hub.InboxItem, error) {
 	if limit < 1 || limit > 200 {
 		limit = 50
 	}
@@ -645,8 +649,9 @@ FROM inbox_item
 WHERE group_id = ''
   AND (? = 0 OR sequence < ?)
   AND (? = '' OR requester_agent_id = ? OR target_agent_id = ?)
+  AND (? = '' OR circle_id = ?)
 ORDER BY sequence DESC LIMIT ?`
-	rows, err := repository.executor().QueryContext(ctx, query, beforeSequence, beforeSequence, agentID, agentID, agentID, limit)
+	rows, err := repository.executor().QueryContext(ctx, query, beforeSequence, beforeSequence, agentID, agentID, agentID, circleID, circleID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -689,9 +694,17 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, event.HubID, event.CircleID, event.Type, event
 }
 
 func (repository *Repository) ListEvents(ctx context.Context, afterID uint64, limit int) ([]hub.Event, error) {
+	return repository.listEvents(ctx, afterID, limit, "")
+}
+
+func (repository *Repository) ListEventsInCircle(ctx context.Context, afterID uint64, limit int, circleID string) ([]hub.Event, error) {
+	return repository.listEvents(ctx, afterID, limit, circleID)
+}
+
+func (repository *Repository) listEvents(ctx context.Context, afterID uint64, limit int, circleID string) ([]hub.Event, error) {
 	rows, err := repository.executor().QueryContext(ctx, `
 SELECT id, hub_id, circle_id, event_type, actor_agent_id, target_agent_id, task_id, details_json, created_at
-FROM event_log WHERE id > ? ORDER BY id LIMIT ?`, afterID, limit)
+FROM event_log WHERE id > ? AND (? = '' OR circle_id = ?) ORDER BY id LIMIT ?`, afterID, circleID, circleID, limit)
 	if err != nil {
 		return nil, err
 	}

@@ -47,11 +47,13 @@ type InboxStore interface {
 	PendingCount(context.Context, string) (int, error)
 	PendingCountInCircle(context.Context, string) (int, error)
 	ListDirectMessagesAdmin(context.Context, uint64, int, string) ([]hub.InboxItem, error)
+	ListDirectMessagesAdminInCircle(context.Context, uint64, int, string, string) ([]hub.InboxItem, error)
 }
 
 type EventStore interface {
 	AppendEvent(context.Context, hub.Event) error
 	ListEvents(context.Context, uint64, int) ([]hub.Event, error)
+	ListEventsInCircle(context.Context, uint64, int, string) ([]hub.Event, error)
 }
 
 type CircleStore interface {
@@ -96,6 +98,7 @@ type GroupStore interface {
 	ListGroupMessages(context.Context, string, string, uint64, int) ([]hub.GroupMessage, error)
 	CancelPendingGroupDeliveries(context.Context, string, string, time.Time) error
 	ListGroupMessagesAdmin(context.Context, uint64, int, string, string) ([]hub.GroupMessage, error)
+	ListGroupMessagesAdminInCircle(context.Context, uint64, int, string, string, string) ([]hub.GroupMessage, error)
 }
 
 type TxStore interface {

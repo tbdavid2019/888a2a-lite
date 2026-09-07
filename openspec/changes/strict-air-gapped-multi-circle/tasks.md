@@ -11,7 +11,7 @@
 - [x] 2.2 Update Go data structures (`RegisteredAgent`, `InboxItem`, `Group`, `GroupMember`, invitations, messages, events) with `CircleID string` where the resource is circle-scoped.
 - [x] 2.3 Add composite indices for `(hub_id, circle_id, state)` and circle-aware uniqueness/FK constraints where applicable.
 - [x] 2.4 Migrate all existing rows to `public`; do not infer private membership for historical rows.
-- [ ] 2.5 Update repository methods to require or derive circle scope for Agent, mailbox, group, invitation, delivery, message, and event queries.
+- [x] 2.5 Update repository methods to require or derive circle scope for Agent, mailbox, group, invitation, delivery, message, and event queries.
 
 ## 3. Key-to-Circle Derivation & Registration
 
@@ -26,15 +26,15 @@
 - [x] 4.1 Restrict `GET /hub/v1/agents` peer directory strictly to caller's circle.
 - [x] 4.2 Enforce 404 Not Found in Agent lookup and Agent Card lookup when target belongs to another circle.
 - [x] 4.3 Enforce 404 Not Found in direct task dispatch when target belongs to another circle, before any mailbox write.
-- [ ] 4.4 Apply circle checks to inbox poll, ACK, SSE stream, disconnect, and all task cancellation paths.
-- [ ] 4.5 Restrict group creation, list, lookup, roster, history, invitation, accept, leave, remove, ownership, archive, and message delivery to one circle.
+- [x] 4.4 Apply circle checks to inbox poll, ACK, SSE stream, disconnect, and all task cancellation paths.
+- [x] 4.5 Restrict group creation, list, lookup, roster, history, invitation, accept, leave, remove, ownership, archive, and message delivery to one circle.
 - [x] 4.6 Reject disabled-circle Agent operations and new registrations with stable bounded errors.
 
 ## 5. Operator Admin & Audit Inspection
 
-- [ ] 5.1 Update operator admin endpoints (`/hub/v1/admin/agents`, `/hub/v1/admin/events`, messages, groups, status) to include `circleId` and support safe filtering.
-- [ ] 5.2 Add Circle filtering selector and Circle badge rendering in the Web Admin Console (`admin.html`).
-- [ ] 5.3 Keep Operator global visibility while preventing Operator credentials, key digests, and plaintext secrets from responses or logs.
+- [x] 5.1 Update operator admin endpoints (`/hub/v1/admin/agents`, `/hub/v1/admin/events`, messages, groups, status) to include `circleId` and support safe filtering.
+- [x] 5.2 Add Circle filtering selector and Circle badge rendering in the Web Admin Console (`admin.html`).
+- [x] 5.3 Keep Operator global visibility while preventing Operator credentials, key digests, and plaintext secrets from responses or logs.
 - [x] 5.4 Make anonymous status/system card responses non-sensitive; authenticated Agent summaries are restricted to the caller's circle.
 
 ## 6. End-to-End Testing & Verification
@@ -49,5 +49,5 @@
 
 ## 7. Documentation & Sync
 
-- [ ] 7.1 Update `README.md`, `llms.txt`, client skill, and architecture documentation with multi-circle registration, credential, status, rotation, and isolation rules.
-- [ ] 7.2 Record changes in `CHANGELOG.md` under today's date.
+- [x] 7.1 Update `README.md`, `llms.txt`, client skill, and architecture documentation with multi-circle registration, credential, status, rotation, and isolation rules.
+- [x] 7.2 Record changes in `CHANGELOG.md` under today's date.

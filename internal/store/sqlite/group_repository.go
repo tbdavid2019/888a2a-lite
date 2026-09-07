@@ -516,6 +516,10 @@ FROM group_message WHERE group_id = ? AND sender_agent_id = ? AND idempotency_ke
 }
 
 func (repository *Repository) ListGroupMessagesAdmin(ctx context.Context, beforeID uint64, limit int, groupID, agentID string) ([]hub.GroupMessage, error) {
+	return repository.ListGroupMessagesAdminInCircle(ctx, beforeID, limit, groupID, agentID, "")
+}
+
+func (repository *Repository) ListGroupMessagesAdminInCircle(ctx context.Context, beforeID uint64, limit int, groupID, agentID, circleID string) ([]hub.GroupMessage, error) {
 	if limit < 1 || limit > 200 {
 		limit = 50
 	}
@@ -527,8 +531,9 @@ FROM group_message
 WHERE (? = 0 OR id < ?)
   AND (? = '' OR group_id = ?)
   AND (? = '' OR sender_agent_id = ?)
+  AND (? = '' OR circle_id = ?)
 ORDER BY id DESC LIMIT ?`
-	rows, err := repository.executor().QueryContext(ctx, query, beforeID, beforeID, groupID, groupID, agentID, agentID, limit)
+	rows, err := repository.executor().QueryContext(ctx, query, beforeID, beforeID, groupID, groupID, agentID, agentID, circleID, circleID, limit)
 	if err != nil {
 		return nil, err
 	}

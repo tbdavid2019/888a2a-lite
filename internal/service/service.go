@@ -614,6 +614,13 @@ func (service *Service) RevokeCircleKey(ctx context.Context, token, circleID str
 	if version < 1 {
 		return fmt.Errorf("%w: key version must be positive", ErrValidation)
 	}
+	circleRecord, err := service.store.Circles().FindCircle(ctx, circleID)
+	if err != nil {
+		return err
+	}
+	if circleRecord.ActiveKeyVersion == version {
+		return fmt.Errorf("%w: rotate to a replacement key before revoking the active version", ErrValidation)
+	}
 	if err := service.store.Circles().RevokeCircleKey(ctx, circleID, version, service.now().UTC()); err != nil {
 		return err
 	}
@@ -636,17 +643,7 @@ func (service *Service) ListEvents(ctx context.Context, token string, afterID ui
 	if limit < 1 || limit > 1000 {
 		return nil, fmt.Errorf("event limit must be between 1 and 1000")
 	}
-	events, err := service.store.Events().ListEvents(ctx, afterID, limit)
-	if err != nil || strings.TrimSpace(circleID) == "" {
-		return events, err
-	}
-	filtered := make([]hub.Event, 0, len(events))
-	for _, event := range events {
-		if event.CircleID == circleID {
-			filtered = append(filtered, event)
-		}
-	}
-	return filtered, nil
+	return service.store.Events().ListEventsInCircle(ctx, afterID, limit, strings.TrimSpace(circleID))
 }
 
 func (service *Service) BuildSystemCard(baseURL string) hub.HubSystemCard {
@@ -846,32 +843,16 @@ func (service *Service) ListMessagesAdmin(ctx context.Context, token string, msg
 	}
 	var err error
 	if msgType == "" || msgType == "all" || msgType == "direct" {
-		result.DirectMessages, err = service.store.Inbox().ListDirectMessagesAdmin(ctx, beforeSequence, limit, agentID)
+		result.DirectMessages, err = service.store.Inbox().ListDirectMessagesAdminInCircle(ctx, beforeSequence, limit, agentID, circleID)
 		if err != nil {
 			return AdminMessagesResult{}, err
 		}
 	}
 	if msgType == "" || msgType == "all" || msgType == "group" {
-		result.GroupMessages, err = service.store.Groups().ListGroupMessagesAdmin(ctx, beforeID, limit, groupID, agentID)
+		result.GroupMessages, err = service.store.Groups().ListGroupMessagesAdminInCircle(ctx, beforeID, limit, groupID, agentID, circleID)
 		if err != nil {
 			return AdminMessagesResult{}, err
 		}
-	}
-	if strings.TrimSpace(circleID) != "" {
-		direct := result.DirectMessages[:0]
-		for _, item := range result.DirectMessages {
-			if item.CircleID == circleID {
-				direct = append(direct, item)
-			}
-		}
-		result.DirectMessages = direct
-		groups := result.GroupMessages[:0]
-		for _, message := range result.GroupMessages {
-			if message.CircleID == circleID {
-				groups = append(groups, message)
-			}
-		}
-		result.GroupMessages = groups
 	}
 	return result, nil
 }

@@ -412,7 +412,7 @@ func (server *HTTPServer) status(w http.ResponseWriter, r *http.Request) {
 
 func (server *HTTPServer) register(w http.ResponseWriter, r *http.Request) {
 	sharedKey := sharedKeyFromRequest(r)
-	if server.service.config.CircleMode != "multi" && !server.verifySharedKey(r) {
+	if server.service.circleResolver.Mode() != "multi" && !server.verifySharedKey(r) {
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "shared key required or invalid")
 		return
 	}
@@ -1210,7 +1210,7 @@ func sharedKeyFromRequest(r *http.Request) string {
 }
 
 func (server *HTTPServer) agentCredentials(w http.ResponseWriter, r *http.Request, pathAgentID string) (string, string, bool) {
-	if server.service.config.CircleMode != "multi" && server.service.config.SharedKey != "" {
+	if server.service.circleResolver.Mode() != "multi" && server.service.config.SharedKey != "" {
 		candidate := strings.TrimSpace(r.Header.Get("X-Hub-Key"))
 		if candidate == "" {
 			candidate = strings.TrimSpace(r.Header.Get("X-Shared-Key"))

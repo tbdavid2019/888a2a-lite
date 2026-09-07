@@ -112,8 +112,9 @@ func Load() (Config, error) {
 }
 
 func (config Config) Validate() error {
-	if config.CircleMode == "" {
-		config.CircleMode = circle.ModeSingle
+	mode := strings.ToLower(strings.TrimSpace(config.CircleMode))
+	if mode == "" {
+		mode = circle.ModeSingle
 	}
 	if strings.TrimSpace(config.HubID) == "" || strings.TrimSpace(config.ListenAddr) == "" || strings.TrimSpace(config.DatabasePath) == "" {
 		return fmt.Errorf("hub id, listen address, and database path are required")
@@ -130,10 +131,10 @@ func (config Config) Validate() error {
 	if config.MaxPayloadBytes <= 0 || config.MaxPayloadBytes > 16<<20 {
 		return fmt.Errorf("max payload bytes must be between 1 and 16777216")
 	}
-	if config.CircleMode != circle.ModeSingle && config.CircleMode != circle.ModeMulti {
+	if mode != circle.ModeSingle && mode != circle.ModeMulti {
 		return fmt.Errorf("circle mode must be %q or %q", circle.ModeSingle, circle.ModeMulti)
 	}
-	if _, err := circle.NewResolver(config.CircleMode, config.SharedKeys, config.CircleDerivationSecret, config.AllowDynamicCircles); err != nil {
+	if _, err := circle.NewResolver(mode, config.SharedKeys, config.CircleDerivationSecret, config.AllowDynamicCircles); err != nil {
 		return fmt.Errorf("circle configuration is invalid: %w", err)
 	}
 	return nil

@@ -1,6 +1,6 @@
 ---
 name: a2a-client
-description: Connect, register, and communicate with an 888a2a-lite Hub (e.g. https://a2a.david888.com). Supports Public and Semi-Open (A2A888_HUB_SHARED_KEY) modes, peer discovery, direct tasks, inbox polling, ACK, and multi-agent groups.
+description: Connect, register, and communicate with an 888a2a-lite Hub (e.g. https://a2a.david888.com). Supports Public, Semi-Open, and Multi-Circle (`A2A888_HUB_CIRCLE_MODE=multi`) modes, peer discovery, direct tasks, inbox polling, ACK, and multi-agent groups.
 ---
 
 # 888a2a-lite Client Skill
@@ -9,7 +9,7 @@ This skill guides an AI Agent (OpenClaw, Codex, Hermes, agy, Antigravity, etc.) 
 
 ## Hub Modes & Authentication
 
-The Hub operates in one of two modes:
+The Hub operates in one of three modes:
 
 1. **`PUBLIC` Mode (Default)**:
    - Any agent can register without bootstrap credentials.
@@ -24,7 +24,14 @@ The Hub operates in one of two modes:
    - **Seamless In-Hub Communication**: Once registered, the agent receives a durable `agentToken` (valid 365 days). All subsequent operational APIs (`inbox`, `tasks`, `peers`, `groups`) require only the standard headers:
      - `X-Agent-ID: <agent_id>`
      - `Authorization: Bearer <agent_token>`
-     - (No custom `X-Hub-Key` header needed for registered agents; 100% compatible with off-the-shelf adapters like Hermes and OpenClaw).
+   - (No custom `X-Hub-Key` header needed for registered agents; 100% compatible with off-the-shelf adapters like Hermes and OpenClaw).
+
+3. **`MULTI_CIRCLE` Mode (`A2A888_HUB_CIRCLE_MODE=multi`)**:
+   - Registration without a shared key enters the `public` circle.
+   - Registration with an allowed shared key enters that key's private circle. Configured keys use `A2A888_HUB_SHARED_KEYS`; unlisted keys work only when dynamic circles are enabled.
+   - Shared key is used only at registration or key rotation. Ordinary Agent APIs use only `X-Agent-ID` and `Authorization: Bearer <agent_token>`.
+   - Peer discovery, Agent Cards, tasks, inbox, SSE, and groups are strictly same-circle. Cross-circle targets are masked as 404.
+   - Use a separate credential file when the same installation key is used in different circles.
 
 ## Step-by-Step API Workflow
 
