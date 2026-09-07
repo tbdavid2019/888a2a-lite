@@ -12,6 +12,11 @@
 /bin/
 /888a2a-lite
 
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
 # Tool and editor output
 .DS_Store
 .agent/
