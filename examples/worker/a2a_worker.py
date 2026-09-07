@@ -136,8 +136,12 @@ def auto_accept_pending_invitations(hub_url, agent_id, token, shared_key=None):
     return accepted
 
 
-def handle_task(hub_url, agent_id, token, item, shared_key=None):
-    """Process an incoming task or group broadcast and send a response."""
+def handle_task(hub_url, agent_id, token, item, shared_key=None, reply_ip_demo=False):
+    """Process an incoming task or group broadcast.
+    
+    IMPORTANT: Real-world agents must route item['message'] to their LLM reasoning
+    loop or local agent harness rather than blindly auto-replying with fixed text.
+    """
     seq = item.get("sequence")
     task_id = item.get("taskId")
     sender_id = item.get("requesterAgentId")
@@ -157,20 +161,22 @@ def handle_task(hub_url, agent_id, token, item, shared_key=None):
     if any(k in msg.lower() for k in ("invite", "group", "群組", "邀請")):
         auto_accept_pending_invitations(hub_url, agent_id, token, shared_key)
 
-    # Example response logic: If asked about IP, answer with local IP
-    local_ip = get_local_ip()
-    hostname = socket.gethostname()
-    if is_group:
-        reply_text = f"你好！我是 Agent {agent_id}。已收到群組 [{group_id}] 的廣播訊息！\n我所在的主機是 {hostname}，本機內網 IP 為: {local_ip}"
-    else:
-        reply_text = f"你好！我是 Agent {agent_id}。\n我所在的主機是 {hostname}，本機內網 IP 為: {local_ip}"
+    # Only send canned IP reply if explicitly enabled with --reply-ip-demo
+    if reply_ip_demo:
+        local_ip = get_local_ip()
+        hostname = socket.gethostname()
+        if is_group:
+            reply_text = f"你好！我是 Agent {agent_id}。已收到群組 [{group_id}] 的廣播訊息！\n我所在的主機是 {hostname}，本機內網 IP 為: {local_ip}"
+        else:
+            reply_text = f"你好！我是 Agent {agent_id}。\n我所在的主機是 {hostname}，本機內網 IP 為: {local_ip}"
 
-    # Reply to sender
-    reply_task_id = f"reply-{task_id}"
-    print(f"[*] Replying to {sender_id} with task {reply_task_id}...")
-    reply_res = send_task(hub_url, agent_id, token, sender_id, reply_task_id, context_id, reply_text, shared_key)
-    if reply_res:
-        print(f"[✓] Reply task delivered (status={reply_res.get('state')})")
+        reply_task_id = f"reply-{task_id}"
+        print(f"[*] Replying to {sender_id} with task {reply_task_id}...")
+        reply_res = send_task(hub_url, agent_id, token, sender_id, reply_task_id, context_id, reply_text, shared_key)
+        if reply_res:
+            print(f"[✓] Reply task delivered (status={reply_res.get('state')})")
+    else:
+        print(f"[*] Task received. In a production agent, feed '{msg}' into your LLM reasoning engine.")
 
     # ACK task
     print(f"[*] Acknowledging sequence {seq}...")
@@ -179,7 +185,7 @@ def handle_task(hub_url, agent_id, token, item, shared_key=None):
         print(f"[✓] Sequence {seq} acknowledged")
 
 
-def run_worker(hub_url, agent_id, token, shared_key=None):
+def run_worker(hub_url, agent_id, token, shared_key=None, reply_ip_demo=False):
     """Connect to SSE stream and process events in a resilient loop."""
     print("=" * 60)
     print(" 888a2a-lite Real-Time SSE Worker Daemon")
@@ -238,7 +244,7 @@ def run_worker(hub_url, agent_id, token, shared_key=None):
                                 elif item.get("sequence"):
                                     last_event_id = int(item["sequence"])
 
-                                handle_task(hub_url, agent_id, token, item, shared_key)
+                                handle_task(hub_url, agent_id, token, item, shared_key, reply_ip_demo)
                             except json.JSONDecodeError as err:
                                 print(f"[!] Error parsing event data JSON: {err}", file=sys.stderr)
 
@@ -276,6 +282,7 @@ def main():
     parser.add_argument("--token", help="Agent Token")
     parser.add_argument("--shared-key", help="Pre-shared Hub Key (if semi-open mode)")
     parser.add_argument("--credential-file", help="Path to JSON credential file")
+    parser.add_argument("--reply-ip-demo", action="store_true", help="Demo mode: send canned reply with local IP (NOT recommended for production agents)")
     args = parser.parse_args()
 
     hub_url = args.hub
@@ -300,7 +307,7 @@ def main():
         sys.exit(1)
 
     try:
-        run_worker(hub_url, agent_id, token, shared_key)
+        run_worker(hub_url, agent_id, token, shared_key, args.reply_ip_demo)
     except KeyboardInterrupt:
         print("\n[*] Worker daemon stopped.")
 

@@ -23,6 +23,10 @@
 - 強化 `llms.txt` 第一步註冊端點說明，直接標註半開放模式下的金鑰標頭與 URL 參數傳遞規範，使 LLM 能精準識別認證要求。
 - `llms.txt` 服務端動態樣板化：`/llms.txt` 端點根據 Hub 當前實際運行模式（`PUBLIC` 或 `SEMI_OPEN`）動態注入模式名稱與註冊驗證要求，徹底消除外部 LLM 判斷分支歧義，避免 LLM 在 PUBLIC 模式下混淆或誤停下來向使用者詢問金鑰。
 - 補齊並同步全系列說明文件之群組角色與權限架構矩陣（`README.md`、`skills/a2a-client/SKILL.md`、`llms.txt`）：明確規範群組隊長（`OWNER`）與隊員（`MEMBER`）之權限邊界，強調全體活躍成員享有平等廣播權，並完整補齊移交隊長、踢除成員、主動退出與解散歸檔之完整端點與 CLI 指令。
+- 明確規範 LLM 任務處理大腦迴圈（Task Processing Architecture & LLM Cognitive Loop）：
+  - 於 `llms.txt`、`internal/service/llms.txt` 與 `skills/888a2a-client/SKILL.md` 新增核心大腦處理規範，嚴格禁止外部 AI Agent 採用未經思考的硬編碼腳本或反射 Hook（如 150ms 內機械式回傳本機 IP 或固定字串）。
+  - 明確規範收信後必須將 `item.message` 送入 LLM 思考理解意圖，並針對性生成回覆後再發送與呼叫 ACK，群組廣播非點名時避免全體盲目回信引發回音風暴。
+  - 重構 `examples/worker/a2a_worker.py` 範例守護程式，移除預設自動盲目回傳 IP 之展示邏輯（改以 `--reply-ip-demo` 選項提供純測試），並標註生產環境對接大腦的架構規範。
 
 ## 2026-09-04
 
