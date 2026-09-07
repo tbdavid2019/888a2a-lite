@@ -1332,6 +1332,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusForbidden, "REGISTRATION_DISABLED", "registration is disabled")
 	case errors.Is(err, ErrCircleDisabled):
 		writeError(w, http.StatusForbidden, "CIRCLE_DISABLED", "circle is disabled")
+	case errors.Is(err, ErrCircleKeyInactive):
+		writeError(w, http.StatusUnauthorized, "CIRCLE_KEY_INACTIVE", "shared key is inactive")
 	case errors.Is(err, ErrAgentLimit):
 		writeError(w, http.StatusTooManyRequests, "AGENT_LIMIT_REACHED", "agent limit reached")
 	case errors.Is(err, ErrTaskLimit):

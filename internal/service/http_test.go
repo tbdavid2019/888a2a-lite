@@ -60,7 +60,8 @@ func TestHTTPThreeAgentDeliveryAndAuthorizationBoundaries(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("save policy: %v", err)
 	}
-	handler := NewHTTPServer(New(repository, cfg)).Handler()
+	svc := New(repository, cfg)
+	handler := NewHTTPServer(svc).Handler()
 
 	agents := make([]registeredTestAgent, 0, 3)
 	for i, name := range []string{"codex", "openclaw", "hermes"} {
@@ -555,7 +556,8 @@ func TestHTTPMultiCircleIsolation(t *testing.T) {
 		MaxRegisteredAgents: cfg.MaxRegisteredAgents, MaxTasksPerMinute: cfg.MaxTasksPerMinute,
 		MaxConcurrentTasks: cfg.MaxConcurrentTasks, MaxPayloadBytes: cfg.MaxPayloadBytes,
 	})
-	handler := NewHTTPServer(New(repository, cfg)).Handler()
+	svc := New(repository, cfg)
+	handler := NewHTTPServer(svc).Handler()
 
 	register := func(name, key, registrationKey string) hub.AgentIdentity {
 		request := httptest.NewRequest(http.MethodPost, "/hub/v1/agents/register", bytes.NewReader([]byte(`{"displayName":"`+name+`","providerFamily":"test","transportId":"http","capabilities":["text/plain"],"registrationIdempotencyKey":"`+registrationKey+`"}`)))
@@ -576,7 +578,7 @@ func TestHTTPMultiCircleIsolation(t *testing.T) {
 	}
 
 	publicAgent := register("public", "", "public-install")
-	privateA := register("private-a-1", "private-a", "private-a-1")
+	privateA := register("private-a-1", "private-a", "public-install")
 	privateA2 := register("private-a-2", "private-a", "private-a-2")
 	privateB := register("private-b", "private-b", "private-b")
 	if publicAgent.CircleID != "public" || privateA.CircleID == "public" || privateA.CircleID != privateA2.CircleID || privateA.CircleID == privateB.CircleID {
@@ -596,6 +598,10 @@ func TestHTTPMultiCircleIsolation(t *testing.T) {
 	if crossLookup.Code != http.StatusNotFound {
 		t.Fatalf("cross-circle lookup status = %d, want 404", crossLookup.Code)
 	}
+	crossCard := doJSON(t, handler, http.MethodGet, "/hub/v1/agents/"+publicAgent.AgentID+"/agent-card.json", privateA.AgentID, privateA.AgentToken, nil)
+	if crossCard.Code != http.StatusNotFound {
+		t.Fatalf("cross-circle Agent Card status = %d, want 404", crossCard.Code)
+	}
 	crossTask := doJSON(t, handler, http.MethodPost, "/hub/v1/agents/"+privateA.AgentID+"/tasks", publicAgent.AgentID, publicAgent.AgentToken, map[string]string{
 		"contextId": "cross", "idempotencyKey": "cross", "message": "must not cross", "taskId": "cross",
 	})
@@ -609,6 +615,96 @@ func TestHTTPMultiCircleIsolation(t *testing.T) {
 	if intraTask.Code != http.StatusAccepted {
 		t.Fatalf("same-circle task status/body = %d/%s", intraTask.Code, intraTask.Body.String())
 	}
+	intraInbox := doJSON(t, handler, http.MethodGet, "/hub/v1/agents/"+privateA2.AgentID+"/inbox?afterSequence=0", privateA2.AgentID, privateA2.AgentToken, nil)
+	if intraInbox.Code != http.StatusOK || !strings.Contains(intraInbox.Body.String(), "same circle") {
+		t.Fatalf("same-circle inbox status/body = %d/%s", intraInbox.Code, intraInbox.Body.String())
+	}
+	duplicatePrivate := registerRequest(t, handler, "private-a-duplicate", "private-a", "public-install")
+	if duplicatePrivate.Code != http.StatusCreated || !strings.Contains(duplicatePrivate.Body.String(), `"duplicate":true`) || strings.Contains(duplicatePrivate.Body.String(), `"agentToken"`) {
+		t.Fatalf("same-circle registration retry mismatch: %d/%s", duplicatePrivate.Code, duplicatePrivate.Body.String())
+	}
+
+	publicStatus := doJSON(t, handler, http.MethodGet, "/hub/v1/status", "", "", nil)
+	var publicStatusBody HubStatus
+	decodeResponse(t, publicStatus, &publicStatusBody)
+	if publicStatus.Code != http.StatusOK || publicStatusBody.RegisteredAgents != 0 || publicStatusBody.PendingTasks != 0 {
+		t.Fatalf("anonymous multi-circle status leaked global counts: %d/%+v", publicStatus.Code, publicStatusBody)
+	}
+	agentStatus := doJSON(t, handler, http.MethodGet, "/hub/v1/status", privateA.AgentID, privateA.AgentToken, nil)
+	var agentStatusBody HubStatus
+	decodeResponse(t, agentStatus, &agentStatusBody)
+	if agentStatus.Code != http.StatusOK || agentStatusBody.CircleID != privateA.CircleID || agentStatusBody.RegisteredAgents != 2 {
+		t.Fatalf("agent-scoped status mismatch: %d/%+v", agentStatus.Code, agentStatusBody)
+	}
+	operatorStatus := doJSONWithBearer(t, handler, http.MethodGet, "/hub/v1/status", "operator-fixture", nil)
+	var operatorStatusBody HubStatus
+	decodeResponse(t, operatorStatus, &operatorStatusBody)
+	if operatorStatus.Code != http.StatusOK || operatorStatusBody.RegisteredAgents != 4 {
+		t.Fatalf("operator global status mismatch: %d/%+v", operatorStatus.Code, operatorStatusBody)
+	}
+
+	adminCircles := doJSONWithBearer(t, handler, http.MethodGet, "/hub/v1/admin/circles", "operator-fixture", nil)
+	if adminCircles.Code != http.StatusOK || !strings.Contains(adminCircles.Body.String(), privateA.CircleID) || strings.Contains(adminCircles.Body.String(), "private-a") {
+		t.Fatalf("admin circle response leaked alias/key or omitted circle: %d/%s", adminCircles.Code, adminCircles.Body.String())
+	}
+	adminMessages := doJSONWithBearer(t, handler, http.MethodGet, "/hub/v1/admin/messages?type=direct&circleId="+privateA.CircleID, "operator-fixture", nil)
+	if adminMessages.Code != http.StatusOK || !strings.Contains(adminMessages.Body.String(), "same circle") {
+		t.Fatalf("admin circle message filter mismatch: %d/%s", adminMessages.Code, adminMessages.Body.String())
+	}
+
+	groupResponse := doJSON(t, handler, http.MethodPost, "/hub/v1/groups", privateA.AgentID, privateA.AgentToken, map[string]string{"name": "private coordination"})
+	if groupResponse.Code != http.StatusCreated {
+		t.Fatalf("private group creation status/body = %d/%s", groupResponse.Code, groupResponse.Body.String())
+	}
+	var privateGroup hub.Group
+	decodeResponse(t, groupResponse, &privateGroup)
+	crossInvite := doJSON(t, handler, http.MethodPost, "/hub/v1/groups/"+privateGroup.GroupID+"/invitations", privateA.AgentID, privateA.AgentToken, map[string]string{"agentId": publicAgent.AgentID})
+	if crossInvite.Code != http.StatusNotFound {
+		t.Fatalf("cross-circle group invitation status = %d, want 404", crossInvite.Code)
+	}
+	crossGroup := doJSON(t, handler, http.MethodGet, "/hub/v1/groups/"+privateGroup.GroupID, publicAgent.AgentID, publicAgent.AgentToken, nil)
+	if crossGroup.Code != http.StatusNotFound {
+		t.Fatalf("cross-circle group lookup status = %d, want 404", crossGroup.Code)
+	}
+
+	if _, err := svc.RotateCircleKey(ctx, "operator-fixture", privateA.CircleID, "private-a-rotated", 0); err != nil {
+		t.Fatalf("rotate private circle key: %v", err)
+	}
+	rotated := register("private-a-rotated", "private-a-rotated", "private-a-rotated")
+	if rotated.CircleID != privateA.CircleID {
+		t.Fatalf("rotated key entered a different circle: %q != %q", rotated.CircleID, privateA.CircleID)
+	}
+	oldKey := registerRequest(t, handler, "private-a-old", "private-a", "private-a-old")
+	if oldKey.Code != http.StatusUnauthorized {
+		t.Fatalf("revoked old key status = %d, want 401", oldKey.Code)
+	}
+	if _, err := svc.DisableCircle(ctx, "operator-fixture", privateA.CircleID); err != nil {
+		t.Fatalf("disable private circle: %v", err)
+	}
+	disabledAgent := doJSON(t, handler, http.MethodGet, "/hub/v1/agents", privateA.AgentID, privateA.AgentToken, nil)
+	if disabledAgent.Code != http.StatusUnauthorized {
+		t.Fatalf("disabled circle agent status = %d, want 401", disabledAgent.Code)
+	}
+}
+
+func registerRequest(t *testing.T, handler http.Handler, name, key, registrationKey string) *httptest.ResponseRecorder {
+	t.Helper()
+	payload := map[string]any{
+		"displayName": name, "providerFamily": "test", "transportId": "http",
+		"capabilities": []string{"text/plain"}, "registrationIdempotencyKey": registrationKey,
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal registration: %v", err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/hub/v1/agents/register", bytes.NewReader(encoded))
+	request.Header.Set("Content-Type", "application/json")
+	if key != "" {
+		request.Header.Set("X-Hub-Key", key)
+	}
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	return response
 }
 
 func TestHTTPSSEInboxStream(t *testing.T) {
@@ -629,6 +725,7 @@ func TestHTTPSSEInboxStream(t *testing.T) {
 		RegistrationEnabled: true, RegistrationTTL: 24 * time.Hour, PeerLease: 90 * time.Second,
 		MaxRegisteredAgents: 10, MaxTasksPerMinute: 20, MaxConcurrentTasks: 4,
 		MaxPayloadBytes: 1 << 20, RegistrationPerMinute: 20,
+		CircleMode: "multi", CircleDerivationSecret: "sse-test-derivation-secret",
 	}
 	svc := New(repository, cfg)
 	ts := httptest.NewServer(NewHTTPServer(svc).Handler())

@@ -39,11 +39,11 @@
 
 ## 6. End-to-End Testing & Verification
 
-- [ ] 6.1 Write tests for deterministic HMAC circle derivation, configured aliases, dynamic-circle gating, disabled circles, and key versions.
-- [ ] 6.2 Write integration tests for public vs private circle isolation (registration, peer listing, lookup, Agent Card, task sending, inbox, SSE).
-- [ ] 6.3 Write integration tests verifying cross-circle task dispatch, Agent lookup, Agent Card, group lookup, and group invitations return HTTP 404.
-- [ ] 6.4 Verify registration idempotency with same key/same circle and same key/different circle.
-- [ ] 6.5 Verify anonymous status does not expose private counts and Operator filters expose all circles without secrets.
+- [x] 6.1 Write tests for deterministic HMAC circle derivation, configured aliases, dynamic-circle gating, disabled circles, and key versions.
+- [x] 6.2 Write integration tests for public vs private circle isolation (registration, peer listing, lookup, Agent Card, task sending, inbox, SSE).
+- [x] 6.3 Write integration tests verifying cross-circle task dispatch, Agent lookup, Agent Card, group lookup, and group invitations return HTTP 404.
+- [x] 6.4 Verify registration idempotency with same key/same circle and same key/different circle.
+- [x] 6.5 Verify anonymous status does not expose private counts and Operator filters expose all circles without secrets.
 - [ ] 6.6 Verify key rotation, old-token revocation, Hub restart persistence, and existing public-row migration.
 - [ ] 6.7 Verify backward compatibility with existing client bridge (`a2a_bridge.py`) in `single` mode and explicit shared-key behavior in `multi` mode.
 

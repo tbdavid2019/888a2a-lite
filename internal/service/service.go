@@ -25,6 +25,7 @@ var (
 	ErrTaskLimit            = errors.New("task limit reached")
 	ErrValidation           = errors.New("validation failed")
 	ErrCircleDisabled       = errors.New("circle is disabled")
+	ErrCircleKeyInactive    = errors.New("circle key is inactive")
 )
 
 type HubStatus struct {
@@ -191,11 +192,8 @@ func (service *Service) ensureCircle(ctx context.Context, identity circle.Identi
 				}); err != nil {
 					return err
 				}
-			} else if err := service.store.Circles().RotateCircleKey(ctx, identity.ID, hub.CircleKey{
-				HubID: service.config.HubID, CircleID: identity.ID, Version: keys[len(keys)-1].Version + 1,
-				KeyDigest: identity.KeyDigest, CreatedAt: now,
-			}, nil); err != nil {
-				return err
+			} else {
+				return ErrCircleKeyInactive
 			}
 		} else if err != nil {
 			return err

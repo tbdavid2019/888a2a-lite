@@ -351,6 +351,10 @@ func (service *Service) requireGroupMember(ctx context.Context, agentID, token, 
 	if err != nil {
 		return hub.GroupMember{}, err
 	}
+	group, err := service.store.Groups().FindGroup(ctx, groupID)
+	if err != nil || group.CircleID != agent.CircleID {
+		return hub.GroupMember{}, ErrGroupUnavailable
+	}
 	member, err := service.store.Groups().FindMember(ctx, groupID, agentID)
 	if err != nil || !member.IsActive() {
 		service.audit(ctx, hub.Event{Type: hub.EventGroupAuthorizationDenied, ActorAgentID: agentID, Details: map[string]any{"groupId": groupID}})
@@ -358,10 +362,6 @@ func (service *Service) requireGroupMember(ctx context.Context, agentID, token, 
 	}
 	if member.CircleID != agent.CircleID {
 		return hub.GroupMember{}, ErrForbidden
-	}
-	group, err := service.store.Groups().FindGroup(ctx, groupID)
-	if err != nil || group.CircleID != agent.CircleID {
-		return hub.GroupMember{}, ErrGroupUnavailable
 	}
 	return member, nil
 }
