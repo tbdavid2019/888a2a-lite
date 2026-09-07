@@ -246,7 +246,7 @@ class DurableBridgeTests(unittest.TestCase):
             agent_id = "agent-ui-user"
             hub_url = "https://a2a.test.com"
             def list_agents(self): return [{"agentId": "peer-1", "displayName": "PeerAgent", "state": "ONLINE"}]
-            def send_task(self, target, msg): return {"taskId": "task-ui-123"}
+            def send_task(self, target, msg, *args, **kwargs): return {"taskId": "task-ui-123"}
         hub = MockHub()
         server = bridge.LocalUIServer(("127.0.0.1", 0), bridge.LocalUIHandler, hub, "TestUser (Web)")
         server_thread = bridge.threading.Thread(target=server.serve_forever, daemon=True)
