@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- 修復 `a2a ui` 前端未從 SQLite 載入歷史紀錄之缺陷（History Hydration）：於 `selectPeer` 與頁面初始化時非同步請求 `/api/history` 水合對話紀錄，瀏覽器重新整理後歷史對話完好如初；通訊錄側邊欄支援即時顯示最近訊息摘要。
+- 修正出站投遞失敗卻回報成功之假象（Outbound Delivery Failure Guard）：修正 `/api/send` 於 Hub 投遞失敗時仍偽造 UUID 回傳 HTTP 200 之問題；改為在失敗時明確回傳 HTTP 502、於 SQLite 標記 `state="FAILED"`，前端畫面顯示傳送失敗狀態。
+- 消除 SSE 重複事件改變訊息順序之缺陷（Conflict Order Preservation）：將 `INSERT OR REPLACE` 改為 `ON CONFLICT(id) DO UPDATE`，於重試推播時完整保留原始 `created_at`，確保訊息在對話流中的排序永不跳動錯位。
+- 實作完整會話清單與歷史分頁查詢：新增 `/api/conversations` 端點及 `/api/history` 之 `limit`、`offset`、`before` 參數支援，並增補單元測試覆蓋重推保序與分頁查詢。
 - 徹底移除 Hub 維運後台（`internal/service/admin.html`）中呼叫未實作 `POST /hub/v1/admin/tasks/dispatch` 端點之交談分頁與未閉合 HTML 標籤，修復版面錯位並明確界定 `/admin` 專注於 Operator 治理（系統健康、租約修剪、審計日誌與公告廣播）。
 - 修復 `a2a ui`（本機交談工作台）重啟後對話歷史遺失問題：以 SQLite WAL 實作 `LocalChatStore`（`~/.a2a/chat.db`），落實「先寫入本機持久化資料庫、再向 Hub 發送 ACK」之安全佇列語義，確保斷電或重啟後會話紀錄完整保留。
 - 同步修正 `PLAN.md` 與 `AGENTS.md` 之陳舊狀態說明，明確標記已交付之架構柱石與生產現狀，消弭開發文檔與生產代碼脫節。

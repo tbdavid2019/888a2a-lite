@@ -347,6 +347,52 @@ class DurableBridgeTests(unittest.TestCase):
             self.assertEqual(history[1]["message"], "Hello back from Me")
             self.assertTrue(history[1]["isOutgoing"])
 
+    def test_duplicate_redelivery_preserves_order(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = os.path.join(temp_dir, "test_order.db")
+            store = bridge.LocalChatStore(db_path)
+            store.save_message("peer-A", {"id": "msg-1", "message": "First", "isOutgoing": False}, sequence=1)
+            time.sleep(0.01)
+            store.save_message("peer-A", {"id": "msg-2", "message": "Second", "isOutgoing": True}, sequence=2)
+            time.sleep(0.01)
+
+            # Redelivery of msg-1 via SSE retry later in time
+            store.save_message("peer-A", {"id": "msg-1", "message": "First", "isOutgoing": False}, sequence=1)
+
+            history = store.get_history("peer-A")
+            self.assertEqual(len(history), 2)
+            # msg-1 must stay FIRST, must not bump to end!
+            self.assertEqual(history[0]["id"], "msg-1")
+            self.assertEqual(history[1]["id"], "msg-2")
+
+    def test_conversations_and_pagination(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = os.path.join(temp_dir, "test_conv.db")
+            store = bridge.LocalChatStore(db_path)
+            store.save_message("peer-A", {"id": "msg-A1", "message": "Hello A", "isOutgoing": False}, display_name="Agent Alpha")
+            time.sleep(0.01)
+            store.save_message("peer-B", {"id": "msg-B1", "message": "Hello B", "isOutgoing": False}, display_name="Agent Beta")
+
+            convs = store.get_conversations()
+            self.assertEqual(len(convs), 2)
+            # Beta updated most recently, should be first
+            self.assertEqual(convs[0]["peerId"], "peer-B")
+            self.assertEqual(convs[0]["displayName"], "Agent Beta")
+            self.assertEqual(convs[1]["peerId"], "peer-A")
+
+            # Test pagination
+            store.save_message("peer-A", {"id": "msg-A2", "message": "Msg 2", "isOutgoing": True})
+            store.save_message("peer-A", {"id": "msg-A3", "message": "Msg 3", "isOutgoing": True})
+
+            page1 = store.get_history("peer-A", limit=2, offset=0)
+            self.assertEqual(len(page1), 2)
+            self.assertEqual(page1[0]["id"], "msg-A1")
+            self.assertEqual(page1[1]["id"], "msg-A2")
+
+            page2 = store.get_history("peer-A", limit=2, offset=2)
+            self.assertEqual(len(page2), 1)
+            self.assertEqual(page2[0]["id"], "msg-A3")
+
 
 def json_item(row):
     import json

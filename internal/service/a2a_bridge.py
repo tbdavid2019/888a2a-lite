@@ -1272,6 +1272,7 @@ CLIENT_HTML = """<!DOCTYPE html>
     const $ = (id) => document.getElementById(id);
     let myInfo = null;
     let peers = [];
+    let conversations = [];
     let activePeer = null;
     let conversationHistory = {};
 
@@ -1303,12 +1304,25 @@ CLIENT_HTML = """<!DOCTYPE html>
       }
     }
 
+    async function loadConversations() {
+      try {
+        const res = await fetch("/api/conversations");
+        if (res.ok) {
+          const data = await res.json();
+          conversations = data.conversations || [];
+        }
+      } catch (err) {
+        console.error("Failed to load conversations", err);
+      }
+    }
+
     async function loadPeers() {
       try {
         const res = await fetch("/api/peers");
         if (!res.ok) return;
         const data = await res.json();
         peers = (data.agents || []).filter(a => a.agentId !== myInfo?.agentId);
+        await loadConversations();
         renderPeers();
       } catch (err) {
         console.error("Failed to load peers", err);
@@ -1328,26 +1342,32 @@ CLIENT_HTML = """<!DOCTYPE html>
         return;
       }
 
-      list.innerHTML = filtered.map(p => `
+      list.innerHTML = filtered.map(p => {
+        const conv = conversations.find(c => c.peerId === p.agentId);
+        const lastMsgPreview = conv?.lastMessage ? 
+          `<div style="font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px">${escapeHtml(conv.lastMessage)}</div>` : '';
+        return `
         <div class="peer-card ${activePeer?.agentId === p.agentId ? 'active' : ''}" data-id="${p.agentId}">
           <div class="peer-card-top">
             <span class="peer-name">${escapeHtml(p.displayName || p.agentId)}</span>
             <span class="status-pill ${p.state}">${p.state}</span>
           </div>
           <div class="peer-id">${escapeHtml(p.agentId)}</div>
+          ${lastMsgPreview}
         </div>
-      `).join("");
+      `;
+      }).join("");
 
       list.querySelectorAll(".peer-card").forEach(el => {
-        el.addEventListener("click", () => {
+        el.addEventListener("click", async () => {
           const id = el.getAttribute("data-id");
           const target = peers.find(p => p.agentId === id);
-          if (target) selectPeer(target);
+          if (target) await selectPeer(target);
         });
       });
     }
 
-    function selectPeer(peer) {
+    async function selectPeer(peer) {
       activePeer = peer;
       $("target-name").textContent = peer.displayName || peer.agentId;
       $("target-id").textContent = `(${peer.agentId})`;
@@ -1358,8 +1378,23 @@ CLIENT_HTML = """<!DOCTYPE html>
       $("chat-input").disabled = false;
       $("chat-send").disabled = false;
       renderPeers();
-      renderChat();
+
+      // Hydrate conversation history from SQLite WAL via /api/history
+      await loadHistory(peer.agentId);
       $("chat-input").focus();
+    }
+
+    async function loadHistory(peerId) {
+      try {
+        const res = await fetch(`/api/history?peer=${encodeURIComponent(peerId)}`);
+        if (res.ok) {
+          const data = await res.json();
+          conversationHistory[peerId] = data.messages || [];
+        }
+      } catch (err) {
+        console.error("Failed to load history for " + peerId, err);
+      }
+      renderChat();
     }
 
     function renderChat() {
@@ -1378,7 +1413,20 @@ CLIENT_HTML = """<!DOCTYPE html>
         return;
       }
 
-      stream.innerHTML = history.map(m => `
+      stream.innerHTML = history.map(m => {
+        let statusBadge = '';
+        if (m.isOutgoing) {
+          if (m.state === 'FAILED') {
+            statusBadge = '<span style="color:#ef4444">✕ 發送失敗</span>';
+          } else if (m.state === 'PENDING') {
+            statusBadge = '<span style="color:#f59e0b">⏳ 傳送中</span>';
+          } else {
+            statusBadge = '<span>✓ 已送達</span>';
+          }
+        } else {
+          statusBadge = '<span>✓ 簽收</span>';
+        }
+        return `
         <div class="bubble ${m.isOutgoing ? 'user' : 'agent'}">
           <div style="font-weight:700;font-size:12px;margin-bottom:4px">
             ${m.isOutgoing ? '我 (You)' : escapeHtml(activePeer.displayName || m.senderName || 'Agent')}
@@ -1386,10 +1434,11 @@ CLIENT_HTML = """<!DOCTYPE html>
           <div>${escapeHtml(m.message)}</div>
           <div class="bubble-meta">
             <span>${formatTime(m.timestamp)}</span>
-            ${m.isOutgoing ? '<span>✓ 送出</span>' : '<span>✓ 簽收</span>'}
+            ${statusBadge}
           </div>
         </div>
-      `).join("");
+      `;
+      }).join("");
 
       stream.scrollTop = stream.scrollHeight;
     }
@@ -1400,13 +1449,15 @@ CLIENT_HTML = """<!DOCTYPE html>
       $("chat-input").value = "";
       $("chat-send").disabled = true;
 
+      const tempId = "local-" + Date.now();
       const userMsg = {
-        id: "msg-" + Date.now(),
+        id: tempId,
         peerId: activePeer.agentId,
         senderName: myInfo?.displayName || "User",
         message: msgText,
         timestamp: new Date().toISOString(),
-        isOutgoing: true
+        isOutgoing: true,
+        state: "PENDING"
       };
 
       if (!conversationHistory[activePeer.agentId]) conversationHistory[activePeer.agentId] = [];
@@ -1422,10 +1473,20 @@ CLIENT_HTML = """<!DOCTYPE html>
             message: msgText
           })
         });
-        if (!res.ok) {
-          alert("發送失敗，請確認 Hub 連線狀態。");
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok) {
+          userMsg.state = "FAILED";
+          renderChat();
+          alert(data.error || "發送失敗，請確認 Hub 連線狀態。");
+        } else {
+          userMsg.id = data.taskId || userMsg.id;
+          userMsg.state = "SENT";
+          renderChat();
+          loadConversations().then(renderPeers);
         }
       } catch (err) {
+        userMsg.state = "FAILED";
+        renderChat();
         alert("發送發生例外錯誤：" + err.message);
       } finally {
         $("chat-send").disabled = false;
@@ -1465,12 +1526,16 @@ CLIENT_HTML = """<!DOCTYPE html>
           const msg = JSON.parse(e.data);
           const peer = msg.peerId;
           if (!conversationHistory[peer]) conversationHistory[peer] = [];
-          if (!conversationHistory[peer].some(m => m.id === msg.id)) {
+          const idx = conversationHistory[peer].findIndex(m => m.id === msg.id);
+          if (idx >= 0) {
+            conversationHistory[peer][idx] = msg;
+          } else {
             conversationHistory[peer].push(msg);
-            if (activePeer && activePeer.agentId === peer) {
-              renderChat();
-            }
           }
+          if (activePeer && activePeer.agentId === peer) {
+            renderChat();
+          }
+          loadConversations().then(renderPeers);
         } catch (err) {
           console.error("SSE parse error", err);
         }
@@ -1479,11 +1544,14 @@ CLIENT_HTML = """<!DOCTYPE html>
 
     async function init() {
       await loadMe();
+      await loadConversations();
       await loadPeers();
       connectEvents();
       setInterval(loadPeers, 4000);
-      const firstOnline = peers.find(p => p.state === "ONLINE") || peers[0];
-      if (firstOnline) selectPeer(firstOnline);
+      const defaultPeer = peers.find(p => p.agentId === conversations[0]?.peerId) || 
+                          peers.find(p => p.state === "ONLINE") || 
+                          peers[0];
+      if (defaultPeer) await selectPeer(defaultPeer);
     }
 
     init();
@@ -1519,10 +1587,14 @@ class LocalChatStore:
                     timestamp TEXT NOT NULL,
                     is_outgoing INTEGER NOT NULL,
                     sequence INTEGER,
+                    state TEXT NOT NULL DEFAULT 'SENT',
                     created_at REAL NOT NULL
                 )
             """)
-            db.execute("CREATE INDEX IF NOT EXISTS idx_messages_peer ON messages(peer_id, created_at)")
+            cols = [r[1] for r in db.execute("PRAGMA table_info(messages)").fetchall()]
+            if "state" not in cols:
+                db.execute("ALTER TABLE messages ADD COLUMN state TEXT NOT NULL DEFAULT 'SENT'")
+            db.execute("CREATE INDEX IF NOT EXISTS idx_messages_peer_created ON messages(peer_id, created_at, sequence)")
         os.chmod(self.path, 0o600)
 
     def _connect(self):
@@ -1540,20 +1612,26 @@ class LocalChatStore:
         finally:
             db.close()
 
-    def save_message(self, peer_id, msg, sequence=None, display_name=None):
+    def save_message(self, peer_id, msg, sequence=None, display_name=None, state="SENT"):
         msg_id = msg.get("id") or str(uuid.uuid4())
         sender_id = msg.get("senderId", "")
         sender_name = msg.get("senderName", "")
         content = msg.get("message", "")
         ts = msg.get("timestamp") or datetime.now(timezone.utc).isoformat()
         is_out = 1 if msg.get("isOutgoing") else 0
+        msg_state = msg.get("state") or state
         now = time.time()
 
         with self.lock, self._db() as db:
+            # ON CONFLICT(id): Preserve original created_at to avoid re-ordering on SSE re-delivery!
             db.execute("""
-                INSERT OR REPLACE INTO messages(id, peer_id, sender_id, sender_name, message, timestamp, is_outgoing, sequence, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (msg_id, peer_id, sender_id, sender_name, content, ts, is_out, sequence, now))
+                INSERT INTO messages(id, peer_id, sender_id, sender_name, message, timestamp, is_outgoing, sequence, state, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    sequence = COALESCE(excluded.sequence, messages.sequence),
+                    state = COALESCE(excluded.state, messages.state),
+                    sender_name = COALESCE(excluded.sender_name, messages.sender_name)
+            """, (msg_id, peer_id, sender_id, sender_name, content, ts, is_out, sequence, msg_state, now))
 
             db.execute("""
                 INSERT INTO conversations(peer_id, display_name, last_message, last_timestamp, updated_at)
@@ -1565,15 +1643,24 @@ class LocalChatStore:
                     updated_at=excluded.updated_at
             """, (peer_id, display_name or sender_name or peer_id, content, ts, now))
 
-    def get_history(self, peer_id, limit=100):
+    def get_history(self, peer_id, limit=100, before=None, offset=0):
         with self.lock, self._db() as db:
-            rows = db.execute("""
-                SELECT id, peer_id, sender_id, sender_name, message, timestamp, is_outgoing
-                FROM messages
-                WHERE peer_id = ?
-                ORDER BY created_at ASC
-                LIMIT ?
-            """, (peer_id, limit)).fetchall()
+            if before is not None:
+                rows = db.execute("""
+                    SELECT id, peer_id, sender_id, sender_name, message, timestamp, is_outgoing, sequence, state, created_at
+                    FROM messages
+                    WHERE peer_id = ? AND created_at < ?
+                    ORDER BY created_at ASC
+                    LIMIT ? OFFSET ?
+                """, (peer_id, before, limit, offset)).fetchall()
+            else:
+                rows = db.execute("""
+                    SELECT id, peer_id, sender_id, sender_name, message, timestamp, is_outgoing, sequence, state, created_at
+                    FROM messages
+                    WHERE peer_id = ?
+                    ORDER BY created_at ASC
+                    LIMIT ? OFFSET ?
+                """, (peer_id, limit, offset)).fetchall()
             return [
                 {
                     "id": r["id"],
@@ -1583,6 +1670,27 @@ class LocalChatStore:
                     "message": r["message"],
                     "timestamp": r["timestamp"],
                     "isOutgoing": bool(r["is_outgoing"]),
+                    "sequence": r["sequence"],
+                    "state": r["state"] if "state" in r.keys() else "SENT",
+                    "createdAt": r["created_at"],
+                }
+                for r in rows
+            ]
+
+    def get_conversations(self):
+        with self.lock, self._db() as db:
+            rows = db.execute("""
+                SELECT peer_id, display_name, last_message, last_timestamp, updated_at
+                FROM conversations
+                ORDER BY updated_at DESC
+            """).fetchall()
+            return [
+                {
+                    "peerId": r["peer_id"],
+                    "displayName": r["display_name"],
+                    "lastMessage": r["last_message"],
+                    "lastTimestamp": r["last_timestamp"],
+                    "updatedAt": r["updated_at"],
                 }
                 for r in rows
             ]
@@ -1657,10 +1765,22 @@ class LocalUIHandler(http.server.BaseHTTPRequestHandler):
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
+        elif parsed.path == "/api/conversations":
+            convs = self.server.chat_store.get_conversations()
+            body = json.dumps({"conversations": convs}, ensure_ascii=False).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
         elif parsed.path == "/api/history":
             qs = urllib.parse.parse_qs(parsed.query)
             peer = qs.get("peer", [""])[0]
-            msgs = self.server.chat_store.get_history(peer)
+            limit = min(int(qs.get("limit", [100])[0]), 500)
+            offset = int(qs.get("offset", [0])[0])
+            before_str = qs.get("before", [None])[0]
+            before = float(before_str) if before_str is not None else None
+            msgs = self.server.chat_store.get_history(peer, limit=limit, before=before, offset=offset)
             body = json.dumps({"messages": msgs}, ensure_ascii=False).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -1707,7 +1827,29 @@ class LocalUIHandler(http.server.BaseHTTPRequestHandler):
                     self.end_headers()
                     return
                 res = self.server.hub_client.send_task(target_id, msg_text)
-                task_id = res.get("taskId") if isinstance(res, dict) else str(uuid.uuid4())
+                if not res or not isinstance(res, dict) or not res.get("taskId"):
+                    # Hub delivery failed! Record message as FAILED in store and report 502 Bad Gateway
+                    err_id = f"failed-{uuid.uuid4()}"
+                    out_msg = {
+                        "id": err_id,
+                        "peerId": target_id,
+                        "senderId": self.server.hub_client.agent_id,
+                        "senderName": self.server.user_name,
+                        "message": msg_text,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "isOutgoing": True,
+                        "state": "FAILED"
+                    }
+                    self.server.append_message(target_id, out_msg, display_name=target_id)
+                    body = json.dumps({"ok": False, "error": "Hub 任務投遞失敗，請檢查 Hub 連線或目標 Agent 狀態"}, ensure_ascii=False).encode("utf-8")
+                    self.send_response(502)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+
+                task_id = res.get("taskId")
                 out_msg = {
                     "id": task_id,
                     "peerId": target_id,
@@ -1715,10 +1857,11 @@ class LocalUIHandler(http.server.BaseHTTPRequestHandler):
                     "senderName": self.server.user_name,
                     "message": msg_text,
                     "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "isOutgoing": True
+                    "isOutgoing": True,
+                    "state": "SENT"
                 }
                 self.server.append_message(target_id, out_msg, display_name=target_id)
-                body = json.dumps({"ok": True, "taskId": task_id}, ensure_ascii=False).encode("utf-8")
+                body = json.dumps({"ok": True, "taskId": task_id, "state": "SENT"}, ensure_ascii=False).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.send_header("Content-Length", str(len(body)))
