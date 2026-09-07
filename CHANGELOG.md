@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- 修正 Outbox 投遞完成後與 Hub 指派 taskId 對齊調和機制（Reconcile Hub-assigned taskId）：當 Hub 回傳之正式 taskId 與本地暫存 ID 不一致時，自動更新本機 SQLite 記錄並推播 previousId 狀態變更事件，同時維持 API 傳回值與單元測試之精準對齊。
 - 調整本機 Outbox 背景 Worker：改用 per-task lock，避免單一慢速 Hub 投遞阻塞其他訊息；補上單筆投遞與 Worker loop 例外隔離，並保留可退避重試的訊息狀態。
 - 補強 Outbox 訊息的 `SENT` 終態保護，重複保存或重試不得把已送達訊息退回 `PENDING`／`SENDING`。
 - 補上前端 `SENDING` 狀態顯示與 Worker、終態、Hub 固定 idempotency payload 測試。

@@ -1476,6 +1476,7 @@ CLIENT_HTML = """<!DOCTYPE html>
           alert(data.error || "重試發送失敗，請確認 Hub 連線狀態。");
         } else {
           m.state = "SENT";
+          if (data.taskId) m.id = data.taskId;
           renderChat();
           loadConversations().then(renderPeers);
         }
@@ -1524,6 +1525,7 @@ CLIENT_HTML = """<!DOCTYPE html>
           alert(data.error || "發送失敗，請確認 Hub 連線狀態。");
         } else {
           userMsg.state = "SENT";
+          if (data.taskId) userMsg.id = data.taskId;
           renderChat();
           loadConversations().then(renderPeers);
         }
@@ -1569,9 +1571,9 @@ CLIENT_HTML = """<!DOCTYPE html>
           const evt = JSON.parse(e.data);
           const peer = evt.peerId;
           if (!conversationHistory[peer]) conversationHistory[peer] = [];
-          const idx = conversationHistory[peer].findIndex(m => m.id === evt.id);
+          const idx = conversationHistory[peer].findIndex(m => m.id === evt.id || (evt.previousId && m.id === evt.previousId));
           if (idx >= 0) {
-            conversationHistory[peer][idx] = { ...conversationHistory[peer][idx], ...evt };
+            conversationHistory[peer][idx] = { ...conversationHistory[peer][idx], ...evt, id: evt.id };
           } else if (evt.message) {
             conversationHistory[peer].push(evt);
           }
@@ -1874,13 +1876,16 @@ class LocalUIServer(http.server.ThreadingHTTPServer):
                 except Exception:
                     pass
 
-    def update_message_state(self, peer_id, msg_id, state):
+    def update_message_state(self, peer_id, msg_id, state, previous_id=None):
         retry_after = 2 if state == "FAILED" else 0
         self.chat_store.update_message_state(msg_id, state, retry_after=retry_after)
+        evt = {"id": msg_id, "peerId": peer_id, "state": state, "type": "state_change"}
+        if previous_id:
+            evt["previousId"] = previous_id
         with self.lock:
             for q in list(self.subscribers):
                 try:
-                    q.put_nowait({"id": msg_id, "peerId": peer_id, "state": state, "type": "state_change"})
+                    q.put_nowait(evt)
                 except Exception:
                     pass
 
@@ -1891,7 +1896,9 @@ class LocalUIServer(http.server.ThreadingHTTPServer):
             claimed = self.chat_store.claim_outbox(msg_id, force=force)
             if not claimed:
                 current = self.chat_store.get_message(msg_id)
-                return current and current.get("state") == "SENT"
+                if current and current.get("state") == "SENT":
+                    return current.get("id") or msg_id
+                return None
             return self._deliver_claimed(claimed)
 
     def _deliver_claimed(self, claimed):
@@ -1901,13 +1908,19 @@ class LocalUIServer(http.server.ThreadingHTTPServer):
             print(f"[!] Outbox delivery error for {claimed['id']}: {exc}", file=sys.stderr)
             result = None
         if result and isinstance(result, dict) and result.get("taskId"):
-            self.update_message_state(claimed["peer_id"], claimed["id"], "SENT")
-            return True
+            final_task_id = result.get("taskId")
+            if final_task_id != claimed["id"]:
+                with self.chat_store.lock, self.chat_store._db() as db:
+                    db.execute("UPDATE messages SET id = ?, state = 'SENT' WHERE id = ?", (final_task_id, claimed["id"]))
+                self.update_message_state(claimed["peer_id"], final_task_id, "SENT", previous_id=claimed["id"])
+            else:
+                self.update_message_state(claimed["peer_id"], claimed["id"], "SENT")
+            return final_task_id
 
         retry_after = min(300, 2 ** min(int(claimed["attempts"]), 8))
         self.chat_store.update_message_state(claimed["id"], "FAILED", retry_after=retry_after)
         self._publish_state_change(claimed["peer_id"], claimed["id"], "FAILED")
-        return False
+        return None
 
     def _publish_state_change(self, peer_id, msg_id, state):
         with self.lock:
@@ -2128,10 +2141,10 @@ class LocalUIHandler(http.server.BaseHTTPRequestHandler):
                 self.server.append_message(target_id, out_msg, display_name=target_id)
 
                 # 2. Dispatch through the serialized local outbox worker.
-                delivered = self.server.deliver_outbox(task_id, force=True)
+                final_task_id = self.server.deliver_outbox(task_id, force=True)
 
                 # 3. Handle Hub outcome
-                if not delivered:
+                if not final_task_id:
                     body = json.dumps({
                         "ok": False,
                         "taskId": task_id,
@@ -2145,9 +2158,8 @@ class LocalUIHandler(http.server.BaseHTTPRequestHandler):
                     self.wfile.write(body)
                     return
 
-                # Hub acknowledged/accepted task. Keep the local task ID stable
-                # so retries always use the same idempotency key.
-                body = json.dumps({"ok": True, "taskId": task_id, "state": "SENT"}, ensure_ascii=False).encode("utf-8")
+                # Hub acknowledged/accepted task
+                body = json.dumps({"ok": True, "taskId": final_task_id, "state": "SENT"}, ensure_ascii=False).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.send_header("Content-Length", str(len(body)))
