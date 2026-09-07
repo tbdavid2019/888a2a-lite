@@ -1417,7 +1417,7 @@ CLIENT_HTML = """<!DOCTYPE html>
         let statusBadge = '';
         if (m.isOutgoing) {
           if (m.state === 'FAILED') {
-            statusBadge = '<span style="color:#ef4444">✕ 發送失敗</span>';
+            statusBadge = `<span style="color:#ef4444">✕ 發送失敗</span> <button class="retry-btn" style="background:#fee2e2;color:#991b1b;border:none;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px;font-weight:600" onclick="retryMessage('${escapeHtml(m.id)}')">↻ 重試</button>`;
           } else if (m.state === 'PENDING') {
             statusBadge = '<span style="color:#f59e0b">⏳ 傳送中</span>';
           } else {
@@ -1443,13 +1443,47 @@ CLIENT_HTML = """<!DOCTYPE html>
       stream.scrollTop = stream.scrollHeight;
     }
 
+    window.retryMessage = async function(msgId) {
+      if (!activePeer) return;
+      const history = conversationHistory[activePeer.agentId] || [];
+      const m = history.find(item => item.id === msgId);
+      if (!m) return;
+      m.state = "PENDING";
+      renderChat();
+      try {
+        const res = await fetch("/api/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            targetAgentId: activePeer.agentId,
+            message: m.message,
+            taskId: m.id
+          })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok) {
+          m.state = "FAILED";
+          renderChat();
+          alert(data.error || "重試發送失敗，請確認 Hub 連線狀態。");
+        } else {
+          m.state = "SENT";
+          renderChat();
+          loadConversations().then(renderPeers);
+        }
+      } catch (err) {
+        m.state = "FAILED";
+        renderChat();
+        alert("重試發生例外錯誤：" + err.message);
+      }
+    };
+
     async function sendMessage(text) {
       if (!activePeer || !text.trim()) return;
       const msgText = text.trim();
       $("chat-input").value = "";
       $("chat-send").disabled = true;
 
-      const tempId = "local-" + Date.now();
+      const tempId = "out-" + Date.now() + "-" + Math.random().toString(36).substring(2, 8);
       const userMsg = {
         id: tempId,
         peerId: activePeer.agentId,
@@ -1470,7 +1504,8 @@ CLIENT_HTML = """<!DOCTYPE html>
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             targetAgentId: activePeer.agentId,
-            message: msgText
+            message: msgText,
+            taskId: tempId
           })
         });
         const data = await res.json().catch(() => ({}));
@@ -1479,7 +1514,6 @@ CLIENT_HTML = """<!DOCTYPE html>
           renderChat();
           alert(data.error || "發送失敗，請確認 Hub 連線狀態。");
         } else {
-          userMsg.id = data.taskId || userMsg.id;
           userMsg.state = "SENT";
           renderChat();
           loadConversations().then(renderPeers);
@@ -1523,14 +1557,14 @@ CLIENT_HTML = """<!DOCTYPE html>
       const ev = new EventSource("/api/events");
       ev.onmessage = (e) => {
         try {
-          const msg = JSON.parse(e.data);
-          const peer = msg.peerId;
+          const evt = JSON.parse(e.data);
+          const peer = evt.peerId;
           if (!conversationHistory[peer]) conversationHistory[peer] = [];
-          const idx = conversationHistory[peer].findIndex(m => m.id === msg.id);
+          const idx = conversationHistory[peer].findIndex(m => m.id === evt.id);
           if (idx >= 0) {
-            conversationHistory[peer][idx] = msg;
-          } else {
-            conversationHistory[peer].push(msg);
+            conversationHistory[peer][idx] = { ...conversationHistory[peer][idx], ...evt };
+          } else if (evt.message) {
+            conversationHistory[peer].push(evt);
           }
           if (activePeer && activePeer.agentId === peer) {
             renderChat();
@@ -1638,10 +1672,26 @@ class LocalChatStore:
                 VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT(peer_id) DO UPDATE SET
                     display_name=COALESCE(excluded.display_name, conversations.display_name),
-                    last_message=excluded.last_message,
-                    last_timestamp=excluded.last_timestamp,
-                    updated_at=excluded.updated_at
+                    last_message=CASE 
+                        WHEN excluded.last_timestamp >= COALESCE(conversations.last_timestamp, '') 
+                        THEN excluded.last_message 
+                        ELSE conversations.last_message 
+                    END,
+                    updated_at=CASE 
+                        WHEN excluded.last_timestamp >= COALESCE(conversations.last_timestamp, '') 
+                        THEN excluded.updated_at 
+                        ELSE conversations.updated_at 
+                    END,
+                    last_timestamp=CASE 
+                        WHEN excluded.last_timestamp >= COALESCE(conversations.last_timestamp, '') 
+                        THEN excluded.last_timestamp 
+                        ELSE conversations.last_timestamp 
+                    END
             """, (peer_id, display_name or sender_name or peer_id, content, ts, now))
+
+    def update_message_state(self, msg_id, state):
+        with self.lock, self._db() as db:
+            db.execute("UPDATE messages SET state = ? WHERE id = ?", (state, msg_id))
 
     def get_history(self, peer_id, limit=100, before=None, offset=0):
         with self.lock, self._db() as db:
@@ -1715,6 +1765,15 @@ class LocalUIServer(http.server.ThreadingHTTPServer):
                 except Exception:
                     pass
 
+    def update_message_state(self, peer_id, msg_id, state):
+        self.chat_store.update_message_state(msg_id, state)
+        with self.lock:
+            for q in list(self.subscribers):
+                try:
+                    q.put_nowait({"id": msg_id, "peerId": peer_id, "state": state, "type": "state_change"})
+                except Exception:
+                    pass
+
     def add_subscriber(self, q):
         with self.lock:
             self.subscribers.add(q)
@@ -1775,11 +1834,60 @@ class LocalUIHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(body)
         elif parsed.path == "/api/history":
             qs = urllib.parse.parse_qs(parsed.query)
-            peer = qs.get("peer", [""])[0]
-            limit = min(int(qs.get("limit", [100])[0]), 500)
-            offset = int(qs.get("offset", [0])[0])
-            before_str = qs.get("before", [None])[0]
-            before = float(before_str) if before_str is not None else None
+            peer = qs.get("peer", [""])[0].strip()
+            if not peer:
+                body = json.dumps({"error": "Missing required query parameter: peer"}, ensure_ascii=False).encode("utf-8")
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+
+            try:
+                raw_limit = qs.get("limit", ["100"])[0]
+                limit = int(raw_limit)
+                if limit < 1 or limit > 500:
+                    raise ValueError("limit must be an integer between 1 and 500")
+            except (ValueError, TypeError) as e:
+                body = json.dumps({"error": f"Invalid limit: {e}"}, ensure_ascii=False).encode("utf-8")
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+
+            try:
+                raw_offset = qs.get("offset", ["0"])[0]
+                offset = int(raw_offset)
+                if offset < 0 or offset > 100000:
+                    raise ValueError("offset must be an integer between 0 and 100000")
+            except (ValueError, TypeError) as e:
+                body = json.dumps({"error": f"Invalid offset: {e}"}, ensure_ascii=False).encode("utf-8")
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+
+            before = None
+            if "before" in qs:
+                raw_before = qs.get("before", [""])[0]
+                try:
+                    before = float(raw_before)
+                    if before < 0:
+                        raise ValueError("before must be a non-negative timestamp")
+                except (ValueError, TypeError) as e:
+                    body = json.dumps({"error": f"Invalid before cursor: {e}"}, ensure_ascii=False).encode("utf-8")
+                    self.send_response(400)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+
             msgs = self.server.chat_store.get_history(peer, limit=limit, before=before, offset=offset)
             body = json.dumps({"messages": msgs}, ensure_ascii=False).encode("utf-8")
             self.send_response(200)
@@ -1822,26 +1930,42 @@ class LocalUIHandler(http.server.BaseHTTPRequestHandler):
                 payload = json.loads(raw)
                 target_id = payload.get("targetAgentId", "").strip()
                 msg_text = payload.get("message", "").strip()
+                task_id = payload.get("taskId", "").strip() or f"out-{uuid.uuid4()}"
                 if not target_id or not msg_text:
+                    body = json.dumps({"error": "targetAgentId and message are required"}, ensure_ascii=False).encode("utf-8")
                     self.send_response(400)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(body)))
                     self.end_headers()
+                    self.wfile.write(body)
                     return
-                res = self.server.hub_client.send_task(target_id, msg_text)
+
+                ts = datetime.now(timezone.utc).isoformat()
+                # 1. OUTBOX: Persist as PENDING with deterministic task_id first
+                out_msg = {
+                    "id": task_id,
+                    "peerId": target_id,
+                    "senderId": self.server.hub_client.agent_id,
+                    "senderName": self.server.user_name,
+                    "message": msg_text,
+                    "timestamp": ts,
+                    "isOutgoing": True,
+                    "state": "PENDING"
+                }
+                self.server.append_message(target_id, out_msg, display_name=target_id)
+
+                # 2. Dispatch to Hub with deterministic taskId & idempotencyKey
+                res = self.server.hub_client.send_task(target_id, msg_text, task_id=task_id)
+
+                # 3. Handle Hub outcome
                 if not res or not isinstance(res, dict) or not res.get("taskId"):
-                    # Hub delivery failed! Record message as FAILED in store and report 502 Bad Gateway
-                    err_id = f"failed-{uuid.uuid4()}"
-                    out_msg = {
-                        "id": err_id,
-                        "peerId": target_id,
-                        "senderId": self.server.hub_client.agent_id,
-                        "senderName": self.server.user_name,
-                        "message": msg_text,
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                        "isOutgoing": True,
-                        "state": "FAILED"
-                    }
-                    self.server.append_message(target_id, out_msg, display_name=target_id)
-                    body = json.dumps({"ok": False, "error": "Hub 任務投遞失敗，請檢查 Hub 連線或目標 Agent 狀態"}, ensure_ascii=False).encode("utf-8")
+                    self.server.update_message_state(target_id, task_id, "FAILED")
+                    body = json.dumps({
+                        "ok": False,
+                        "taskId": task_id,
+                        "state": "FAILED",
+                        "error": "Hub 任務投遞失敗或連線逾時，已寫入本機佇列並標記為 FAILED，可安全重試"
+                    }, ensure_ascii=False).encode("utf-8")
                     self.send_response(502)
                     self.send_header("Content-Type", "application/json; charset=utf-8")
                     self.send_header("Content-Length", str(len(body)))
@@ -1849,18 +1973,8 @@ class LocalUIHandler(http.server.BaseHTTPRequestHandler):
                     self.wfile.write(body)
                     return
 
-                task_id = res.get("taskId")
-                out_msg = {
-                    "id": task_id,
-                    "peerId": target_id,
-                    "senderId": self.server.hub_client.agent_id,
-                    "senderName": self.server.user_name,
-                    "message": msg_text,
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "isOutgoing": True,
-                    "state": "SENT"
-                }
-                self.server.append_message(target_id, out_msg, display_name=target_id)
+                # Hub acknowledged/accepted task
+                self.server.update_message_state(target_id, task_id, "SENT")
                 body = json.dumps({"ok": True, "taskId": task_id, "state": "SENT"}, ensure_ascii=False).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")

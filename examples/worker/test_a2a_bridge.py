@@ -2,8 +2,11 @@ import importlib.util
 import json
 import os
 import tempfile
+import threading
 import time
 import unittest
+import urllib.error
+import urllib.request
 from unittest import mock
 
 
@@ -393,6 +396,128 @@ class DurableBridgeTests(unittest.TestCase):
             page2 = store.get_history("peer-A", limit=2, offset=2)
             self.assertEqual(len(page2), 1)
             self.assertEqual(page2[0]["id"], "msg-A3")
+
+    def test_conversation_summary_preserves_latest_on_redelivery(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = os.path.join(temp_dir, "test_summary.db")
+            store = bridge.LocalChatStore(db_path)
+            # Save newer message B
+            store.save_message("peer-A", {
+                "id": "msg-new",
+                "message": "Newer Message",
+                "timestamp": "2026-09-07T12:05:00Z",
+                "isOutgoing": False
+            }, display_name="Peer A")
+
+            convs1 = store.get_conversations()
+            self.assertEqual(convs1[0]["lastMessage"], "Newer Message")
+            self.assertEqual(convs1[0]["lastTimestamp"], "2026-09-07T12:05:00Z")
+            updated_at1 = convs1[0]["updatedAt"]
+
+            time.sleep(0.02)
+            # Redeliver older message A (e.g. from SSE backlog / retry)
+            store.save_message("peer-A", {
+                "id": "msg-old",
+                "message": "Older Redelivered Message",
+                "timestamp": "2026-09-07T12:01:00Z",
+                "isOutgoing": False
+            }, display_name="Peer A")
+
+            convs2 = store.get_conversations()
+            # Summary MUST still be the newer message! Must NOT regress to old message!
+            self.assertEqual(convs2[0]["lastMessage"], "Newer Message")
+            self.assertEqual(convs2[0]["lastTimestamp"], "2026-09-07T12:05:00Z")
+            self.assertEqual(convs2[0]["updatedAt"], updated_at1)
+
+    def test_history_api_validation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = os.path.join(temp_dir, "test_api.db")
+            mock_hub = mock.MagicMock()
+            mock_hub.agent_id = "test-agent"
+            mock_hub.hub_url = "http://test"
+            server = bridge.LocalUIServer(("127.0.0.1", 0), bridge.LocalUIHandler, mock_hub, "Test User", chat_db_path=db_path)
+            port = server.server_port
+            t = threading.Thread(target=server.serve_forever, daemon=True)
+            t.start()
+            try:
+                # Missing peer
+                with self.assertRaises(urllib.error.HTTPError) as ctx:
+                    urllib.request.urlopen(f"http://127.0.0.1:{port}/api/history")
+                self.assertEqual(ctx.exception.code, 400)
+
+                # Invalid limit
+                with self.assertRaises(urllib.error.HTTPError) as ctx:
+                    urllib.request.urlopen(f"http://127.0.0.1:{port}/api/history?peer=agent-1&limit=-1")
+                self.assertEqual(ctx.exception.code, 400)
+
+                with self.assertRaises(urllib.error.HTTPError) as ctx:
+                    urllib.request.urlopen(f"http://127.0.0.1:{port}/api/history?peer=agent-1&limit=abc")
+                self.assertEqual(ctx.exception.code, 400)
+
+                # Invalid offset
+                with self.assertRaises(urllib.error.HTTPError) as ctx:
+                    urllib.request.urlopen(f"http://127.0.0.1:{port}/api/history?peer=agent-1&offset=-5")
+                self.assertEqual(ctx.exception.code, 400)
+
+                # Invalid before
+                with self.assertRaises(urllib.error.HTTPError) as ctx:
+                    urllib.request.urlopen(f"http://127.0.0.1:{port}/api/history?peer=agent-1&before=invalid")
+                self.assertEqual(ctx.exception.code, 400)
+
+                # Valid request
+                with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/history?peer=agent-1&limit=50") as resp:
+                    self.assertEqual(resp.status, 200)
+                    data = json.loads(resp.read().decode("utf-8"))
+                    self.assertEqual(data["messages"], [])
+            finally:
+                server.shutdown()
+                server.server_close()
+
+    def test_outbound_idempotent_retry(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = os.path.join(temp_dir, "test_outbox.db")
+            mock_hub = mock.MagicMock()
+            mock_hub.agent_id = "test-agent"
+            mock_hub.hub_url = "http://test"
+            # First attempt fails
+            mock_hub.send_task.return_value = None
+
+            server = bridge.LocalUIServer(("127.0.0.1", 0), bridge.LocalUIHandler, mock_hub, "Test User", chat_db_path=db_path)
+            port = server.server_port
+            t = threading.Thread(target=server.serve_forever, daemon=True)
+            t.start()
+            try:
+                task_id = "out-fixed-key-123"
+                payload = json.dumps({"targetAgentId": "peer-A", "message": "hello outbox", "taskId": task_id}).encode("utf-8")
+
+                # Attempt 1: Hub fails -> returns 502, state becomes FAILED
+                req = urllib.request.Request(f"http://127.0.0.1:{port}/api/send", data=payload, headers={"Content-Type": "application/json"})
+                with self.assertRaises(urllib.error.HTTPError) as ctx:
+                    urllib.request.urlopen(req)
+                self.assertEqual(ctx.exception.code, 502)
+
+                msgs = server.chat_store.get_history("peer-A")
+                self.assertEqual(len(msgs), 1)
+                self.assertEqual(msgs[0]["id"], task_id)
+                self.assertEqual(msgs[0]["state"], "FAILED")
+
+                # Attempt 2 (Retry): Hub succeeds -> returns 200, state becomes SENT
+                mock_hub.send_task.return_value = {"taskId": task_id, "state": "PENDING"}
+                req2 = urllib.request.Request(f"http://127.0.0.1:{port}/api/send", data=payload, headers={"Content-Type": "application/json"})
+                with urllib.request.urlopen(req2) as resp:
+                    self.assertEqual(resp.status, 200)
+                    res_data = json.loads(resp.read().decode("utf-8"))
+                    self.assertTrue(res_data["ok"])
+                    self.assertEqual(res_data["state"], "SENT")
+
+                msgs_after = server.chat_store.get_history("peer-A")
+                # Exactly 1 row in DB (idempotent, no duplicates!) and state is SENT!
+                self.assertEqual(len(msgs_after), 1)
+                self.assertEqual(msgs_after[0]["id"], task_id)
+                self.assertEqual(msgs_after[0]["state"], "SENT")
+            finally:
+                server.shutdown()
+                server.server_close()
 
 
 def json_item(row):

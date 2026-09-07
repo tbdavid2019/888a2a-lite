@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- 實作完整本機 Outbox 模式與冪等重試（Idempotent Outbox Delivery & Retry）：`/api/send` 先以確定性 `taskId` 寫入本機 SQLite `PENDING` 狀態，再發送至 Hub；逾時或投遞失敗時標記為 `FAILED`；使用者點選「↻ 重試」時沿用原始固定 `taskId` 與 `idempotencyKey`，確保 Hub 憑內建冪等機制絕不重複建立任務。
+- 修復舊訊息重推污染會話摘要問題（Conversation Summary Regression Guard）：`conversations` 更新時以 `excluded.last_timestamp >= COALESCE(conversations.last_timestamp, '')` 為保護條件，舊訊息重推絕不倒退覆蓋最新訊息摘要與時間戳。
+- 補強 History API 邊界驗證（Strict Bounded Validation）：`/api/history` 嚴格限制 `limit`（1..500）、`offset`（0..100000）、非負 `before` 游標，並於參數缺漏或非法格式時標準回傳 HTTP 400。
 - 修復 `a2a ui` 前端未從 SQLite 載入歷史紀錄之缺陷（History Hydration）：於 `selectPeer` 與頁面初始化時非同步請求 `/api/history` 水合對話紀錄，瀏覽器重新整理後歷史對話完好如初；通訊錄側邊欄支援即時顯示最近訊息摘要。
 - 修正出站投遞失敗卻回報成功之假象（Outbound Delivery Failure Guard）：修正 `/api/send` 於 Hub 投遞失敗時仍偽造 UUID 回傳 HTTP 200 之問題；改為在失敗時明確回傳 HTTP 502、於 SQLite 標記 `state="FAILED"`，前端畫面顯示傳送失敗狀態。
 - 消除 SSE 重複事件改變訊息順序之缺陷（Conflict Order Preservation）：將 `INSERT OR REPLACE` 改為 `ON CONFLICT(id) DO UPDATE`，於重試推播時完整保留原始 `created_at`，確保訊息在對話流中的排序永不跳動錯位。
