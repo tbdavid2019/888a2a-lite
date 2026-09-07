@@ -1421,7 +1421,7 @@ CLIENT_HTML = """<!DOCTYPE html>
         if (m.isOutgoing) {
           if (m.state === 'FAILED') {
             statusBadge = `<span style="color:#ef4444">✕ 發送失敗</span> <button class="retry-btn" data-retry-index="${index}" style="background:#fee2e2;color:#991b1b;border:none;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px;font-weight:600">↻ 重試</button>`;
-          } else if (m.state === 'PENDING') {
+          } else if (m.state === 'PENDING' || m.state === 'SENDING') {
             statusBadge = '<span style="color:#f59e0b">⏳ 傳送中</span>';
           } else {
             statusBadge = '<span>✓ 已送達</span>';
@@ -1706,7 +1706,10 @@ class LocalChatStore:
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     sequence = COALESCE(excluded.sequence, messages.sequence),
-                    state = COALESCE(excluded.state, messages.state),
+                    state = CASE
+                        WHEN messages.state = 'SENT' THEN 'SENT'
+                        ELSE COALESCE(excluded.state, messages.state)
+                    END,
                     sender_name = COALESCE(excluded.sender_name, messages.sender_name)
             """, (msg_id, peer_id, sender_id, sender_name, content, ts, is_out, sequence, msg_state, sort_timestamp, now))
 
@@ -1776,11 +1779,11 @@ class LocalChatStore:
             claimed["state"] = "SENDING"
             return claimed
 
-    def claim_due_outbox(self, now=None, limit=10):
+    def due_outbox_ids(self, now=None, limit=10):
         now = time.time() if now is None else now
         with self.lock, self._db() as db:
             rows = db.execute("""
-                SELECT id, peer_id, message, attempts, state
+                SELECT id
                 FROM messages
                 WHERE is_outgoing = 1
                   AND state IN ('PENDING', 'FAILED', 'SENDING')
@@ -1788,18 +1791,7 @@ class LocalChatStore:
                 ORDER BY created_at ASC
                 LIMIT ?
             """, (now, limit)).fetchall()
-            claimed = []
-            for row in rows:
-                db.execute("""
-                    UPDATE messages
-                    SET state = 'SENDING', attempts = attempts + 1, next_retry_at = ?
-                    WHERE id = ?
-                """, (now + 60, row["id"]))
-                item = dict(row)
-                item["attempts"] = int(row["attempts"]) + 1
-                item["state"] = "SENDING"
-                claimed.append(item)
-            return claimed
+            return [row["id"] for row in rows]
 
     def get_history(self, peer_id, limit=100, before=None, offset=0):
         with self.lock, self._db() as db:
@@ -1863,7 +1855,7 @@ class LocalUIServer(http.server.ThreadingHTTPServer):
         self.chat_store = LocalChatStore(chat_db_path or os.path.expanduser("~/.a2a/chat.db"))
         self.subscribers = set()
         self.lock = threading.Lock()
-        self.outbox_delivery_lock = threading.Lock()
+        self.outbox_locks = [threading.Lock() for _ in range(64)]
         self.outbox_stop = threading.Event()
         self.running = True
         self.outbox_thread = threading.Thread(target=self._run_outbox_worker, daemon=True)
@@ -1894,21 +1886,28 @@ class LocalUIServer(http.server.ThreadingHTTPServer):
 
     def deliver_outbox(self, msg_id, force=False):
         """Deliver one persisted outgoing message without concurrent duplicate sends."""
-        with self.outbox_delivery_lock:
+        lock = self.outbox_locks[hash(msg_id) % len(self.outbox_locks)]
+        with lock:
             claimed = self.chat_store.claim_outbox(msg_id, force=force)
             if not claimed:
                 current = self.chat_store.get_message(msg_id)
                 return current and current.get("state") == "SENT"
+            return self._deliver_claimed(claimed)
 
+    def _deliver_claimed(self, claimed):
+        try:
             result = self.hub_client.send_task(claimed["peer_id"], claimed["message"], task_id=claimed["id"])
-            if result and isinstance(result, dict) and result.get("taskId"):
-                self.update_message_state(claimed["peer_id"], claimed["id"], "SENT")
-                return True
+        except Exception as exc:
+            print(f"[!] Outbox delivery error for {claimed['id']}: {exc}", file=sys.stderr)
+            result = None
+        if result and isinstance(result, dict) and result.get("taskId"):
+            self.update_message_state(claimed["peer_id"], claimed["id"], "SENT")
+            return True
 
-            retry_after = min(300, 2 ** min(int(claimed["attempts"]), 8))
-            self.chat_store.update_message_state(claimed["id"], "FAILED", retry_after=retry_after)
-            self._publish_state_change(claimed["peer_id"], claimed["id"], "FAILED")
-            return False
+        retry_after = min(300, 2 ** min(int(claimed["attempts"]), 8))
+        self.chat_store.update_message_state(claimed["id"], "FAILED", retry_after=retry_after)
+        self._publish_state_change(claimed["peer_id"], claimed["id"], "FAILED")
+        return False
 
     def _publish_state_change(self, peer_id, msg_id, state):
         with self.lock:
@@ -1920,16 +1919,14 @@ class LocalUIServer(http.server.ThreadingHTTPServer):
 
     def _run_outbox_worker(self):
         while not self.outbox_stop.wait(2):
-            with self.outbox_delivery_lock:
-                due = self.chat_store.claim_due_outbox(limit=10)
-                for claimed in due:
-                    result = self.hub_client.send_task(claimed["peer_id"], claimed["message"], task_id=claimed["id"])
-                    if result and isinstance(result, dict) and result.get("taskId"):
-                        self.update_message_state(claimed["peer_id"], claimed["id"], "SENT")
-                    else:
-                        retry_after = min(300, 2 ** min(int(claimed["attempts"]), 8))
-                        self.chat_store.update_message_state(claimed["id"], "FAILED", retry_after=retry_after)
-                        self._publish_state_change(claimed["peer_id"], claimed["id"], "FAILED")
+            try:
+                due_ids = self.chat_store.due_outbox_ids(limit=10)
+                for msg_id in due_ids:
+                    if self.outbox_stop.is_set():
+                        break
+                    self.deliver_outbox(msg_id)
+            except Exception as exc:
+                print(f"[!] Outbox worker loop error: {exc}", file=sys.stderr)
 
     def add_subscriber(self, q):
         with self.lock:

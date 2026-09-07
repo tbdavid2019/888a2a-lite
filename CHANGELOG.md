@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- 調整本機 Outbox 背景 Worker：改用 per-task lock，避免單一慢速 Hub 投遞阻塞其他訊息；補上單筆投遞與 Worker loop 例外隔離，並保留可退避重試的訊息狀態。
+- 補強 Outbox 訊息的 `SENT` 終態保護，重複保存或重試不得把已送達訊息退回 `PENDING`／`SENDING`。
+- 補上前端 `SENDING` 狀態顯示與 Worker、終態、Hub 固定 idempotency payload 測試。
 - 強化本機交談工作台 Outbox：新增 PENDING／SENDING／FAILED 狀態、背景退避重試與程序重啟後的未完成投遞恢復；固定使用本機 task ID 進行 Hub 冪等重送。
 - 修復交談重試按鈕將未驗證 task ID 插入 inline JavaScript 的 XSS 風險，改用安全的事件監聽器綁定。
 - 修復 conversation summary 以字串比較不同時區 timestamp 的排序錯誤，改用 UTC 數值排序並補上既有資料 migration。

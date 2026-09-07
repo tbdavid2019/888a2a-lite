@@ -546,6 +546,75 @@ class DurableBridgeTests(unittest.TestCase):
     def test_retry_markup_does_not_embed_task_id_in_javascript(self):
         self.assertNotIn("onclick=\"retryMessage('", bridge.CLIENT_HTML)
         self.assertIn('button.addEventListener("click"', bridge.CLIENT_HTML)
+        self.assertIn("m.state === 'PENDING' || m.state === 'SENDING'", bridge.CLIENT_HTML)
+
+    def test_sent_message_state_is_terminal_on_duplicate_save(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = bridge.LocalChatStore(os.path.join(temp_dir, "test_terminal.db"))
+            store.save_message("peer-A", {
+                "id": "msg-sent",
+                "message": "already sent",
+                "isOutgoing": True,
+                "state": "SENT",
+            })
+            store.save_message("peer-A", {
+                "id": "msg-sent",
+                "message": "already sent",
+                "isOutgoing": True,
+                "state": "PENDING",
+            })
+            self.assertEqual(store.get_history("peer-A")[0]["state"], "SENT")
+
+    def test_outbox_delivery_exception_is_retriable(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            hub = mock.MagicMock()
+            hub.send_task.side_effect = RuntimeError("temporary network error")
+            server = bridge.LocalUIServer(("127.0.0.1", 0), bridge.LocalUIHandler, hub, "Test User", chat_db_path=os.path.join(temp_dir, "test_worker.db"))
+            try:
+                task_id = "out-worker-retry"
+                server.append_message("peer-A", {
+                    "id": task_id,
+                    "senderId": "test-agent",
+                    "message": "retry me",
+                    "isOutgoing": True,
+                    "state": "PENDING",
+                })
+                self.assertFalse(server.deliver_outbox(task_id, force=True))
+                self.assertEqual(server.chat_store.get_history("peer-A")[0]["state"], "FAILED")
+
+                hub.send_task.side_effect = None
+                hub.send_task.return_value = {"taskId": task_id, "state": "PENDING"}
+                self.assertTrue(server.deliver_outbox(task_id, force=True))
+                self.assertEqual(server.chat_store.get_history("peer-A")[0]["state"], "SENT")
+            finally:
+                server.server_close()
+
+    def test_outbox_worker_delivers_due_message(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            hub = mock.MagicMock()
+            hub.send_task.return_value = {"taskId": "out-worker", "state": "PENDING"}
+            server = bridge.LocalUIServer(("127.0.0.1", 0), bridge.LocalUIHandler, hub, "Test User", chat_db_path=os.path.join(temp_dir, "test_worker_due.db"))
+            try:
+                server.append_message("peer-A", {
+                    "id": "out-worker",
+                    "senderId": "test-agent",
+                    "message": "deliver in background",
+                    "isOutgoing": True,
+                    "state": "PENDING",
+                })
+                wait_calls = [0]
+                def wait_once(_timeout):
+                    wait_calls[0] += 1
+                    return wait_calls[0] > 1
+                server.outbox_stop.wait = wait_once
+                worker = threading.Thread(target=server._run_outbox_worker)
+                worker.start()
+                worker.join(timeout=2)
+                self.assertFalse(worker.is_alive())
+                self.assertEqual(server.chat_store.get_history("peer-A")[0]["state"], "SENT")
+                hub.send_task.assert_called_once_with("peer-A", "deliver in background", task_id="out-worker")
+            finally:
+                server.server_close()
 
     def test_hub_client_reuses_idempotency_key_for_fixed_task(self):
         class Response:
