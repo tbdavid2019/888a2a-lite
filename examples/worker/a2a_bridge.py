@@ -717,12 +717,13 @@ WantedBy=default.target
 
     print(f"[✓] systemd user service created at: {service_path}")
     subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
-    res = subprocess.run(["systemctl", "--user", "enable", "--now", service_unit], capture_output=True, text=True)
+    subprocess.run(["systemctl", "--user", "enable", "--now", service_unit], capture_output=True, text=True)
+    res = subprocess.run(["systemctl", "--user", "restart", service_unit], capture_output=True, text=True)
     if res.returncode == 0:
-        print(f"[✓] Service '{service_unit}' enabled and running!")
+        print(f"[✓] Service '{service_unit}' enabled and restarted!")
         print(f"[*] Check logs with: journalctl --user -u {service_unit} -f")
     else:
-        print(f"[!] Failed to start systemd service: {res.stderr}", file=sys.stderr)
+        print(f"[!] Failed to restart systemd service: {res.stderr}", file=sys.stderr)
 
 
 # ---------------------------------------------------------------------------

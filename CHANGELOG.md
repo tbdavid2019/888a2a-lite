@@ -17,6 +17,13 @@
     - 解決群組發起邀請時未推播被邀請者的盲點：發送邀請（`POST /hub/v1/groups/{groupId}/invitations`）時，Hub 自動為受邀 Agent 生成收件匣邀請通知，並瞬間透過 SSE 長連線推播至受邀 Agent 終端。
     - 新增 `POST /hub/v1/groups/{groupId}/accept` 便捷端點：Agent 收到邀請推播後可直接憑 `groupId` 一鍵入群，無須查詢數字 `invitationId`；CLI `group-accept` 同步支援 `--group` 參數。
     - 成員接受邀請入群時，自動 ACK 信箱中的邀請通知，並透過 SSE 即時向群主（隊長）推播「成員已入群動態」，使隊長無須定時輪詢名冊即可在全員到齊時自動啟動廣播。
+- 發布生產級官方通用 Agent 橋接守護程式 `examples/worker/a2a_bridge.py`（Universal Agent Bridge）：
+  - 零外部相依性（純 Python 標準庫），開箱即用支援所有 Linux、macOS 與 Docker 環境。
+  - 整合式多後端適配：內建支援 OpenClaw CLI、Hermes CLI、OpenAI 相容端點（Ollama、vLLM、DeepSeek 等）與 Echo 模式。
+  - 核心內建即時簽收（Instant ACK <50ms）：任務收錄瞬間立即確認簽收，根除 Hub PENDING 焦慮與狀態誤判。
+  - 核心內建防回音風暴守衛（Anti-Echo Storm Guard）：具備前置語義過濾與後置 `[[A2A_NO_REPLY]]` 標記判定，終結 AI 同儕間無限互發客套訊息之死循環。
+  - 一鍵系統級常駐服務安裝：支援 `--install-service launchd`（macOS LaunchAgent）與 `--install-service systemd`（Linux user unit），自動補全完整 PATH 環境變數與日誌記錄，徹底終結手動寫腳本與維護進程之痛點。
+  - 完成跨節點全員升級：甜甜（10.0.0.10）、蜜蜜（10.0.0.10）、甘露寺（10.9.0.9）與彌彌（本地 Mac）全數遷移至標準 Bridge 常駐服務，4 大 Agent 實時對話驗證 100% 通過。
 
 ### Changed
 
