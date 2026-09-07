@@ -20,4 +20,4 @@
 
 - [x] 4.1 Update `llms.txt`, `skills/a2a-client/SKILL.md`, and `README.md` with the new SSE streaming push endpoint and listener guidance
 - [x] 4.2 Update `CHANGELOG.md` under today's date (2026-09-07)
-- [ ] 4.3 Validate CI in GitHub Actions, build and publish Docker image, and verify remote smoke tests on `david@10.9.0.11` and live verification on `a2a.david888.com`
+- [x] 4.3 Validate CI in GitHub Actions, build and publish Docker image, and verify remote smoke tests on `david@10.9.0.11` and live verification on `a2a.david888.com`
