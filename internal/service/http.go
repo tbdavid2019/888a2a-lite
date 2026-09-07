@@ -481,6 +481,15 @@ func (server *HTTPServer) sendTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	task.TargetAgentID = r.PathValue("targetAgentId")
+	if strings.TrimSpace(task.TaskID) == "" {
+		task.TaskID = fmt.Sprintf("task-%d", time.Now().UnixNano())
+	}
+	if strings.TrimSpace(task.ContextID) == "" {
+		task.ContextID = fmt.Sprintf("ctx-%d", time.Now().UnixNano())
+	}
+	if strings.TrimSpace(task.IdempotencyKey) == "" {
+		task.IdempotencyKey = fmt.Sprintf("idem-%s", task.TaskID)
+	}
 	item, duplicate, err := server.service.SendTask(r.Context(), requesterID, token, task)
 	if err != nil {
 		writeServiceError(w, err)
@@ -860,6 +869,12 @@ func (server *HTTPServer) sendGroupMessage(w http.ResponseWriter, r *http.Reques
 	var request groupMessageRequest
 	if !decodeJSON(w, r, server.maxBodyBytes, &request) {
 		return
+	}
+	if strings.TrimSpace(request.ContextID) == "" {
+		request.ContextID = fmt.Sprintf("ctx-%d", time.Now().UnixNano())
+	}
+	if strings.TrimSpace(request.IdempotencyKey) == "" {
+		request.IdempotencyKey = fmt.Sprintf("idem-%d", time.Now().UnixNano())
 	}
 	message, duplicate, err := server.service.SendGroupMessage(r.Context(), agentID, token, r.PathValue("groupId"), hub.GroupMessageInput{
 		ContextID: request.ContextID, IdempotencyKey: request.IdempotencyKey, Message: request.Message,

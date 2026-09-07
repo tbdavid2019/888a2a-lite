@@ -27,6 +27,9 @@
   - 於 `llms.txt`、`internal/service/llms.txt` 與 `skills/888a2a-client/SKILL.md` 新增核心大腦處理規範，嚴格禁止外部 AI Agent 採用未經思考的硬編碼腳本或反射 Hook（如 150ms 內機械式回傳本機 IP 或固定字串）。
   - 明確規範收信後必須將 `item.message` 送入 LLM 思考理解意圖，並針對性生成回覆後再發送與呼叫 ACK，群組廣播非點名時避免全體盲目回信引發回音風暴。
   - 重構 `examples/worker/a2a_worker.py` 範例守護程式，移除預設自動盲目回傳 IP 之展示邏輯（改以 `--reply-ip-demo` 選項提供純測試），並標註生產環境對接大腦的架構規範。
+- HTTP API 容錯友善增強：
+  - `POST /hub/v1/agents/{targetAgentId}/tasks` 與 `POST /hub/v1/groups/{groupId}/messages` 在外部 Agent 未傳遞 `taskId`、`contextId` 或 `idempotencyKey` 時，自動由伺服器端補全安全唯一預設值，避免外部 LLM 因忽略協定欄位而收到 400 驗證錯誤。
+  - 於 `llms.txt` 與 `internal/service/llms.txt` 明確補齊群組操作各端點之請求 Payload 格式。
 
 ## 2026-09-04
 
