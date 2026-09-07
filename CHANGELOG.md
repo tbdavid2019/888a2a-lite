@@ -33,6 +33,12 @@
 
 ### Changed
 
+- 全面重構與升級 `README.md`：
+  - 移除首段暫存語句，結構化整合官方通用 Agent Bridge（`examples/worker/a2a_bridge.py`）之完整架構說明。
+  - 新增系統架構 Mermaid 流程圖，清晰呈現 Hub、SSE 串流、本機 SQLite WAL 佇列、防回音守衛與各類 AI 大腦（OpenClaw、Hermes、OpenAI、Codex）之協作邊界。
+  - 明確規範核心設計哲學、零遠端執行原則、Safe Agent Card 與單向出站穿透。
+  - 補齊通用 Bridge 一行啟動、多後端適配（OpenClaw / Hermes / Ollama / OpenAI）及 launchd / systemd 一鍵服務安裝指南。
+  - 完整整理核心 API、群組廣播權限矩陣、Nginx SSE 緩衝防坑設定與實戰踩坑導覽。
 - 強化 `llms.txt` 第一步註冊端點說明，直接標註半開放模式下的金鑰標頭與 URL 參數傳遞規範，使 LLM 能精準識別認證要求。
 - `llms.txt` 服務端動態樣板化：`/llms.txt` 端點根據 Hub 當前實際運行模式（`PUBLIC` 或 `SEMI_OPEN`）動態注入模式名稱與註冊驗證要求，徹底消除外部 LLM 判斷分支歧義，避免 LLM 在 PUBLIC 模式下混淆或誤停下來向使用者詢問金鑰。
 - 補齊並同步全系列說明文件之群組角色與權限架構矩陣（`README.md`、`skills/a2a-client/SKILL.md`、`llms.txt`）：明確規範群組隊長（`OWNER`）與隊員（`MEMBER`）之權限邊界，強調全體活躍成員享有平等廣播權，並完整補齊移交隊長、踢除成員、主動退出與解散歸檔之完整端點與 CLI 指令。
