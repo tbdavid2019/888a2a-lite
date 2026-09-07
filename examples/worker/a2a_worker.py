@@ -81,21 +81,89 @@ def ack_task(hub_url, agent_id, token, sequence, shared_key=None):
         return None
 
 
+def list_invitations(hub_url, agent_id, token, shared_key=None):
+    """List pending group invitations for this agent."""
+    url = f"{hub_url.rstrip('/')}/hub/v1/groups/invitations"
+    req = urllib.request.Request(url, headers={
+        "X-Agent-ID": agent_id,
+        "Authorization": f"Bearer {token}",
+    })
+    if shared_key:
+        req.add_header("X-Hub-Key", shared_key)
+
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            return data.get("invitations", [])
+    except Exception as e:
+        print(f"[!] Error checking group invitations: {e}", file=sys.stderr)
+        return []
+
+
+def accept_invitation(hub_url, agent_id, token, invitation_id, shared_key=None):
+    """Accept a pending group invitation."""
+    url = f"{hub_url.rstrip('/')}/hub/v1/groups/invitations/{invitation_id}/accept"
+    req = urllib.request.Request(url, data=b"{}", headers={
+        "Content-Type": "application/json",
+        "X-Agent-ID": agent_id,
+        "Authorization": f"Bearer {token}",
+    })
+    if shared_key:
+        req.add_header("X-Hub-Key", shared_key)
+
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        print(f"[!] Error accepting invitation {invitation_id}: {e}", file=sys.stderr)
+        return None
+
+
+def auto_accept_pending_invitations(hub_url, agent_id, token, shared_key=None):
+    """Automatically find and accept all pending group invitations."""
+    invitations = list_invitations(hub_url, agent_id, token, shared_key)
+    accepted = 0
+    for inv in invitations:
+        if inv.get("state") == "PENDING":
+            inv_id = inv.get("id")
+            group_id = inv.get("groupId")
+            inviter = inv.get("inviterAgentId")
+            print(f"[*] Found pending invitation #{inv_id} for group {group_id} from {inviter}. Accepting...")
+            res = accept_invitation(hub_url, agent_id, token, inv_id, shared_key)
+            if res:
+                print(f"[✓] Joined group {group_id} as ACTIVE member!")
+                accepted += 1
+    return accepted
+
+
 def handle_task(hub_url, agent_id, token, item, shared_key=None):
-    """Process an incoming task and send a response."""
+    """Process an incoming task or group broadcast and send a response."""
     seq = item.get("sequence")
     task_id = item.get("taskId")
     sender_id = item.get("requesterAgentId")
     context_id = item.get("contextId")
     msg = item.get("message", "")
+    group_id = item.get("groupId")
 
-    print(f"\n[+] Incoming Task [seq={seq}, id={task_id}] from {sender_id}:")
-    print(f"    Message: {msg}")
+    is_group = bool(group_id)
+    if is_group:
+        print(f"\n📢 [Group Broadcast Received] [Group={group_id}, seq={seq}, id={task_id}] from {sender_id}:")
+        print(f"    Message: {msg}")
+    else:
+        print(f"\n[+] Incoming Task [seq={seq}, id={task_id}] from {sender_id}:")
+        print(f"    Message: {msg}")
+
+    # Check for invitations if message mentions group or invitation
+    if any(k in msg.lower() for k in ("invite", "group", "群組", "邀請")):
+        auto_accept_pending_invitations(hub_url, agent_id, token, shared_key)
 
     # Example response logic: If asked about IP, answer with local IP
     local_ip = get_local_ip()
     hostname = socket.gethostname()
-    reply_text = f"你好！我是 Agent {agent_id}。\n我所在的主機是 {hostname}，本機內網 IP 為: {local_ip}"
+    if is_group:
+        reply_text = f"你好！我是 Agent {agent_id}。已收到群組 [{group_id}] 的廣播訊息！\n我所在的主機是 {hostname}，本機內網 IP 為: {local_ip}"
+    else:
+        reply_text = f"你好！我是 Agent {agent_id}。\n我所在的主機是 {hostname}，本機內網 IP 為: {local_ip}"
 
     # Reply to sender
     reply_task_id = f"reply-{task_id}"
@@ -119,6 +187,9 @@ def run_worker(hub_url, agent_id, token, shared_key=None):
     print(f" Agent ID: {agent_id}")
     print(f" Local IP: {get_local_ip()}")
     print("=" * 60)
+
+    # Check for pending invitations on startup
+    auto_accept_pending_invitations(hub_url, agent_id, token, shared_key)
 
     last_event_id = 0
     backoff = 1
