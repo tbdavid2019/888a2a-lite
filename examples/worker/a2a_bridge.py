@@ -32,6 +32,7 @@ import fcntl
 import hashlib
 import http.server
 import json
+import math
 import os
 import plistlib
 import queue
@@ -50,6 +51,8 @@ import urllib.parse
 import urllib.request
 import uuid
 import webbrowser
+
+MAX_LOCAL_REQUEST_BYTES = 1 << 20
 
 # Force unbuffered standard streams so logs never get stuck in block buffers
 if hasattr(sys.stdout, "reconfigure"):
@@ -1277,7 +1280,7 @@ CLIENT_HTML = """<!DOCTYPE html>
     let conversationHistory = {};
 
     function escapeHtml(str) {
-      return String(str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      return String(str || "").replace(/[&<>'\"]/g, tag => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '\"': "&quot;" }[tag]));
     }
 
     function formatTime(iso) {
@@ -1347,10 +1350,10 @@ CLIENT_HTML = """<!DOCTYPE html>
         const lastMsgPreview = conv?.lastMessage ? 
           `<div style="font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px">${escapeHtml(conv.lastMessage)}</div>` : '';
         return `
-        <div class="peer-card ${activePeer?.agentId === p.agentId ? 'active' : ''}" data-id="${p.agentId}">
+        <div class="peer-card ${activePeer?.agentId === p.agentId ? 'active' : ''}" data-id="${escapeHtml(p.agentId)}">
           <div class="peer-card-top">
             <span class="peer-name">${escapeHtml(p.displayName || p.agentId)}</span>
-            <span class="status-pill ${p.state}">${p.state}</span>
+            <span class="status-pill ${escapeHtml(p.state)}">${escapeHtml(p.state)}</span>
           </div>
           <div class="peer-id">${escapeHtml(p.agentId)}</div>
           ${lastMsgPreview}
@@ -1413,11 +1416,11 @@ CLIENT_HTML = """<!DOCTYPE html>
         return;
       }
 
-      stream.innerHTML = history.map(m => {
+      stream.innerHTML = history.map((m, index) => {
         let statusBadge = '';
         if (m.isOutgoing) {
           if (m.state === 'FAILED') {
-            statusBadge = `<span style="color:#ef4444">✕ 發送失敗</span> <button class="retry-btn" style="background:#fee2e2;color:#991b1b;border:none;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px;font-weight:600" onclick="retryMessage('${escapeHtml(m.id)}')">↻ 重試</button>`;
+            statusBadge = `<span style="color:#ef4444">✕ 發送失敗</span> <button class="retry-btn" data-retry-index="${index}" style="background:#fee2e2;color:#991b1b;border:none;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px;font-weight:600">↻ 重試</button>`;
           } else if (m.state === 'PENDING') {
             statusBadge = '<span style="color:#f59e0b">⏳ 傳送中</span>';
           } else {
@@ -1439,6 +1442,12 @@ CLIENT_HTML = """<!DOCTYPE html>
         </div>
       `;
       }).join("");
+
+      stream.querySelectorAll(".retry-btn").forEach(button => {
+        const index = Number(button.dataset.retryIndex);
+        const message = history[index];
+        if (message) button.addEventListener("click", () => retryMessage(message.id));
+      });
 
       stream.scrollTop = stream.scrollHeight;
     }
@@ -1594,6 +1603,17 @@ CLIENT_HTML = """<!DOCTYPE html>
 </html>"""
 
 
+def message_timestamp_order(value):
+    """Return a comparable UTC timestamp for conversation ordering."""
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc).timestamp()
+    except (TypeError, ValueError, OverflowError):
+        return 0.0
+
+
 class LocalChatStore:
     """Crash-safe local SQLite store for human conversation history in a2a ui."""
     def __init__(self, db_path):
@@ -1608,6 +1628,7 @@ class LocalChatStore:
                     display_name TEXT,
                     last_message TEXT,
                     last_timestamp TEXT,
+                    last_order REAL NOT NULL DEFAULT 0,
                     updated_at REAL NOT NULL
                 )
             """)
@@ -1622,13 +1643,34 @@ class LocalChatStore:
                     is_outgoing INTEGER NOT NULL,
                     sequence INTEGER,
                     state TEXT NOT NULL DEFAULT 'SENT',
+                    sort_timestamp REAL NOT NULL DEFAULT 0,
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    next_retry_at REAL NOT NULL DEFAULT 0,
                     created_at REAL NOT NULL
                 )
             """)
-            cols = [r[1] for r in db.execute("PRAGMA table_info(messages)").fetchall()]
-            if "state" not in cols:
+            message_cols = [r[1] for r in db.execute("PRAGMA table_info(messages)").fetchall()]
+            if "state" not in message_cols:
                 db.execute("ALTER TABLE messages ADD COLUMN state TEXT NOT NULL DEFAULT 'SENT'")
+            added_sort_timestamp = "sort_timestamp" not in message_cols
+            if added_sort_timestamp:
+                db.execute("ALTER TABLE messages ADD COLUMN sort_timestamp REAL NOT NULL DEFAULT 0")
+            if "attempts" not in message_cols:
+                db.execute("ALTER TABLE messages ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0")
+            if "next_retry_at" not in message_cols:
+                db.execute("ALTER TABLE messages ADD COLUMN next_retry_at REAL NOT NULL DEFAULT 0")
+            conversation_cols = [r[1] for r in db.execute("PRAGMA table_info(conversations)").fetchall()]
+            added_last_order = "last_order" not in conversation_cols
+            if added_last_order:
+                db.execute("ALTER TABLE conversations ADD COLUMN last_order REAL NOT NULL DEFAULT 0")
+            if added_sort_timestamp:
+                for row in db.execute("SELECT id, timestamp FROM messages WHERE sort_timestamp = 0").fetchall():
+                    db.execute("UPDATE messages SET sort_timestamp = ? WHERE id = ?", (message_timestamp_order(row[1]), row[0]))
+            if added_last_order:
+                for row in db.execute("SELECT peer_id, last_timestamp FROM conversations WHERE last_order = 0").fetchall():
+                    db.execute("UPDATE conversations SET last_order = ? WHERE peer_id = ?", (message_timestamp_order(row[1]), row[0]))
             db.execute("CREATE INDEX IF NOT EXISTS idx_messages_peer_created ON messages(peer_id, created_at, sequence)")
+            db.execute("CREATE INDEX IF NOT EXISTS idx_messages_outbox ON messages(is_outgoing, state, next_retry_at)")
         os.chmod(self.path, 0o600)
 
     def _connect(self):
@@ -1654,61 +1696,127 @@ class LocalChatStore:
         ts = msg.get("timestamp") or datetime.now(timezone.utc).isoformat()
         is_out = 1 if msg.get("isOutgoing") else 0
         msg_state = msg.get("state") or state
+        sort_timestamp = message_timestamp_order(ts)
         now = time.time()
 
         with self.lock, self._db() as db:
             # ON CONFLICT(id): Preserve original created_at to avoid re-ordering on SSE re-delivery!
             db.execute("""
-                INSERT INTO messages(id, peer_id, sender_id, sender_name, message, timestamp, is_outgoing, sequence, state, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO messages(id, peer_id, sender_id, sender_name, message, timestamp, is_outgoing, sequence, state, sort_timestamp, attempts, next_retry_at, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     sequence = COALESCE(excluded.sequence, messages.sequence),
                     state = COALESCE(excluded.state, messages.state),
                     sender_name = COALESCE(excluded.sender_name, messages.sender_name)
-            """, (msg_id, peer_id, sender_id, sender_name, content, ts, is_out, sequence, msg_state, now))
+            """, (msg_id, peer_id, sender_id, sender_name, content, ts, is_out, sequence, msg_state, sort_timestamp, now))
 
             db.execute("""
-                INSERT INTO conversations(peer_id, display_name, last_message, last_timestamp, updated_at)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO conversations(peer_id, display_name, last_message, last_timestamp, last_order, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
                 ON CONFLICT(peer_id) DO UPDATE SET
                     display_name=COALESCE(excluded.display_name, conversations.display_name),
                     last_message=CASE 
-                        WHEN excluded.last_timestamp >= COALESCE(conversations.last_timestamp, '') 
+                        WHEN excluded.last_order >= conversations.last_order
                         THEN excluded.last_message 
                         ELSE conversations.last_message 
                     END,
                     updated_at=CASE 
-                        WHEN excluded.last_timestamp >= COALESCE(conversations.last_timestamp, '') 
+                        WHEN excluded.last_order >= conversations.last_order
                         THEN excluded.updated_at 
                         ELSE conversations.updated_at 
                     END,
                     last_timestamp=CASE 
-                        WHEN excluded.last_timestamp >= COALESCE(conversations.last_timestamp, '') 
+                        WHEN excluded.last_order >= conversations.last_order
                         THEN excluded.last_timestamp 
                         ELSE conversations.last_timestamp 
+                    END,
+                    last_order=CASE
+                        WHEN excluded.last_order >= conversations.last_order
+                        THEN excluded.last_order
+                        ELSE conversations.last_order
                     END
-            """, (peer_id, display_name or sender_name or peer_id, content, ts, now))
+            """, (peer_id, display_name or sender_name or peer_id, content, ts, sort_timestamp, now))
 
-    def update_message_state(self, msg_id, state):
+    def update_message_state(self, msg_id, state, retry_after=0):
         with self.lock, self._db() as db:
-            db.execute("UPDATE messages SET state = ? WHERE id = ?", (state, msg_id))
+            next_retry_at = time.time() + retry_after if state == "FAILED" and retry_after > 0 else 0
+            db.execute("UPDATE messages SET state = ?, next_retry_at = ? WHERE id = ?", (state, next_retry_at, msg_id))
+
+    def get_message(self, msg_id):
+        with self.lock, self._db() as db:
+            row = db.execute("SELECT * FROM messages WHERE id = ?", (msg_id,)).fetchone()
+            return dict(row) if row else None
+
+    def claim_outbox(self, msg_id, now=None, force=False):
+        now = time.time() if now is None else now
+        with self.lock, self._db() as db:
+            if force:
+                row = db.execute("""
+                    SELECT id, peer_id, message, attempts, state
+                    FROM messages
+                    WHERE id = ? AND is_outgoing = 1 AND state != 'SENT'
+                """, (msg_id,)).fetchone()
+            else:
+                row = db.execute("""
+                    SELECT id, peer_id, message, attempts, state
+                    FROM messages
+                    WHERE id = ? AND is_outgoing = 1
+                      AND state IN ('PENDING', 'FAILED', 'SENDING')
+                      AND next_retry_at <= ?
+                """, (msg_id, now)).fetchone()
+            if not row:
+                return None
+            db.execute("""
+                UPDATE messages
+                SET state = 'SENDING', attempts = attempts + 1, next_retry_at = ?
+                WHERE id = ?
+            """, (now + 60, msg_id))
+            claimed = dict(row)
+            claimed["attempts"] = int(row["attempts"]) + 1
+            claimed["state"] = "SENDING"
+            return claimed
+
+    def claim_due_outbox(self, now=None, limit=10):
+        now = time.time() if now is None else now
+        with self.lock, self._db() as db:
+            rows = db.execute("""
+                SELECT id, peer_id, message, attempts, state
+                FROM messages
+                WHERE is_outgoing = 1
+                  AND state IN ('PENDING', 'FAILED', 'SENDING')
+                  AND next_retry_at <= ?
+                ORDER BY created_at ASC
+                LIMIT ?
+            """, (now, limit)).fetchall()
+            claimed = []
+            for row in rows:
+                db.execute("""
+                    UPDATE messages
+                    SET state = 'SENDING', attempts = attempts + 1, next_retry_at = ?
+                    WHERE id = ?
+                """, (now + 60, row["id"]))
+                item = dict(row)
+                item["attempts"] = int(row["attempts"]) + 1
+                item["state"] = "SENDING"
+                claimed.append(item)
+            return claimed
 
     def get_history(self, peer_id, limit=100, before=None, offset=0):
         with self.lock, self._db() as db:
             if before is not None:
                 rows = db.execute("""
-                    SELECT id, peer_id, sender_id, sender_name, message, timestamp, is_outgoing, sequence, state, created_at
+                    SELECT id, peer_id, sender_id, sender_name, message, timestamp, is_outgoing, sequence, state, sort_timestamp, created_at
                     FROM messages
-                    WHERE peer_id = ? AND created_at < ?
-                    ORDER BY created_at ASC
+                    WHERE peer_id = ? AND sort_timestamp < ?
+                    ORDER BY sort_timestamp ASC, created_at ASC, id ASC
                     LIMIT ? OFFSET ?
                 """, (peer_id, before, limit, offset)).fetchall()
             else:
                 rows = db.execute("""
-                    SELECT id, peer_id, sender_id, sender_name, message, timestamp, is_outgoing, sequence, state, created_at
+                    SELECT id, peer_id, sender_id, sender_name, message, timestamp, is_outgoing, sequence, state, sort_timestamp, created_at
                     FROM messages
                     WHERE peer_id = ?
-                    ORDER BY created_at ASC
+                    ORDER BY sort_timestamp ASC, created_at ASC, id ASC
                     LIMIT ? OFFSET ?
                 """, (peer_id, limit, offset)).fetchall()
             return [
@@ -1722,6 +1830,7 @@ class LocalChatStore:
                     "isOutgoing": bool(r["is_outgoing"]),
                     "sequence": r["sequence"],
                     "state": r["state"] if "state" in r.keys() else "SENT",
+                    "sortTimestamp": r["sort_timestamp"] if "sort_timestamp" in r.keys() else r["created_at"],
                     "createdAt": r["created_at"],
                 }
                 for r in rows
@@ -1754,7 +1863,15 @@ class LocalUIServer(http.server.ThreadingHTTPServer):
         self.chat_store = LocalChatStore(chat_db_path or os.path.expanduser("~/.a2a/chat.db"))
         self.subscribers = set()
         self.lock = threading.Lock()
+        self.outbox_delivery_lock = threading.Lock()
+        self.outbox_stop = threading.Event()
         self.running = True
+        self.outbox_thread = threading.Thread(target=self._run_outbox_worker, daemon=True)
+        self.outbox_thread.start()
+
+    def server_close(self):
+        self.outbox_stop.set()
+        super().server_close()
 
     def append_message(self, peer_id, msg, sequence=None, display_name=None):
         self.chat_store.save_message(peer_id, msg, sequence=sequence, display_name=display_name)
@@ -1766,13 +1883,53 @@ class LocalUIServer(http.server.ThreadingHTTPServer):
                     pass
 
     def update_message_state(self, peer_id, msg_id, state):
-        self.chat_store.update_message_state(msg_id, state)
+        retry_after = 2 if state == "FAILED" else 0
+        self.chat_store.update_message_state(msg_id, state, retry_after=retry_after)
         with self.lock:
             for q in list(self.subscribers):
                 try:
                     q.put_nowait({"id": msg_id, "peerId": peer_id, "state": state, "type": "state_change"})
                 except Exception:
                     pass
+
+    def deliver_outbox(self, msg_id, force=False):
+        """Deliver one persisted outgoing message without concurrent duplicate sends."""
+        with self.outbox_delivery_lock:
+            claimed = self.chat_store.claim_outbox(msg_id, force=force)
+            if not claimed:
+                current = self.chat_store.get_message(msg_id)
+                return current and current.get("state") == "SENT"
+
+            result = self.hub_client.send_task(claimed["peer_id"], claimed["message"], task_id=claimed["id"])
+            if result and isinstance(result, dict) and result.get("taskId"):
+                self.update_message_state(claimed["peer_id"], claimed["id"], "SENT")
+                return True
+
+            retry_after = min(300, 2 ** min(int(claimed["attempts"]), 8))
+            self.chat_store.update_message_state(claimed["id"], "FAILED", retry_after=retry_after)
+            self._publish_state_change(claimed["peer_id"], claimed["id"], "FAILED")
+            return False
+
+    def _publish_state_change(self, peer_id, msg_id, state):
+        with self.lock:
+            for q in list(self.subscribers):
+                try:
+                    q.put_nowait({"id": msg_id, "peerId": peer_id, "state": state, "type": "state_change"})
+                except Exception:
+                    pass
+
+    def _run_outbox_worker(self):
+        while not self.outbox_stop.wait(2):
+            with self.outbox_delivery_lock:
+                due = self.chat_store.claim_due_outbox(limit=10)
+                for claimed in due:
+                    result = self.hub_client.send_task(claimed["peer_id"], claimed["message"], task_id=claimed["id"])
+                    if result and isinstance(result, dict) and result.get("taskId"):
+                        self.update_message_state(claimed["peer_id"], claimed["id"], "SENT")
+                    else:
+                        retry_after = min(300, 2 ** min(int(claimed["attempts"]), 8))
+                        self.chat_store.update_message_state(claimed["id"], "FAILED", retry_after=retry_after)
+                        self._publish_state_change(claimed["peer_id"], claimed["id"], "FAILED")
 
     def add_subscriber(self, q):
         with self.lock:
@@ -1877,7 +2034,7 @@ class LocalUIHandler(http.server.BaseHTTPRequestHandler):
                 raw_before = qs.get("before", [""])[0]
                 try:
                     before = float(raw_before)
-                    if before < 0:
+                    if before < 0 or not math.isfinite(before):
                         raise ValueError("before must be a non-negative timestamp")
                 except (ValueError, TypeError) as e:
                     body = json.dumps({"error": f"Invalid before cursor: {e}"}, ensure_ascii=False).encode("utf-8")
@@ -1924,7 +2081,26 @@ class LocalUIHandler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path == "/api/send":
-            length = int(self.headers.get("Content-Length", 0))
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+            except (TypeError, ValueError):
+                length = -1
+            if length < 0:
+                body = json.dumps({"error": "Content-Length must be a valid non-negative integer"}).encode("utf-8")
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            if length > MAX_LOCAL_REQUEST_BYTES:
+                body = json.dumps({"error": "request body is too large"}).encode("utf-8")
+                self.send_response(413)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
             raw = self.rfile.read(length).decode("utf-8")
             try:
                 payload = json.loads(raw)
@@ -1954,12 +2130,11 @@ class LocalUIHandler(http.server.BaseHTTPRequestHandler):
                 }
                 self.server.append_message(target_id, out_msg, display_name=target_id)
 
-                # 2. Dispatch to Hub with deterministic taskId & idempotencyKey
-                res = self.server.hub_client.send_task(target_id, msg_text, task_id=task_id)
+                # 2. Dispatch through the serialized local outbox worker.
+                delivered = self.server.deliver_outbox(task_id, force=True)
 
                 # 3. Handle Hub outcome
-                if not res or not isinstance(res, dict) or not res.get("taskId"):
-                    self.server.update_message_state(target_id, task_id, "FAILED")
+                if not delivered:
                     body = json.dumps({
                         "ok": False,
                         "taskId": task_id,
@@ -1973,14 +2148,8 @@ class LocalUIHandler(http.server.BaseHTTPRequestHandler):
                     self.wfile.write(body)
                     return
 
-                # Hub acknowledged/accepted task
-                final_task_id = res.get("taskId") or task_id
-                if final_task_id != task_id:
-                    with self.server.chat_store.lock, self.server.chat_store._db() as db:
-                        db.execute("UPDATE messages SET id = ?, state = 'SENT' WHERE id = ?", (final_task_id, task_id))
-                    task_id = final_task_id
-                else:
-                    self.server.update_message_state(target_id, task_id, "SENT")
+                # Hub acknowledged/accepted task. Keep the local task ID stable
+                # so retries always use the same idempotency key.
                 body = json.dumps({"ok": True, "taskId": task_id, "state": "SENT"}, ensure_ascii=False).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")

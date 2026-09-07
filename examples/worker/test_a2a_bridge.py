@@ -429,6 +429,25 @@ class DurableBridgeTests(unittest.TestCase):
             self.assertEqual(convs2[0]["lastTimestamp"], "2026-09-07T12:05:00Z")
             self.assertEqual(convs2[0]["updatedAt"], updated_at1)
 
+    def test_conversation_summary_compares_absolute_timestamps(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = bridge.LocalChatStore(os.path.join(temp_dir, "test_timezone.db"))
+            store.save_message("peer-A", {
+                "id": "msg-new",
+                "message": "Newer in UTC",
+                "timestamp": "2026-09-07T12:05:00Z",
+                "isOutgoing": False,
+            })
+            # Lexically this appears later (13:00), but +02:00 is 11:00 UTC.
+            store.save_message("peer-A", {
+                "id": "msg-old",
+                "message": "Older with offset",
+                "timestamp": "2026-09-07T13:00:00+02:00",
+                "isOutgoing": False,
+            })
+            conversation = store.get_conversations()[0]
+            self.assertEqual(conversation["lastMessage"], "Newer in UTC")
+
     def test_history_api_validation(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             db_path = os.path.join(temp_dir, "test_api.db")
@@ -469,6 +488,11 @@ class DurableBridgeTests(unittest.TestCase):
                     self.assertEqual(resp.status, 200)
                     data = json.loads(resp.read().decode("utf-8"))
                     self.assertEqual(data["messages"], [])
+
+                for value in ("nan", "inf", "-inf"):
+                    with self.assertRaises(urllib.error.HTTPError) as ctx:
+                        urllib.request.urlopen(f"http://127.0.0.1:{port}/api/history?peer=agent-1&before={value}")
+                    self.assertEqual(ctx.exception.code, 400)
             finally:
                 server.shutdown()
                 server.server_close()
@@ -518,6 +542,39 @@ class DurableBridgeTests(unittest.TestCase):
             finally:
                 server.shutdown()
                 server.server_close()
+
+    def test_retry_markup_does_not_embed_task_id_in_javascript(self):
+        self.assertNotIn("onclick=\"retryMessage('", bridge.CLIENT_HTML)
+        self.assertIn('button.addEventListener("click"', bridge.CLIENT_HTML)
+
+    def test_hub_client_reuses_idempotency_key_for_fixed_task(self):
+        class Response:
+            def __init__(self, body):
+                self.body = body
+                self.status = 202
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return None
+            def read(self):
+                return self.body
+
+        requests = []
+        response_body = json.dumps({"taskId": "out-fixed", "state": "PENDING"}).encode()
+
+        def open_url(request, timeout):
+            requests.append(json.loads(request.data.decode()))
+            return Response(response_body)
+
+        client = bridge.HubClient("https://hub", agent_id="agent-a", token="token")
+        with mock.patch.object(bridge.urllib.request, "urlopen", open_url):
+            client.send_task("agent-b", "hello", task_id="out-fixed")
+            client.send_task("agent-b", "hello", task_id="out-fixed")
+
+        self.assertEqual(len(requests), 2)
+        self.assertEqual(requests[0]["taskId"], "out-fixed")
+        self.assertEqual(requests[0]["idempotencyKey"], "idem-out-fixed")
+        self.assertEqual(requests[0]["idempotencyKey"], requests[1]["idempotencyKey"])
 
 
 def json_item(row):

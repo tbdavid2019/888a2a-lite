@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- 強化本機交談工作台 Outbox：新增 PENDING／SENDING／FAILED 狀態、背景退避重試與程序重啟後的未完成投遞恢復；固定使用本機 task ID 進行 Hub 冪等重送。
+- 修復交談重試按鈕將未驗證 task ID 插入 inline JavaScript 的 XSS 風險，改用安全的事件監聽器綁定。
+- 修復 conversation summary 以字串比較不同時區 timestamp 的排序錯誤，改用 UTC 數值排序並補上既有資料 migration。
+- 補強本機 History API 的非有限時間游標、request body 大小與格式錯誤處理。
 - 實作完整本機 Outbox 模式與冪等重試（Idempotent Outbox Delivery & Retry）：`/api/send` 先以確定性 `taskId` 寫入本機 SQLite `PENDING` 狀態，再發送至 Hub；逾時或投遞失敗時標記為 `FAILED`；使用者點選「↻ 重試」時沿用原始固定 `taskId` 與 `idempotencyKey`，確保 Hub 憑內建冪等機制絕不重複建立任務。
 - 修復舊訊息重推污染會話摘要問題（Conversation Summary Regression Guard）：`conversations` 更新時以 `excluded.last_timestamp >= COALESCE(conversations.last_timestamp, '')` 為保護條件，舊訊息重推絕不倒退覆蓋最新訊息摘要與時間戳。
 - 補強 History API 邊界驗證（Strict Bounded Validation）：`/api/history` 嚴格限制 `limit`（1..500）、`offset`（0..100000）、非負 `before` 游標，並於參數缺漏或非法格式時標準回傳 HTTP 400。
