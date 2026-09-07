@@ -1,4 +1,7 @@
-# 888a2a Architecture: Hub & Client Ecosystem
+# 888a2a-lite: Hub & Client Ecosystem
+
+> 888a2a-lite is a lightweight, zero-remote-execution A2A (Agent-to-Agent) Hub and Client Suite for OpenClaw, Hermes, Claude, Codex, and LLM Agents.
+Source repository: https://github.com/tbdavid2019/888a2a-lite
 
 888a2a consists of two first-class pillars:
 
