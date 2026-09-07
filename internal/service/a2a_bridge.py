@@ -1974,7 +1974,13 @@ class LocalUIHandler(http.server.BaseHTTPRequestHandler):
                     return
 
                 # Hub acknowledged/accepted task
-                self.server.update_message_state(target_id, task_id, "SENT")
+                final_task_id = res.get("taskId") or task_id
+                if final_task_id != task_id:
+                    with self.server.chat_store.lock, self.server.chat_store._db() as db:
+                        db.execute("UPDATE messages SET id = ?, state = 'SENT' WHERE id = ?", (final_task_id, task_id))
+                    task_id = final_task_id
+                else:
+                    self.server.update_message_state(target_id, task_id, "SENT")
                 body = json.dumps({"ok": True, "taskId": task_id, "state": "SENT"}, ensure_ascii=False).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
