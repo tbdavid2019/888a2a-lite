@@ -33,4 +33,4 @@
 
 - [x] 6.1 Update `README.md` and `llms.txt` with the new one-line installer, npm package instructions, and MCP client configuration
 - [x] 6.2 Record changes in `CHANGELOG.md` under today's date
-- [ ] 6.3 Deploy to live hub and verify cross-host single-line installation against remote nodes
+- [x] 6.3 Deploy to live hub and verify cross-host single-line installation against remote nodes
