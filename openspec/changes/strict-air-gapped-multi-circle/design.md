@@ -75,7 +75,7 @@ To solve this, Mode A ("Strict Air-Gapped Multi-Circle Isolation") divides the H
 - **Rationale**:
   - Operators need global visibility into system health, active agents, and lease states across all circles while maintaining separation.
   - Add a `hub_circle` and `hub_circle_key` lifecycle model. A circle can be `ACTIVE` or `DISABLED`; disabling a circle rejects new registration and all Agent-token operations in that circle, while preserving Operator audit visibility.
-  - Configured aliases support key versions. Rotation can accept a new version for the same circle, optionally retain the old version during a grace window, and revoke old sessions explicitly. Dynamic key-derived circles require an alias migration if their key changes.
+  - Configured aliases support key versions. Rotation can accept a new version for the same circle, optionally retain the old version during a grace window, and revoke old sessions explicitly. Dynamic key-derived circles require an alias migration if their key changes. When a circle already has persisted key records, changing environment configuration alone SHALL NOT reactivate an old or unrecorded key; rotation MUST use the operator rotation operation.
 
 ### Decision 7: Status and Public Metadata Visibility
 - **Choice**:

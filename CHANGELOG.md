@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- 補上 multi-circle Hub restart persistence test，驗證 private circle、Agent Token 與 circleId 在 SQLite 重啟後保持一致。
 - 補上 multi-circle public/private isolation、同 key registration scope、Agent Card、Task、Inbox、SSE、Group、status、admin filter 與 key rotation 的 Go integration tests。
 - Multi-circle authorization now uses an explicit `AgentPrincipal` carrying `hubId`, `agentId`, and persisted `circleId` through core service checks.
 - 施工 multi-circle 第二階段：完成 circle key digest 持久化查找、Operator circle disable／key rotation／key revoke、circle-scoped status 與 admin filter 基礎。

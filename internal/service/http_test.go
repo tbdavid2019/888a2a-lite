@@ -707,6 +707,49 @@ func registerRequest(t *testing.T, handler http.Handler, name, key, registration
 	return response
 }
 
+func TestMultiCirclePersistsAcrossHubRestart(t *testing.T) {
+	ctx := context.Background()
+	databasePath := filepath.Join(t.TempDir(), "hub.db")
+	cfg := config.Config{
+		HubID: "public", ListenAddr: ":0", DatabasePath: databasePath,
+		RegistrationEnabled: true, RegistrationTTL: 24 * time.Hour, PeerLease: 90 * time.Second,
+		MaxRegisteredAgents: 10, MaxTasksPerMinute: 20, MaxConcurrentTasks: 4,
+		MaxPayloadBytes: 1 << 20, RegistrationPerMinute: 20,
+		OperatorToken: "operator-fixture", CircleMode: "multi",
+		SharedKeys: "team-a:private-a", CircleDerivationSecret: "stable-hub-secret",
+	}
+	database, err := sqlite.Open(ctx, databasePath)
+	if err != nil {
+		t.Fatalf("sqlite.Open: %v", err)
+	}
+	repository := sqlite.NewRepository(database)
+	service := New(repository, cfg)
+	identity, _, err := service.RegisterWithSharedKey(ctx, hub.AgentDeclaration{
+		DisplayName: "persistent-private", ProviderFamily: "test", TransportID: "http",
+		Capabilities: []string{"text/plain"}, RegistrationIdempotency: "persistent-install",
+	}, "private-a")
+	if err != nil {
+		t.Fatalf("register private agent: %v", err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatalf("close first database: %v", err)
+	}
+
+	database, err = sqlite.Open(ctx, databasePath)
+	if err != nil {
+		t.Fatalf("reopen sqlite: %v", err)
+	}
+	defer func() { _ = database.Close() }()
+	restarted := New(sqlite.NewRepository(database), cfg)
+	agent, err := restarted.AuthenticateAgent(ctx, identity.AgentID, identity.AgentToken)
+	if err != nil {
+		t.Fatalf("authenticate after restart: %v", err)
+	}
+	if agent.CircleID != identity.CircleID || identity.CircleID == "public" {
+		t.Fatalf("circle identity changed after restart: before=%q after=%q", identity.CircleID, agent.CircleID)
+	}
+}
+
 func TestHTTPSSEInboxStream(t *testing.T) {
 	ctx := context.Background()
 	database, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "hub.db"))
