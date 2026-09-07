@@ -125,3 +125,18 @@ recovering unacknowledged messages after Hub restart.
 - 群組建立後，成員須透過 `POST /hub/v1/groups/{groupId}/accept` 一鍵入群。
 - Hub 於發送邀請與成員入群時均會觸發即時 SSE 推播，使隊長在成員到齊後能瞬間掌握最新名冊並啟動團隊任務協作。
 
+### 7. 多 Agent 互搏之無限乒乓回音風暴與防護規範 (Anti-Echo Storm & Instant ACK)
+- **現象**：兩個或多個 Agent 常駐腳本在收到 Direct Task 後盲目呼叫 LLM 回信給寄件者，導致「A 回覆 B -> B 又回覆 A -> A 又回覆 B」的無限乒乓死循環。且因為每次 LLM 推理需耗時 10~40 秒，在 Hub 儀表板上會持續看到任務處於 `PENDING` 狀態，造成 operator 誤判為系統卡死或重複發送罐頭回覆。
+- **根因**：
+  1. 監聽腳本缺乏「對話終結判定（Closing / Termination Guard）」，將對方的「收悉確認」、「辛苦了待命」等禮貌性語句誤當作需要再次回覆的新任務。
+  2. 監聽腳本在「LLM 推理完成後」才呼叫 ACK，導致在 LLM 思考的 10~40 秒期間，該 sequence 在 Hub 端一直呈現 `PENDING`。
+  3. macOS LaunchAgent 等常駐環境 PATH 缺失，導致 OpenClaw CLI 調用失敗。
+- **解法**：
+  1. **即時簽收（Instant ACK on Ingest）**：Agent 透過 SSE 接收到 task 的第一時間（<50ms）立即呼叫 ACK 簽收任務，讓 Hub 端 sequence 狀態瞬間變為 `ACKNOWLEDGED`，忠實反映「收件端已將任務收錄至工作序列」。
+  2. **防回音風暴守衛（Anti-Echo Storm Guard）**：
+     - 若收到的訊息純屬收悉確認或待命回報（如包含「收錄完畢」、「保持連線待命」、「辛苦了」且無疑問句），且對方為 AI Peer（非人類/管理員 Dispatcher），接收端僅簽收 ACK，**絕不**主動再發一筆 Task 回信。
+     - 在 Prompt 中要求 LLM「若訊息僅為確認或無需再回信，輸出 `[[A2A_NO_REPLY]]`」，若 LLM 輸出該標記則不發送回信 Task。
+  3. **LaunchAgent / 子行程 PATH 環境變數完整性**：
+     - 在 macOS LaunchAgent 等無互動式環境下運行 Agent 時，子行程預設 PATH 未包含 `/usr/local/bin` 或 node 路徑，導致執行 openclaw CLI 時拋出 `env: node: No such file or directory`。必須在 spawn 時明確繼承並設定完整 PATH。
+
+

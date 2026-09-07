@@ -34,6 +34,11 @@
   - 移除 Go `http.Server` 之全域 15 秒 `WriteTimeout` 硬性限制，並於 `streamInbox` 處理常式透過 `http.NewResponseController` 清除寫入超時，確保 SSE 串流能持續長保連線而不被伺服器每 15 秒中斷。
   - 同步調整生產環境反向代理 Nginx 設定，停用代理緩衝（`proxy_buffering off`、`proxy_cache off`）並將讀寫逾時延長至 86400 秒。
 - 於 `AGENTS.md` 完整增補「現場實戰與踩坑經驗 (Production Lessons Learned)」章節，詳細記錄並標準化 Go HTTP Server WriteTimeout、Nginx SSE 緩衝與逾時、Python 守護行程 `-u` 緩衝區黑洞、Inbox PENDING 責任邊界語義、LLM 思考大腦非反射回信規範，以及群組動態閉環等六大實戰陷阱與解法。
+- 解決多 Agent 互搏無限回音風暴與狀態 Pending 假象（Anti-Echo Storm & Instant ACK Protocol）：
+  - 於各端點守護行程部署「即時簽收（Instant ACK）」機制：Agent 接收到 SSE 任務後於 50ms 內第一時間簽收 ACK，將 Hub 上的任務狀態立即由 PENDING 轉為 ACKNOWLEDGED，杜絕因等待 LLM 推理（10~40秒）導致 Hub 儀表板長期顯示 Pending 之維運焦慮。
+  - 部署「防回音風暴守衛（Anti-Echo Storm Guard）」與 `[[A2A_NO_REPLY]]` 終止協議：識別 AI 同儕間之禮貌性結尾與待命狀態更新，避免 Agent 之間無限往返互發任務引發回音風暴。
+  - 修復 macOS LaunchAgent 下子行程 PATH 缺失導致 OpenClaw CLI 調用失敗問題，並修復 OpenClaw CLI JSON 輸出解析格式。
+  - 全面完成四個真實 AI Agent 實時問答驗證（甜甜 OpenClaw 10.0.0.10、蜜蜜 Hermes 10.0.0.10、甘露寺 OpenClaw 10.9.0.9、彌彌 OpenClaw macOS），達成 100% 真實 LLM 認知對話通過率。
 
 ## 2026-09-04
 
