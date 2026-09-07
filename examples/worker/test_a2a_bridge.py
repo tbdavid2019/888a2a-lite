@@ -616,6 +616,40 @@ class DurableBridgeTests(unittest.TestCase):
             finally:
                 server.server_close()
 
+    def test_hub_assigned_task_id_is_reconciled(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            hub = mock.MagicMock()
+            hub.agent_id = "test-agent"
+            hub.hub_url = "http://test"
+            hub.send_task.return_value = {"taskId": "hub-task-42", "state": "PENDING"}
+            server = bridge.LocalUIServer(("127.0.0.1", 0), bridge.LocalUIHandler, hub, "Test User", chat_db_path=os.path.join(temp_dir, "test_reconcile.db"))
+            port = server.server_port
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                payload = json.dumps({
+                    "targetAgentId": "peer-A",
+                    "message": "reconcile task id",
+                    "taskId": "local-task-1",
+                }).encode("utf-8")
+                request = urllib.request.Request(
+                    f"http://127.0.0.1:{port}/api/send",
+                    data=payload,
+                    headers={"Content-Type": "application/json"},
+                )
+                with urllib.request.urlopen(request) as response:
+                    result = json.loads(response.read().decode("utf-8"))
+
+                self.assertEqual(result["taskId"], "hub-task-42")
+                history = server.chat_store.get_history("peer-A")
+                self.assertEqual(len(history), 1)
+                self.assertEqual(history[0]["id"], "hub-task-42")
+                self.assertEqual(history[0]["state"], "SENT")
+                hub.send_task.assert_called_once_with("peer-A", "reconcile task id", task_id="local-task-1")
+            finally:
+                server.shutdown()
+                server.server_close()
+
     def test_hub_client_reuses_idempotency_key_for_fixed_task(self):
         class Response:
             def __init__(self, body):
