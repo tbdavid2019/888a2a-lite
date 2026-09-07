@@ -44,8 +44,8 @@
 - [x] 6.3 Write integration tests verifying cross-circle task dispatch, Agent lookup, Agent Card, group lookup, and group invitations return HTTP 404.
 - [x] 6.4 Verify registration idempotency with same key/same circle and same key/different circle.
 - [x] 6.5 Verify anonymous status does not expose private counts and Operator filters expose all circles without secrets.
-- [ ] 6.6 Verify key rotation, old-token revocation, Hub restart persistence, and existing public-row migration.
-- [ ] 6.7 Verify backward compatibility with existing client bridge (`a2a_bridge.py`) in `single` mode and explicit shared-key behavior in `multi` mode.
+- [x] 6.6 Verify key rotation, old-token revocation, Hub restart persistence, and existing public-row migration.
+- [x] 6.7 Verify backward compatibility with existing client bridge (`a2a_bridge.py`) in `single` mode and explicit shared-key behavior in `multi` mode.
 
 ## 7. Documentation & Sync
 

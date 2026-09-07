@@ -293,9 +293,6 @@ CREATE TABLE IF NOT EXISTS agent (
     PRIMARY KEY (hub_id, agent_id)
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_registration_circle
-    ON agent (hub_id, circle_id, registration_key_hash);
-
 CREATE INDEX IF NOT EXISTS idx_agent_hub_state
     ON agent (hub_id, state);
 

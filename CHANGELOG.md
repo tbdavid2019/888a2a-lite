@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- 完成 `a2a_bridge.py` 的 single／multi circle 相容性驗證：保留 legacy single mode，multi mode 可用 share key 註冊並以 Agent Token 使用普通 API。
+- 補上 legacy SQLite Agent registration constraint migration test，確認既有資料進入 `public` 並允許相同 registration key 在不同 circle 建立獨立身份。
 - 補上 multi-circle Hub restart persistence test，驗證 private circle、Agent Token 與 circleId 在 SQLite 重啟後保持一致。
 - 補上 multi-circle public/private isolation、同 key registration scope、Agent Card、Task、Inbox、SSE、Group、status、admin filter 與 key rotation 的 Go integration tests。
 - Multi-circle authorization now uses an explicit `AgentPrincipal` carrying `hubId`, `agentId`, and persisted `circleId` through core service checks.
