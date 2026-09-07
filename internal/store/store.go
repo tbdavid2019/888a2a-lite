@@ -40,6 +40,7 @@ type InboxStore interface {
 	FindByIdempotencyKey(context.Context, hub.IdempotencyKey) (hub.InboxItem, bool, error)
 	Poll(context.Context, string, uint64, int) ([]hub.InboxItem, error)
 	Acknowledge(context.Context, string, uint64, time.Time) error
+	AcknowledgeTask(context.Context, string, string, time.Time) error
 	CancelTask(context.Context, string, string, time.Time) error
 	PendingCount(context.Context, string) (int, error)
 	ListDirectMessagesAdmin(context.Context, uint64, int, string) ([]hub.InboxItem, error)

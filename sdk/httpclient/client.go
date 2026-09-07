@@ -242,6 +242,18 @@ func (client *Client) AcceptGroupInvitation(ctx context.Context, invitationID ui
 	return member, nil
 }
 
+func (client *Client) AcceptGroupInvitationByGroup(ctx context.Context, groupID string) (hub.GroupMember, error) {
+	body, err := client.request(ctx, http.MethodPost, "/hub/v1/groups/"+url.PathEscape(groupID)+"/accept", nil, true)
+	if err != nil {
+		return hub.GroupMember{}, err
+	}
+	var member hub.GroupMember
+	if err := json.Unmarshal(body, &member); err != nil {
+		return hub.GroupMember{}, fmt.Errorf("decode membership response: %w", err)
+	}
+	return member, nil
+}
+
 func (client *Client) LeaveGroup(ctx context.Context, groupID string) error {
 	_, err := client.request(ctx, http.MethodPost, "/hub/v1/groups/"+url.PathEscape(groupID)+"/leave", nil, true)
 	return err

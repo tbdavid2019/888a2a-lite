@@ -78,6 +78,7 @@ func (server *HTTPServer) Handler() http.Handler {
 	mux.HandleFunc("POST /hub/v1/groups", server.createGroup)
 	mux.HandleFunc("GET /hub/v1/groups/invitations", server.listGroupInvitations)
 	mux.HandleFunc("POST /hub/v1/groups/invitations/{invitationId}/accept", server.acceptGroupInvitation)
+	mux.HandleFunc("POST /hub/v1/groups/{groupId}/accept", server.acceptGroupInvitationByGroup)
 	mux.HandleFunc("GET /hub/v1/groups/{groupId}", server.getGroup)
 	mux.HandleFunc("POST /hub/v1/groups/{groupId}/invitations", server.inviteGroupMember)
 	mux.HandleFunc("POST /hub/v1/groups/{groupId}/leave", server.leaveGroup)
@@ -719,6 +720,22 @@ func (server *HTTPServer) acceptGroupInvitation(w http.ResponseWriter, r *http.R
 		return
 	}
 	member, err := server.service.AcceptInvitation(r.Context(), agentID, token, invitationID)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, member)
+}
+
+func (server *HTTPServer) acceptGroupInvitationByGroup(w http.ResponseWriter, r *http.Request) {
+	agentID, token, ok := server.agentCredentials(w, r, "")
+	if !ok {
+		return
+	}
+	if !decodeEmptyOrJSON(w, r, server.maxBodyBytes) {
+		return
+	}
+	member, err := server.service.AcceptInvitationByGroup(r.Context(), agentID, token, r.PathValue("groupId"))
 	if err != nil {
 		writeServiceError(w, err)
 		return

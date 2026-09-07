@@ -280,17 +280,23 @@ func runGroupAccept(args []string) error {
 	flags := flag.NewFlagSet("group-accept", flag.ContinueOnError)
 	credentialPath := flags.String("credential-file", "", "credential file path")
 	invitationID := flags.Uint64("invitation", 0, "invitation ID")
+	groupID := flags.String("group", "", "group ID to accept pending invitation for")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
-	if *invitationID == 0 {
-		return errors.New("--invitation is required and must be positive")
+	if *invitationID == 0 && *groupID == "" {
+		return errors.New("either --invitation or --group is required")
 	}
 	client, err := loadClient(*credentialPath)
 	if err != nil {
 		return err
 	}
-	member, err := client.AcceptGroupInvitation(context.Background(), *invitationID)
+	var member hub.GroupMember
+	if *groupID != "" {
+		member, err = client.AcceptGroupInvitationByGroup(context.Background(), *groupID)
+	} else {
+		member, err = client.AcceptGroupInvitation(context.Background(), *invitationID)
+	}
 	if err != nil {
 		return err
 	}

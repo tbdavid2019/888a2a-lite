@@ -574,6 +574,14 @@ WHERE sequence = ? AND state = 'PENDING'`, formatTime(acknowledgedAt), sequence)
 	return nil
 }
 
+func (repository *Repository) AcknowledgeTask(ctx context.Context, targetAgentID, taskID string, acknowledgedAt time.Time) error {
+	_, err := repository.executor().ExecContext(ctx, `
+UPDATE inbox_item SET state = 'ACKNOWLEDGED', acknowledged_at = ?
+WHERE target_agent_id = ? AND task_id = ? AND state = 'PENDING'`,
+		formatTime(acknowledgedAt), targetAgentID, taskID)
+	return err
+}
+
 func (repository *Repository) CancelTask(ctx context.Context, taskID, reason string, canceledAt time.Time) error {
 	result, err := repository.executor().ExecContext(ctx, `
 UPDATE inbox_item SET state = 'CANCELED', canceled_at = ?, cancel_reason = ?

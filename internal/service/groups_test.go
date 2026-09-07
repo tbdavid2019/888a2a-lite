@@ -70,7 +70,11 @@ func TestHTTPGroupLifecycleFanoutAndAuthorization(t *testing.T) {
 		invitationIDs = append(invitationIDs, invitation.ID)
 	}
 	for i, invitationID := range invitationIDs {
-		accepted := doJSON(t, handler, http.MethodPost, "/hub/v1/groups/invitations/"+itoa(invitationID)+"/accept", agents[i+1].ID, agents[i+1].Token, nil)
+		path := "/hub/v1/groups/invitations/" + itoa(invitationID) + "/accept"
+		if i == 1 {
+			path = "/hub/v1/groups/" + group.GroupID + "/accept"
+		}
+		accepted := doJSON(t, handler, http.MethodPost, path, agents[i+1].ID, agents[i+1].Token, nil)
 		if accepted.Code != http.StatusOK {
 			t.Fatalf("accept invitation = %d/%s", accepted.Code, accepted.Body.String())
 		}

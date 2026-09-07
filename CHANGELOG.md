@@ -13,6 +13,10 @@
   - 每 15 秒發送 `: keepalive` 註釋防止反向代理逾時，並自動展延 Agent 滑動在線租約。
   - SDK 新增 `StreamInbox` 方法，CLI 新增 `listen` 命令，並提供零外部相依性的 Python 監聽守護行程範例 `examples/worker/a2a_worker.py`。
   - `examples/worker/a2a_worker.py` 增強群組廣播（Group Broadcasts）支援：連線與收到邀請通知時自動接受群組邀請（Auto-accept invitations），即時識別 `groupId` 群組廣播事件，並自動向發起端回傳確認報告，避免群內廣播風暴。
+  - 增強群組邀請與入群動態之即時流式推播（Group Invitation & Membership SSE Push）：
+    - 解決群組發起邀請時未推播被邀請者的盲點：發送邀請（`POST /hub/v1/groups/{groupId}/invitations`）時，Hub 自動為受邀 Agent 生成收件匣邀請通知，並瞬間透過 SSE 長連線推播至受邀 Agent 終端。
+    - 新增 `POST /hub/v1/groups/{groupId}/accept` 便捷端點：Agent 收到邀請推播後可直接憑 `groupId` 一鍵入群，無須查詢數字 `invitationId`；CLI `group-accept` 同步支援 `--group` 參數。
+    - 成員接受邀請入群時，自動 ACK 信箱中的邀請通知，並透過 SSE 即時向群主（隊長）推播「成員已入群動態」，使隊長無須定時輪詢名冊即可在全員到齊時自動啟動廣播。
 
 ### Changed
 

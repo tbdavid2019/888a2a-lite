@@ -108,6 +108,28 @@ func (service *Service) InviteMember(ctx context.Context, agentID, token, groupI
 	})
 	if err == nil {
 		service.audit(ctx, hub.Event{Type: hub.EventGroupInvitationCreated, ActorAgentID: agentID, TargetAgentID: invitee.AgentID, Details: map[string]any{"groupId": groupID, "invitationId": invitation.ID}})
+
+		// Push group invitation to invitee's inbox and real-time SSE stream
+		inviteMsg := fmt.Sprintf("[群組邀請] Agent %s 邀請你加入群組「%s」(群組ID: %s, 邀請序號: %d)。若要接受邀請，請發送 POST /hub/v1/groups/invitations/%d/accept（或呼叫 POST /hub/v1/groups/%s/accept）確認加入。",
+			agentID, group.Name, groupID, invitation.ID, invitation.ID, groupID)
+		inboxItem := hub.InboxItem{
+			HubID:            service.config.HubID,
+			TargetAgentID:    invitee.AgentID,
+			RequesterAgentID: agentID,
+			TaskID:           fmt.Sprintf("invite-%s-%d", groupID, invitation.ID),
+			ContextID:        fmt.Sprintf("group-invite-%s", groupID),
+			IdempotencyKey:   fmt.Sprintf("idem-invite-%s-%d", groupID, invitation.ID),
+			Message:          inviteMsg,
+			GroupID:          groupID,
+			Trust:            "UNTRUSTED_DATA",
+			State:            hub.DeliveryStatePending,
+			CreatedAt:        now,
+		}
+		if stored, _, enqueueErr := service.store.Inbox().Enqueue(ctx, inboxItem); enqueueErr == nil {
+			if service.broker != nil {
+				service.broker.Publish(stored)
+			}
+		}
 	}
 	return invitation, err
 }
@@ -126,8 +148,47 @@ func (service *Service) AcceptInvitation(ctx context.Context, agentID, token str
 	member, err := service.store.Groups().AcceptInvitation(ctx, invitationID, agentID, service.now().UTC())
 	if err == nil {
 		service.audit(ctx, hub.Event{Type: hub.EventGroupInvitationAccepted, ActorAgentID: agentID, Details: map[string]any{"groupId": member.GroupID, "invitationId": invitationID}})
+
+		now := service.now().UTC()
+		// Automatically acknowledge the invitation task in the inbox
+		taskID := fmt.Sprintf("invite-%s-%d", member.GroupID, invitationID)
+		_ = service.store.Inbox().AcknowledgeTask(ctx, agentID, taskID, now)
+
+		// Push member joined notification to group owner via SSE
+		if group, gErr := service.store.Groups().FindGroup(ctx, member.GroupID); gErr == nil && group.OwnerAgentID != agentID {
+			joinMsg := fmt.Sprintf("[群組動態] Agent %s 已接受邀請，正式加入群組「%s」(群組ID: %s)！", agentID, group.Name, member.GroupID)
+			ownerNotice := hub.InboxItem{
+				HubID:            service.config.HubID,
+				TargetAgentID:    group.OwnerAgentID,
+				RequesterAgentID: agentID,
+				TaskID:           fmt.Sprintf("member-joined-%s-%s-%d", member.GroupID, agentID, now.Unix()),
+				ContextID:        fmt.Sprintf("group-roster-%s", member.GroupID),
+				IdempotencyKey:   fmt.Sprintf("idem-joined-%s-%s-%d", member.GroupID, agentID, now.Unix()),
+				Message:          joinMsg,
+				GroupID:          member.GroupID,
+				Trust:            "UNTRUSTED_DATA",
+				State:            hub.DeliveryStatePending,
+				CreatedAt:        now,
+			}
+			if stored, _, enqueueErr := service.store.Inbox().Enqueue(ctx, ownerNotice); enqueueErr == nil {
+				if service.broker != nil {
+					service.broker.Publish(stored)
+				}
+			}
+		}
 	}
 	return member, err
+}
+
+func (service *Service) AcceptInvitationByGroup(ctx context.Context, agentID, token, groupID string) (hub.GroupMember, error) {
+	if _, err := service.AuthenticateAgent(ctx, agentID, token); err != nil {
+		return hub.GroupMember{}, err
+	}
+	invitation, err := service.store.Groups().FindPendingInvitation(ctx, groupID, agentID)
+	if err != nil {
+		return hub.GroupMember{}, err
+	}
+	return service.AcceptInvitation(ctx, agentID, token, invitation.ID)
 }
 
 func (service *Service) LeaveGroup(ctx context.Context, agentID, token, groupID string) error {
