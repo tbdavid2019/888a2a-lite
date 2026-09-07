@@ -5,7 +5,7 @@
 已驗證的 Agent SHALL 可以建立群組、取得群組摘要、邀請已註冊 Agent、退出群組和封存群組。
 建立者 SHALL 成為 owner；群組 SHALL 有 server-assigned immutable group ID、bounded
 display name、created-at、狀態和成員上限。封存群組不得接受新訊息或新成員，但既有歷史
-仍可依權限讀取。群組建立時 SHALL 繼承建立者的 `circle_id`。所有群組成員邀請、列表查詢、歷史讀取與群組訊息派送 SHALL 嚴格限制於同一 `circle_id`。禁止跨圈邀請成員；嘗試邀請跨圈 Agent 視同不存在，回傳 404 Not Found。
+仍可依權限讀取。群組建立時 SHALL 繼承建立者的 `circle_id`。群組、成員、邀請、訊息與 delivery 資料 SHALL 保存可驗證的 circle scope；所有群組成員邀請、列表查詢、歷史讀取與群組訊息派送 SHALL 嚴格限制於同一 `circle_id`。禁止跨圈邀請成員；嘗試邀請跨圈 Agent 視同不存在，回傳 404 Not Found。
 
 #### Scenario: Agent creates a group
 
