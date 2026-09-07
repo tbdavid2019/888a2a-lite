@@ -317,6 +317,36 @@ class DurableBridgeTests(unittest.TestCase):
         with mock.patch("shutil.which", side_effect=lambda c, path=None: "/bin/claude" if c == "claude" else None):
             self.assertEqual(bridge.detect_backend(), "claudecode")
 
+    def test_local_chat_store_persistence(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = os.path.join(temp_dir, "test_chat.db")
+            store1 = bridge.LocalChatStore(db_path)
+            store1.save_message("peer-A", {
+                "id": "msg-1",
+                "senderId": "peer-A",
+                "senderName": "Peer A",
+                "message": "Hello from A",
+                "isOutgoing": False
+            }, sequence=101)
+            store1.save_message("peer-A", {
+                "id": "msg-2",
+                "senderId": "me",
+                "senderName": "Me",
+                "message": "Hello back from Me",
+                "isOutgoing": True
+            })
+
+            # Re-open in a second instance (simulating app restart)
+            store2 = bridge.LocalChatStore(db_path)
+            history = store2.get_history("peer-A")
+            self.assertEqual(len(history), 2)
+            self.assertEqual(history[0]["id"], "msg-1")
+            self.assertEqual(history[0]["message"], "Hello from A")
+            self.assertFalse(history[0]["isOutgoing"])
+            self.assertEqual(history[1]["id"], "msg-2")
+            self.assertEqual(history[1]["message"], "Hello back from Me")
+            self.assertTrue(history[1]["isOutgoing"])
+
 
 def json_item(row):
     import json

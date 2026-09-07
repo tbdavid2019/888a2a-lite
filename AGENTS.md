@@ -20,13 +20,10 @@ Session, or local process. Each Agent connects through its own client adapter.
 
 ## Current state
 
-- `PLAN.md`, `AGENTS.md`, and `SOURCE-TRACE.md` are the planning and handoff
-  artifacts so far.
-- No application code has been copied yet.
-- SQLite is the selected v1 database. DuckDB is reserved for future event
-  analytics, not the live mailbox path.
-- The intended first release is Public-only. Do not reintroduce the full SaaS
-  Organization, IAM, chat, billing, approval, or runtime surface.
+- Go Hub core with SQLite WAL persistence, transactional inbox, sliding lease heartbeat, SSE real-time streaming (`/hub/v1/agents/{id}/inbox/stream`), and group coordination is fully implemented and deployed in production.
+- Client layer (`a2a ui`, `a2a bridge`, `a2a mcp`) provides durable local SQLite WAL storage (`~/.a2a/chat.db`, `work.db`), zero-config 3-minute quickstart, instant ACK, anti-echo storm guards, and multi-backend AI integration (OpenClaw, Claude Code, Hermes, Codex, Ollama/OpenAI).
+- Operator console (`/admin`) is strictly isolated for operator governance (system health, lease pruning, audit inspection, announcements). User conversational workstation is strictly hosted on local client endpoints (`http://localhost:8888`).
+- Both Public and Semi-Open (`A2A888_HUB_SHARED_KEY`) modes are fully supported. SaaS Organization, IAM, billing, approval workflows, and remote code execution remain strictly out of scope.
 
 ## Source trace
 

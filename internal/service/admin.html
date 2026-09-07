@@ -61,23 +61,6 @@
     .meta-sub { font-size:12px; color:var(--muted); }
     .filter-bar { display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end; }
     .filter-item { flex:1 1 180px; }
-    .chat-container { display:flex; gap:16px; min-height:540px; margin-top:16px; }
-    .chat-sidebar { flex:0 0 280px; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; display:flex; flex-direction:column; gap:12px; }
-    .chat-agent-list { display:flex; flex-direction:column; gap:8px; overflow-y:auto; max-height:460px; }
-    .chat-agent-card { padding:10px 12px; border:1px solid var(--line); border-radius:8px; cursor:pointer; background:var(--paper); transition:all .15s; }
-    .chat-agent-card:hover { border-color:var(--accent); }
-    .chat-agent-card.active { border-color:var(--accent); background:#eef5fc; box-shadow:0 1px 4px rgba(26,115,232,.15); }
-    .chat-agent-card .name { font-weight:700; font-size:14px; display:flex; justify-content:space-between; align-items:center; }
-    .chat-agent-card .id { font-size:11px; color:var(--muted); font-family:ui-monospace,monospace; margin-top:2px; }
-    .chat-main { flex:1 1 auto; display:flex; flex-direction:column; background:var(--panel); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
-    .chat-stream { flex:1 1 380px; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:12px; background:#f8fafc; }
-    .chat-bubble { max-width:80%; padding:10px 14px; border-radius:10px; font-size:14px; line-height:1.5; word-break:break-word; }
-    .chat-bubble.out { align-self:flex-end; background:#1a73e8; color:#fff; border-bottom-right-radius:2px; }
-    .chat-bubble.in { align-self:flex-start; background:#fff; border:1px solid var(--line); color:var(--ink); border-bottom-left-radius:2px; box-shadow:0 1px 3px rgba(0,0,0,.05); }
-    .chat-bubble .meta { font-size:11px; opacity:.8; margin-top:4px; display:flex; justify-content:space-between; gap:8px; }
-    .chat-input-bar { display:flex; gap:10px; padding:14px; background:var(--panel); border-top:1px solid var(--line); }
-    .chat-input-bar textarea { flex:1 1 auto; height:52px; padding:10px; border:1px solid var(--line); border-radius:8px; resize:none; font-family:inherit; font-size:14px; }
-    .chat-input-bar button { padding:0 20px; font-weight:700; }
   </style>
 </head>
 <body>
@@ -97,7 +80,6 @@
     <button id="tab-announcements" class="tab active" type="button">公告管理</button>
     <button id="tab-messages" class="tab" type="button">A2A 訊息監控</button>
     <button id="tab-agents" class="tab" type="button">Agent 管理與在線監控</button>
-    <button id="tab-chat" class="tab" type="button">線上對話 (Interactive Chat)</button>
   </nav>
 
   <div id="status" class="status" role="status" aria-live="polite"></div>
@@ -268,33 +250,6 @@
           </tbody>
         </table>
       </div>
-  <!-- 分頁 4: 線上對話 (Interactive Chat) -->
-  <div id="view-chat" class="view">
-    <section class="panel">
-      <div class="actions" style="justify-content:space-between">
-        <h2>線上對話與任務測試 (Interactive Chat)</h2>
-        <span class="meta-sub">直接向在線 Agent 發送指令或問題，即時檢視回信狀態</span>
-      </div>
-      <div class="chat-container">
-        <div class="chat-sidebar">
-          <div style="font-weight:700;font-size:13px;color:var(--muted);text-transform:uppercase">選擇對話 Agent</div>
-          <div id="chat-agent-list" class="chat-agent-list">
-            <div class="empty">請先輸入 Operator Token 並載入</div>
-          </div>
-        </div>
-        <div class="chat-main">
-          <div id="chat-header" style="padding:12px 16px;border-bottom:1px solid var(--line);background:var(--paper);font-weight:700">
-            請從左側選擇一個 Agent 開始對話
-          </div>
-          <div id="chat-stream" class="chat-stream">
-            <div class="empty" style="margin:auto">尚無對話記錄。從左側選取 Agent 並在下方發送任務。</div>
-          </div>
-          <form id="chat-form" class="chat-input-bar">
-            <textarea id="chat-input" placeholder="輸入任務指令或對話內容... (按 Enter 發送，Shift+Enter 換行)" disabled></textarea>
-            <button id="chat-send" type="submit" disabled>發送任務</button>
-          </form>
-        </div>
-      </div>
     </section>
   </div>
 </main>
@@ -328,25 +283,20 @@
     $("tab-announcements").className = `tab ${tabName === "announcements" ? "active" : ""}`;
     $("tab-messages").className = `tab ${tabName === "messages" ? "active" : ""}`;
     $("tab-agents").className = `tab ${tabName === "agents" ? "active" : ""}`;
-    $("tab-chat").className = `tab ${tabName === "chat" ? "active" : ""}`;
     $("view-announcements").className = `view ${tabName === "announcements" ? "active" : ""}`;
     $("view-messages").className = `view ${tabName === "messages" ? "active" : ""}`;
     $("view-agents").className = `view ${tabName === "agents" ? "active" : ""}`;
-    $("view-chat").className = `view ${tabName === "chat" ? "active" : ""}`;
     if (operatorToken) {
       if (tabName === "messages") {
         loadMessages().catch((e) => status(e.message, "error"));
       } else if (tabName === "agents") {
         loadAgents().catch((e) => status(e.message, "error"));
-      } else if (tabName === "chat") {
-        loadChatAgents().catch((e) => status(e.message, "error"));
       }
     }
   };
   $("tab-announcements").addEventListener("click", () => switchTab("announcements"));
   $("tab-messages").addEventListener("click", () => switchTab("messages"));
   $("tab-agents").addEventListener("click", () => switchTab("agents"));
-  $("tab-chat").addEventListener("click", () => switchTab("chat"));
 
   const setForm = (announcement, sourceId = null) => {
     editingId = announcement?.id || null;
@@ -600,9 +550,6 @@
       } else if (activeTab === "messages") {
         await loadMessages();
         status("已載入 A2A 訊息。", "success");
-      } else if (activeTab === "chat") {
-        await loadChatAgents();
-        status("已載入在線對話 Agent 清單。", "success");
       } else {
         await loadAgents();
         status("已載入 Agent 清單。", "success");
@@ -611,114 +558,6 @@
       status(error.message, "error");
     }
   });
-
-  // Chat Interactive Functions
-  let selectedChatAgent = null;
-  let chatPollTimer = null;
-
-  const loadChatAgents = async () => {
-    const data = await api("/hub/v1/admin/agents");
-    const agents = data.agents || [];
-    const list = $("chat-agent-list");
-    list.replaceChildren();
-    if (!agents.length) {
-      list.innerHTML = `<div class="empty">目前尚無已註冊的 Agent</div>`;
-      return;
-    }
-    agents.forEach((ag) => {
-      const card = document.createElement("div");
-      card.className = `chat-agent-card ${selectedChatAgent?.agentId === ag.agentId ? "active" : ""}`;
-      card.innerHTML = `
-        <div class="name">
-          <span>${escapeHtml(ag.displayName || ag.agentId)}</span>
-          <span class="badge ${ag.state}">${ag.state}</span>
-        </div>
-        <div class="id">${ag.agentId} · ${ag.providerFamily || "generic"}</div>
-      `;
-      card.addEventListener("click", () => selectChatAgent(ag));
-      list.appendChild(card);
-    });
-  };
-
-  const selectChatAgent = (agent) => {
-    selectedChatAgent = agent;
-    $("chat-header").innerHTML = `對話對象：<strong>${escapeHtml(agent.displayName || agent.agentId)}</strong> <span class="badge ${agent.state}">${agent.state}</span> <span style="font-size:12px;color:var(--muted)">(${agent.agentId})</span>`;
-    $("chat-input").disabled = false;
-    $("chat-send").disabled = false;
-    $("chat-input").focus();
-    loadChatAgents();
-    loadChatMessages();
-    if (chatPollTimer) clearInterval(chatPollTimer);
-    chatPollTimer = setInterval(() => {
-      if (activeTab === "chat" && selectedChatAgent) {
-        loadChatMessages(true);
-      }
-    }, 2000);
-  };
-
-  const loadChatMessages = async (isBackground = false) => {
-    if (!selectedChatAgent) return;
-    try {
-      const data = await api(`/hub/v1/admin/messages?agentId=${encodeURIComponent(selectedChatAgent.agentId)}&limit=50`);
-      const messages = (data.messages || []).slice().reverse();
-      const stream = $("chat-stream");
-      if (!messages.length) {
-        stream.innerHTML = `<div class="empty" style="margin:auto">尚無與 ${escapeHtml(selectedChatAgent.displayName)} 的對話記錄。在下方發送任務開始對話！</div>`;
-        return;
-      }
-      stream.replaceChildren();
-      messages.forEach((m) => {
-        const isOutgoing = (m.requesterAgentId === "operator" || m.requesterAgentId !== selectedChatAgent.agentId);
-        const bubble = document.createElement("div");
-        bubble.className = `chat-bubble ${isOutgoing ? "out" : "in"}`;
-        bubble.innerHTML = `
-          <div>${escapeHtml(m.message)}</div>
-          <div class="meta">
-            <span>${isOutgoing ? "我 (Operator)" : escapeHtml(selectedChatAgent.displayName || m.requesterAgentId)} · ${dateText(m.createdAt)}</span>
-            <span class="badge ${m.state}">${m.state}</span>
-          </div>
-        `;
-        stream.appendChild(bubble);
-      });
-      if (!isBackground) {
-        stream.scrollTop = stream.scrollHeight;
-      }
-    } catch (e) {
-      if (!isBackground) status(e.message, "error");
-    }
-  };
-
-  $("chat-form").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const text = $("chat-input").value.trim();
-    if (!text || !selectedChatAgent) return;
-    $("chat-send").disabled = true;
-    try {
-      await api("/hub/v1/admin/tasks/dispatch", {
-        method: "POST",
-        body: JSON.stringify({
-          targetAgentId: selectedChatAgent.agentId,
-          message: text
-        })
-      });
-      $("chat-input").value = "";
-      await loadChatMessages();
-      $("chat-stream").scrollTop = $("chat-stream").scrollHeight;
-    } catch (err) {
-      status("發送任務失敗: " + err.message, "error");
-    } finally {
-      $("chat-send").disabled = false;
-    }
-  });
-
-  $("chat-input").addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      $("chat-form").dispatchEvent(new Event("submit"));
-    }
-  });
-
-  $("btn-query-messages").addEventListener("click", async () => {
     try {
       await loadMessages();
       status("已更新 A2A 訊息清單。", "success");
@@ -755,9 +594,7 @@
   $("saveDraft").addEventListener("click", async () => { try { await api("/hub/v1/admin/announcements", { method: "POST", body: JSON.stringify({ ...input(), status: "DRAFT" }) }); setForm(null); status("草稿已儲存。", "success"); await loadAnnouncements(); } catch (error) { status(error.message, "error"); } });
   $("editor").addEventListener("submit", async (event) => { event.preventDefault(); try { const body = input(); if (editingId) { await api(`/hub/v1/admin/announcements/${editingId}`, { method: "PATCH", body: JSON.stringify(body) }); status("草稿已更新。", "success"); } else if (revisionSourceId) { await api(`/hub/v1/admin/announcements/${revisionSourceId}/revision`, { method: "POST", body: JSON.stringify(body) }); status("revision 草稿已建立。", "success"); } else { await api("/hub/v1/admin/announcements", { method: "POST", body: JSON.stringify(body) }); status("公告已發布。", "success"); } setForm(null); await loadAnnouncements(); } catch (error) { status(error.message, "error"); } });
 
-  if (window.location.pathname.includes("/admin/chat") || window.location.hash === "#chat") {
-    switchTab("chat");
-  } else if (window.location.pathname.includes("/admin/agents") || window.location.hash === "#agents") {
+  if (window.location.pathname.includes("/admin/agents") || window.location.hash === "#agents") {
     switchTab("agents");
   } else if (window.location.pathname.includes("/admin/messages") || window.location.hash === "#messages") {
     switchTab("messages");

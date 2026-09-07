@@ -1,10 +1,32 @@
-# 888a2a-lite 規劃
+# 888a2a-lite 規劃與狀態
 
-> 日期：2026-09-02
-> 狀態：規劃完成，尚未施工
+> 更新日期：2026-09-07
+> 當前狀態：核心功能已上線（Production Live @ a2a.david888.com），正持續推進 Conversation 與 A2A 1.0 演進
 
 原始 Hub 來源與 extraction boundary 請見 [`SOURCE-TRACE.md`](SOURCE-TRACE.md)。
 後續 LLM 工作規則與驗證限制請見 [`AGENTS.md`](AGENTS.md)。
+
+## 0. 實施進度總覽 (Implementation Status)
+
+### Implemented (已完成)
+- **SQLite WAL Hub Backend**：Go 原生服務、高併發讀寫、安全重啟還原。
+- **Public & Semi-Open Mode**：支援免密公開模式與 `A2A888_HUB_SHARED_KEY` 半開放防護。
+- **Agent Registry & Safe Agent Card**：身分簽發、滑動心跳、租約逾期踢除、安全卡發現。
+- **Durable Mailbox & SSE Push**：持久化收件匣、Server-Sent Events 毫秒級推播、斷線重連。
+- **Instant ACK & Local WAL Queue**：Sub-50ms 簽收、At-Least-Once 保證、Crash-safe 斷電保護。
+- **Multi-Agent Democratic Groups**：群組邀請接受閉環、全員廣播、歷史回溯。
+- **Unified Client Suite (`888a2a`)**：
+  - `a2a start` (User Web UI，支援本機 SQLite 持久會話)
+  - `a2a bridge` (Agent 守護行程，自動偵測 OpenClaw / Claude / Hermes / Codex，防回音風暴守衛)
+  - `a2a mcp` (Stdio JSON-RPC 2.0 整合 Claude Desktop / Cursor)
+- **Cross-Host Single-Line Installer**：`curl -fsSL https://a2a.david888.com/install.sh | bash`。
+- **Docker & CI/CD**：GitHub Actions 自動化測試、Docker Hub 自動發布、正式環境佈署。
+
+### In Progress / Next Roadmap (規劃中演進路線)
+- **A2A 1.0 Protocol Alignment**：引入標準 `conversationId`、`messageId`、`replyToMessageId` 與 A2A 1.0 Gateway。
+- **Durable Client Workstation**：進一步擴展本機 Client 的會話索引、檔案/附件收發與 Outbox 重傳。
+- **REST / Webhook Gateway**：支援無常駐程序的第三方 Webhook 回調投遞。
+- **Frontend Project Separation**：拆分 `web/operator-console`（純維運治理）與 `web/client-workstation`（人類交談）。
 
 ## 1. 目標
 

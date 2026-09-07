@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- 徹底移除 Hub 維運後台（`internal/service/admin.html`）中呼叫未實作 `POST /hub/v1/admin/tasks/dispatch` 端點之交談分頁與未閉合 HTML 標籤，修復版面錯位並明確界定 `/admin` 專注於 Operator 治理（系統健康、租約修剪、審計日誌與公告廣播）。
+- 修復 `a2a ui`（本機交談工作台）重啟後對話歷史遺失問題：以 SQLite WAL 實作 `LocalChatStore`（`~/.a2a/chat.db`），落實「先寫入本機持久化資料庫、再向 Hub 發送 ACK」之安全佇列語義，確保斷電或重啟後會話紀錄完整保留。
+- 同步修正 `PLAN.md` 與 `AGENTS.md` 之陳舊狀態說明，明確標記已交付之架構柱石與生產現狀，消弭開發文檔與生產代碼脫節。
 - 修正通用 Bridge 收到事件後先 ACK、尚未可靠保存即推理所造成的遺失風險；新增 SQLite WAL 工作佇列、重啟恢復、回信持久化與 idempotent retry。
 - 修正 Bridge 註冊 payload 欄位、穩定 registration key、ACK 結果誤報、SSE cursor 跳過事件、過寬回音關鍵字與 systemd 安裝結果未檢查問題。
 - 新增 Python Bridge 單元測試與 GitHub Actions 驗證工作；文件明確區分收件 ACK 與推理／回信完成狀態。

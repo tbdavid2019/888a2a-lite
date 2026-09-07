@@ -1492,21 +1492,115 @@ CLIENT_HTML = """<!DOCTYPE html>
 </html>"""
 
 
+class LocalChatStore:
+    """Crash-safe local SQLite store for human conversation history in a2a ui."""
+    def __init__(self, db_path):
+        self.path = db_path
+        os.makedirs(os.path.dirname(self.path), exist_ok=True)
+        self.lock = threading.Lock()
+        with self._connect() as db:
+            db.execute("PRAGMA journal_mode=WAL")
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS conversations (
+                    peer_id TEXT PRIMARY KEY,
+                    display_name TEXT,
+                    last_message TEXT,
+                    last_timestamp TEXT,
+                    updated_at REAL NOT NULL
+                )
+            """)
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS messages (
+                    id TEXT PRIMARY KEY,
+                    peer_id TEXT NOT NULL,
+                    sender_id TEXT NOT NULL,
+                    sender_name TEXT,
+                    message TEXT NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    is_outgoing INTEGER NOT NULL,
+                    sequence INTEGER,
+                    created_at REAL NOT NULL
+                )
+            """)
+            db.execute("CREATE INDEX IF NOT EXISTS idx_messages_peer ON messages(peer_id, created_at)")
+        os.chmod(self.path, 0o600)
+
+    def _connect(self):
+        db = sqlite3.connect(self.path, timeout=30)
+        db.row_factory = sqlite3.Row
+        db.execute("PRAGMA synchronous=FULL")
+        return db
+
+    @contextlib.contextmanager
+    def _db(self):
+        db = self._connect()
+        try:
+            yield db
+            db.commit()
+        finally:
+            db.close()
+
+    def save_message(self, peer_id, msg, sequence=None, display_name=None):
+        msg_id = msg.get("id") or str(uuid.uuid4())
+        sender_id = msg.get("senderId", "")
+        sender_name = msg.get("senderName", "")
+        content = msg.get("message", "")
+        ts = msg.get("timestamp") or datetime.now(timezone.utc).isoformat()
+        is_out = 1 if msg.get("isOutgoing") else 0
+        now = time.time()
+
+        with self.lock, self._db() as db:
+            db.execute("""
+                INSERT OR REPLACE INTO messages(id, peer_id, sender_id, sender_name, message, timestamp, is_outgoing, sequence, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (msg_id, peer_id, sender_id, sender_name, content, ts, is_out, sequence, now))
+
+            db.execute("""
+                INSERT INTO conversations(peer_id, display_name, last_message, last_timestamp, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(peer_id) DO UPDATE SET
+                    display_name=COALESCE(excluded.display_name, conversations.display_name),
+                    last_message=excluded.last_message,
+                    last_timestamp=excluded.last_timestamp,
+                    updated_at=excluded.updated_at
+            """, (peer_id, display_name or sender_name or peer_id, content, ts, now))
+
+    def get_history(self, peer_id, limit=100):
+        with self.lock, self._db() as db:
+            rows = db.execute("""
+                SELECT id, peer_id, sender_id, sender_name, message, timestamp, is_outgoing
+                FROM messages
+                WHERE peer_id = ?
+                ORDER BY created_at ASC
+                LIMIT ?
+            """, (peer_id, limit)).fetchall()
+            return [
+                {
+                    "id": r["id"],
+                    "peerId": r["peer_id"],
+                    "senderId": r["sender_id"],
+                    "senderName": r["sender_name"],
+                    "message": r["message"],
+                    "timestamp": r["timestamp"],
+                    "isOutgoing": bool(r["is_outgoing"]),
+                }
+                for r in rows
+            ]
+
+
 class LocalUIServer(http.server.ThreadingHTTPServer):
-    def __init__(self, server_address, RequestHandlerClass, hub_client, user_name):
+    def __init__(self, server_address, RequestHandlerClass, hub_client, user_name, chat_db_path=None):
         super().__init__(server_address, RequestHandlerClass)
         self.hub_client = hub_client
         self.user_name = user_name
-        self.history = {}
+        self.chat_store = LocalChatStore(chat_db_path or os.path.expanduser("~/.a2a/chat.db"))
         self.subscribers = set()
         self.lock = threading.Lock()
         self.running = True
 
-    def append_message(self, peer_id, msg):
+    def append_message(self, peer_id, msg, sequence=None, display_name=None):
+        self.chat_store.save_message(peer_id, msg, sequence=sequence, display_name=display_name)
         with self.lock:
-            if peer_id not in self.history:
-                self.history[peer_id] = []
-            self.history[peer_id].append(msg)
             for q in list(self.subscribers):
                 try:
                     q.put_nowait(msg)
@@ -1566,8 +1660,7 @@ class LocalUIHandler(http.server.BaseHTTPRequestHandler):
         elif parsed.path == "/api/history":
             qs = urllib.parse.parse_qs(parsed.query)
             peer = qs.get("peer", [""])[0]
-            with self.server.lock:
-                msgs = list(self.server.history.get(peer, []))
+            msgs = self.server.chat_store.get_history(peer)
             body = json.dumps({"messages": msgs}, ensure_ascii=False).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -1624,7 +1717,7 @@ class LocalUIHandler(http.server.BaseHTTPRequestHandler):
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "isOutgoing": True
                 }
-                self.server.append_message(target_id, out_msg)
+                self.server.append_message(target_id, out_msg, display_name=target_id)
                 body = json.dumps({"ok": True, "taskId": task_id}, ensure_ascii=False).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -1643,13 +1736,13 @@ class LocalUIHandler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
 
 
-def run_local_ui(hub_client, user_name, port=8888, open_browser=True):
+def run_local_ui(hub_client, user_name, port=8888, open_browser=True, chat_db_path=None):
     """Serve local User Chat Web UI and stream live events with agents."""
     actual_port = port
     server = None
     for p in range(port, port + 20):
         try:
-            server = LocalUIServer(("127.0.0.1", p), LocalUIHandler, hub_client, user_name)
+            server = LocalUIServer(("127.0.0.1", p), LocalUIHandler, hub_client, user_name, chat_db_path=chat_db_path)
             actual_port = p
             break
         except OSError:
@@ -1692,8 +1785,6 @@ def run_local_ui(hub_client, user_name, port=8888, open_browser=True):
                                 try:
                                     item = json.loads(raw_json)
                                     seq = item.get("sequence")
-                                    if seq:
-                                        hub_client.ack_task(seq)
                                     sender_id = item.get("requesterAgentId", "unknown")
                                     msg = {
                                         "id": item.get("taskId", str(uuid.uuid4())),
@@ -1704,7 +1795,11 @@ def run_local_ui(hub_client, user_name, port=8888, open_browser=True):
                                         "timestamp": item.get("createdAt", datetime.now(timezone.utc).isoformat()),
                                         "isOutgoing": False,
                                     }
-                                    server.append_message(sender_id, msg)
+                                    # 1. Commit to local durable store first
+                                    server.append_message(sender_id, msg, sequence=seq)
+                                    # 2. ACK Hub after durable commit
+                                    if seq:
+                                        hub_client.ack_task(seq)
                                 except Exception as exc:
                                     print(f"[!] Error parsing incoming task: {exc}", file=sys.stderr)
                             current_data = []
