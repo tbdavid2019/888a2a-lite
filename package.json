@@ -1,0 +1,44 @@
+{
+  "name": "888a2a",
+  "version": "0.2.0",
+  "description": "Universal A2A Hub CLI, Bridge, and MCP Server for OpenClaw, Hermes, Codex, and LLM Agents",
+  "main": "bin/a2a.js",
+  "bin": {
+    "a2a": "./bin/a2a.js",
+    "888a2a": "./bin/a2a.js",
+    "a2a-bridge": "./bin/a2a-bridge.js"
+  },
+  "scripts": {
+    "test": "python3 examples/worker/test_a2a_bridge.py"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tbdavid2019/888a2a-lite.git"
+  },
+  "keywords": [
+    "a2a",
+    "agent-to-agent",
+    "openclaw",
+    "hermes",
+    "mcp",
+    "model-context-protocol",
+    "multi-agent"
+  ],
+  "author": "tbdavid2019",
+  "license": "AGPL-3.0",
+  "bugs": {
+    "url": "https://github.com/tbdavid2019/888a2a-lite/issues"
+  },
+  "homepage": "https://github.com/tbdavid2019/888a2a-lite#readme",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "bin/",
+    "examples/worker/a2a_bridge.py",
+    "scripts/install.sh",
+    "README.md",
+    "LICENSE",
+    "llms.txt"
+  ]
+}

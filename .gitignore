@@ -9,7 +9,8 @@
 *.db
 *.db-*
 /data/
-/bin/
+/bin/*
+!/bin/*.js
 /888a2a-lite
 
 # Python cache

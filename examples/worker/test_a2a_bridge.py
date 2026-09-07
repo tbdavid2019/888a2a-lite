@@ -186,6 +186,57 @@ class DurableBridgeTests(unittest.TestCase):
             row = queue.next()
             self.assertEqual(json.loads(row["reply_json"]), reply)
 
+    def test_claudecode_backend_execution(self):
+        backend = bridge.ClaudeCodeBackend(system_prompt="Test Prompt")
+        with mock.patch("subprocess.run") as mock_run:
+            mock_run.return_value = mock.Mock(returncode=0, stdout="Claude Reasoning Result", stderr="")
+            res = backend.execute("hello", "peer-1", {})
+            self.assertEqual(res, "Claude Reasoning Result")
+            cmd = mock_run.call_args[0][0]
+            self.assertEqual(cmd[0], "claude")
+            self.assertEqual(cmd[1], "-p")
+            self.assertIn("Test Prompt", cmd[2])
+            self.assertIn("[[A2A_NO_REPLY]]", cmd[2])
+
+    def test_codex_backend_execution(self):
+        backend = bridge.CodexBackend(system_prompt="Codex Persona")
+        with mock.patch("subprocess.run") as mock_run:
+            mock_run.return_value = mock.Mock(returncode=0, stdout="Codex Result", stderr="")
+            res = backend.execute("build", "peer-2", {})
+            self.assertEqual(res, "Codex Result")
+            cmd = mock_run.call_args[0][0]
+            self.assertEqual(cmd[0], "codex")
+            self.assertEqual(cmd[1], "exec")
+            self.assertIn("Codex Persona", cmd[2])
+
+    def test_command_backend_execution(self):
+        backend = bridge.CommandBackend(command_cmd="echo 'custom result'")
+        with mock.patch("subprocess.run") as mock_run:
+            mock_run.return_value = mock.Mock(returncode=0, stdout="custom result", stderr="")
+            res = backend.execute("task", "peer-3", {})
+            self.assertEqual(res, "custom result")
+
+    def test_mcp_server_initialize_and_tools_list(self):
+        import io
+        class MockHub:
+            agent_id = "agent-test"
+            def list_agents(self): return [{"agentId": "a1", "displayName": "Agent1"}]
+            def status(self): return {"hubId": "test", "mode": "PUBLIC"}
+        hub = MockHub()
+        in_stream = io.StringIO(
+            json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}) + "\n" +
+            json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}) + "\n" +
+            json.dumps({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "a2a_list_agents", "arguments": {}}}) + "\n"
+        )
+        out_stream = io.StringIO()
+        with mock.patch("sys.stdin", in_stream):
+            bridge.run_mcp_server(hub, "TestAgent", out_stream=out_stream)
+        lines = [json.loads(l) for l in out_stream.getvalue().strip().split("\n") if l]
+        self.assertEqual(len(lines), 3)
+        self.assertEqual(lines[0]["result"]["serverInfo"]["name"], "888a2a-lite-mcp")
+        self.assertTrue(any(t["name"] == "a2a_list_agents" for t in lines[1]["result"]["tools"]))
+        self.assertIn("Agent1", lines[2]["result"]["content"][0]["text"])
+
 
 def json_item(row):
     import json

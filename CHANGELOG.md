@@ -10,6 +10,22 @@
 
 ### Added
 
+- 新增單行跨主機一鍵安裝腳本與靜態端點分發（Universal One-Line Installer & Asset Serving）：
+  - 實作 POSIX 相容腳本 `scripts/install.sh`，自動偵測 Python 3.8+、下載 `a2a-bridge`、配置 `/usr/local/bin` 捷徑，並支援一鍵安裝 macOS LaunchAgent 或 Linux systemd 系統服務。
+  - Hub 端透過 Go `//go:embed` 內嵌並動態提供 `GET /install.sh` 與 `GET /a2a_bridge.py`，支援依伺服器位址動態置換 BaseURL，任何主機皆可透過 `curl -fsSL <HubURL>/install.sh | bash -s -- ...` 單行完成部署。
+- 全球 NPM 套件發布封裝（NPM Package Distribution Wrapper）：
+  - 新增根目錄 `package.json` 宣告 `888a2a` v0.2.0 套件，提供 `a2a` 與 `a2a-bridge` 可執行 CLI 命令封裝（`bin/a2a.js`、`bin/a2a-bridge.js`）。
+  - 支援 `npm install -g 888a2a` 全域安裝及 `npx 888a2a mcp` 免安裝即刻執行。
+- 擴充認知大腦後端（Extended Cognitive Provider Backends）：
+  - 通用 Bridge 新增支援 Anthropic Claude Code CLI（`claudecode`，`claude -p`）、OpenAI Codex CLI（`codex`，`codex exec`）以及自訂 Shell 指令（`command`，`--backend-cmd`）。
+  - 新增完備單元測試於 `examples/worker/test_a2a_bridge.py`，覆蓋所有大腦後端之行程調用與逾時防護。
+- 原生 Model Context Protocol (MCP) Stdio Server：
+  - Bridge 新增 `--mcp` 模式（支援 `a2a mcp` 或 `npx 888a2a mcp`），實作標準 JSON-RPC 2.0 Stdio 協定。
+  - 將一般日誌全面導向 `sys.stderr`，確保標準輸出專屬 JSON-RPC 傳輸，徹底避免 Claude Desktop 與 Cursor 發生串流污染解析錯誤。
+  - 原生暴露 `a2a_list_agents`、`a2a_send_task`、`a2a_broadcast_group`、`a2a_poll_inbox`、`a2a_status` 5 大工具，讓 Claude Desktop 與 Cursor 可直接發現 Peer、調度任務與發送群聊廣播。
+- Operator 管理後台 Web 即時互動交談介面（Admin Console Interactive Chat）：
+  - 後台新增 `/admin/chat` 分頁與專屬視圖，提供在線 Agent 側邊欄切換、對話串流即時展示與發送框。
+  - 新增 `POST /hub/v1/admin/tasks/dispatch` 端點，操作員憑 Operator Token 可直接自 Web 介面指名發送任務至任何活躍 Agent，實現線上即時除錯與對話冒煙測試。
 - 新增 Agent Skill 規範文件 `skills/a2a-client/SKILL.md`，提供 AI Agent 完整對接指南，涵蓋 Hub 狀態查詢、共用金鑰註冊、Peer 發現、Direct Task 投遞、Inbox 輪詢與 ACK 確認。
 - 於 `examples/openclaw`、`examples/hermes`、`examples/codex` 補充半開放模式之金鑰傳遞說明。
 - 系統級升級支援 Server-Sent Events (SSE) 即時流式推播：

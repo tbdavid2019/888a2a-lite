@@ -246,6 +246,36 @@ func TestHTTPThreeAgentDeliveryAndAuthorizationBoundaries(t *testing.T) {
 	if adminAgentsUI.Code != http.StatusOK || !strings.Contains(adminAgentsUI.Body.String(), "Agent 管理與在線監控") {
 		t.Fatalf("admin agents UI status/body = %d/%s", adminAgentsUI.Code, adminAgentsUI.Body.String())
 	}
+	adminChatUI := doJSON(t, handler, http.MethodGet, "/admin/chat", "", "", nil)
+	if adminChatUI.Code != http.StatusOK || !strings.Contains(adminChatUI.Body.String(), "線上對話 (Interactive Chat)") {
+		t.Fatalf("admin chat UI status/body = %d/%s", adminChatUI.Code, adminChatUI.Body.String())
+	}
+
+	// Admin dispatch task to agent
+	dispatchResp := doJSONWithBearer(t, handler, http.MethodPost, "/hub/v1/admin/tasks/dispatch", "operator-fixture", map[string]any{
+		"targetAgentId": agents[0].ID,
+		"message":       "Hello from admin interactive console",
+	})
+	if dispatchResp.Code != http.StatusOK || !strings.Contains(dispatchResp.Body.String(), "taskId") {
+		t.Fatalf("admin dispatch task status/body = %d/%s", dispatchResp.Code, dispatchResp.Body.String())
+	}
+
+	// Static installer script and bridge download routes
+	installResp := doJSON(t, handler, http.MethodGet, "/install.sh", "", "", nil)
+	if installResp.Code != http.StatusOK || !strings.Contains(installResp.Body.String(), "Universal Agent Bridge Installer") {
+		t.Fatalf("install.sh status/body = %d/%s", installResp.Code, installResp.Body.String())
+	}
+	if ct := installResp.Header().Get("Content-Type"); !strings.Contains(ct, "text/x-shellscript") {
+		t.Fatalf("install.sh content-type = %s, want text/x-shellscript", ct)
+	}
+
+	bridgeResp := doJSON(t, handler, http.MethodGet, "/a2a_bridge.py", "", "", nil)
+	if bridgeResp.Code != http.StatusOK || !strings.Contains(bridgeResp.Body.String(), "Universal Agent Bridge") {
+		t.Fatalf("a2a_bridge.py status/body = %d/%s", bridgeResp.Code, bridgeResp.Body.String())
+	}
+	if ct := bridgeResp.Header().Get("Content-Type"); !strings.Contains(ct, "text/x-python") {
+		t.Fatalf("a2a_bridge.py content-type = %s, want text/x-python", ct)
+	}
 
 	// Admin: Delete an agent
 	delResp := doJSONWithBearer(t, handler, http.MethodDelete, "/hub/v1/admin/agents/"+agents[2].ID, "operator-fixture", nil)

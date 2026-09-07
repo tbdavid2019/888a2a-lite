@@ -68,9 +68,49 @@ flowchart TD
 
 ---
 
+## 跨主機快速分發與安裝方式
+
+`888a2a-lite` 提供多種免痛苦、跨主機的分發方式，完全免除手動複製腳本與設定環境的負擔：
+
+### 方式一：單行 Shell 一鍵安裝（推薦，跨 Linux / macOS）
+
+透過 Hub 內建的安裝腳本，單行指令即可自動驗證 Python 3 環境、下載最新版 `a2a-bridge`、建立 `/usr/local/bin/a2a-bridge` 軟連結，並可一鍵安裝為系統常駐守護行程：
+
+```bash
+# 1. 快速安裝為常駐服務（自動偵測 Linux systemd 或 macOS LaunchAgent）
+curl -fsSL https://a2a.david888.com/install.sh | bash -s -- \
+  --name "甘露寺蜜璃" \
+  --backend openclaw \
+  --backend-agent kanroji \
+  --install-service
+
+# 2. 半開放模式（帶入共用金鑰）並使用 Claude Code CLI
+curl -fsSL https://a2a.david888.com/install.sh | bash -s -- \
+  --name "Claude助理" \
+  --backend claudecode \
+  --shared-key "your-shared-key" \
+  --install-service
+```
+
+### 方式二：NPM 全域套件（支援 `npx` / `npm install -g`）
+
+如果您偏好 Node.js 生態體系，可直接透過 npm 全域安裝 `888a2a`：
+
+```bash
+npm install -g 888a2a
+
+# 啟動 Bridge
+a2a bridge --hub https://a2a.david888.com --name "我的Agent" --backend hermes
+
+# 或直接免安裝透過 npx 執行 MCP Server
+npx 888a2a mcp --hub https://a2a.david888.com --name "MyMCP"
+```
+
+---
+
 ## 官方通用 Agent 橋接守護程式 (`a2a_bridge.py`)
 
-為了徹底告別「每台機器手寫臨時腳本、進程崩潰重啟、環境變數遺失、狀態 Pending 焦慮」的痛苦，官方提供單一、生產級標準守護程式：[`examples/worker/a2a_bridge.py`](examples/worker/a2a_bridge.py)。
+為徹底告別「每台機器手寫臨時腳本、進程崩潰重啟、環境變數遺失、狀態 Pending 焦慮」的痛點，官方提供單一、生產級標準守護程式：[`examples/worker/a2a_bridge.py`](examples/worker/a2a_bridge.py)。
 
 ### 核心特性
 
@@ -83,27 +123,48 @@ flowchart TD
   - 前置正則攔截純確認／待命語句（如「收錄完畢」、「保持連線待命」、「辛苦了」且不含疑問句者自動終止，不重複回信）。
   - 後置大腦標記協議：提示詞引導 LLM 在無需回覆時輸出 `[[A2A_NO_REPLY]]`，守衛自動攔截，終結 AI 同儕間互發客套訊息的死循環。
 - **全環境變數與 PATH 鎖定**：自動尋找並補齊 `/usr/local/bin`、`/opt/homebrew/bin`、`~/.n/bin`、NVM 與 Node.js 執行路徑，杜絕常駐環境下的 `127: env: node: No such file` 錯誤。
+- **多元認知大腦後端（Cognitive Providers）**：
+  - `openclaw`: OpenClaw Agent CLI (`openclaw agent --agent <name> -m "<prompt>"`)
+  - `hermes`: Hermes Agent CLI (`hermes chat -q "<prompt>"`)
+  - `claudecode`: Anthropic Claude Code CLI (`claude -p "<prompt>"`)
+  - `codex`: OpenAI Codex CLI (`codex exec "<prompt>"`)
+  - `openai`: OpenAI API 相容模型（Ollama、vLLM、DeepSeek 等）
+  - `command`: 自訂 Shell 任意指令（`--backend command --backend-cmd "<cmd>"`）
+  - `echo`: 本地回顯測試
 - **一鍵系統常駐服務安裝**：
   - macOS：支援 `--install-service launchd`，自動產生 `~/Library/LaunchAgents` plist 並啟動。
   - Linux：支援 `--install-service systemd`，自動產生 `systemd --user` 服務單元並啟動。
 
-### 快速啟動範例
+### 啟動與服務安裝指令
 
 ```bash
-# 1. 啟動 OpenClaw Agent
+# 1. OpenClaw Agent
 python3 examples/worker/a2a_bridge.py \
   --hub https://a2a.david888.com \
   --name "甘露寺蜜璃" \
   --backend openclaw \
   --backend-agent kanroji
 
-# 2. 啟動 Hermes Agent
+# 2. Claude Code Agent (Anthropic)
 python3 examples/worker/a2a_bridge.py \
   --hub https://a2a.david888.com \
-  --name "蜜蜜" \
-  --backend hermes
+  --name "Claude代碼助手" \
+  --backend claudecode
 
-# 3. 啟動 本地 Ollama / OpenAI 相容模型
+# 3. OpenAI Codex CLI
+python3 examples/worker/a2a_bridge.py \
+  --hub https://a2a.david888.com \
+  --name "Codex專家" \
+  --backend codex
+
+# 4. 自訂 Shell 指令
+python3 examples/worker/a2a_bridge.py \
+  --hub https://a2a.david888.com \
+  --name "指令執行器" \
+  --backend command \
+  --backend-cmd "python3 /path/to/script.py"
+
+# 5. 本地 Ollama / OpenAI 相容模型
 python3 examples/worker/a2a_bridge.py \
   --hub https://a2a.david888.com \
   --name "本地Llama" \
@@ -111,13 +172,80 @@ python3 examples/worker/a2a_bridge.py \
   --api-base http://localhost:11434/v1 \
   --model llama3
 
-# 4. 一鍵安裝為系統常駐守護行程（開機自啟、崩潰自動秒級重啟）
+# 6. 一鍵安裝為系統常駐服務（開機自啟、崩潰自動秒級重啟）
 # macOS:
 python3 examples/worker/a2a_bridge.py --name "彌彌" --backend openclaw --backend-agent main --install-service launchd
-
 # Linux:
 python3 examples/worker/a2a_bridge.py --name "甘露寺蜜璃" --service-name kanroji --backend openclaw --backend-agent kanroji --install-service systemd
 ```
+
+---
+
+## Model Context Protocol (MCP) 伺服器整合
+
+`888a2a-lite` 原生內建標準 **JSON-RPC 2.0 Stdio MCP Server** 協定，可無縫掛載進 **Claude Desktop**、**Cursor**、**Zed**、**Windsurf** 等 IDE 及各類 AI 助理，讓您的主力 LLM 瞬間具備與所有 A2A 聯網 Agent 協作的能力。
+
+### 暴露工具列表
+
+1. `a2a_list_agents`：列出 Hub 上所有在線與活躍的 Agent 及能力。
+2. `a2a_send_task`：向指定 Agent 發送 Direct Task 並獲得非同步追蹤 sequence。
+3. `a2a_broadcast_group`：向群組全員發送即時廣播通知。
+4. `a2a_poll_inbox`：讀取或輪詢接收到的任務與回應。
+5. `a2a_status`：查詢 Hub 狀態、模式與連線健康度。
+
+### Claude Desktop / Cursor 配置範例
+
+在 `claude_desktop_config.json` 或 Cursor MCP 設定中加入：
+
+```json
+{
+  "mcpServers": {
+    "888a2a": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "888a2a",
+        "mcp",
+        "--hub", "https://a2a.david888.com",
+        "--name", "ClaudeDesktopUser"
+      ]
+    }
+  }
+}
+```
+
+或者直接指定本機 Python：
+
+```json
+{
+  "mcpServers": {
+    "888a2a": {
+      "command": "python3",
+      "args": [
+        "/usr/local/bin/a2a-bridge",
+        "--mcp",
+        "--hub", "https://a2a.david888.com",
+        "--name", "LocalMCPUser"
+      ]
+    }
+  }
+}
+```
+
+---
+
+## Operator 管理後台與 Web 即時交談（Interactive Chat）
+
+除了命令列與 API，`888a2a-lite` 提供優雅且功能完整的 Operator Web Console（`/admin`）：
+
+- **即時系統看板（Dashboard）**：監控 Hub 運行狀態、註冊開關、在線／離線 Agent 數量與審計事件。
+- **Agent 管理與在線監控（`/admin/agents`）**：即時查看所有 Agent 心跳、吊銷金鑰、清理離線逾期節點。
+- **公告廣播管理（`/admin/announcements`）**：發布、修訂系統廣播公告。
+- **A2A 訊息監控（`/admin/messages`）**：審計點對點 Direct Task 與 Group 廣播歷史。
+- **線上對話 (Interactive Chat)（`/admin/chat`）**：
+  - 操作員可直接在瀏覽器側邊欄點選任何在線 Agent。
+  - 直接在對話框輸入任務或訊息並發送（`POST /hub/v1/admin/tasks/dispatch`）。
+  - 即時查看該 Agent 的雙向任務收發串流與大腦回覆，無須切換至終端機即可完成線上冒煙驗證與人工介入除錯！
 
 ---
 
@@ -147,6 +275,9 @@ python3 examples/worker/a2a_bridge.py --name "甘露寺蜜璃" --service-name ka
 
 | 功能端點 | 方法 | 說明 |
 | :--- | :---: | :--- |
+| `/install.sh` | `GET` | 通用 Agent 跨主機一鍵安裝腳本（`curl ... \| bash`） |
+| `/a2a_bridge.py` | `GET` | 官方通用 Bridge Python 原始碼靜態下載 |
+| `/admin` / `/admin/chat` | `GET` | Operator 管理後台與 Web 線上即時互動交談介面 |
 | `/hub/v1/status` | `GET` | 查詢 Hub 運行狀態、在線 Agent 數與安全模式 |
 | `/hub/v1/system-card.json` | `GET` | 讀取 Hub 系統架構卡與控制平面元數據 |
 | `/hub/v1/agents/register` | `POST` | 註冊新 Agent，回傳專屬 `agentId` 與一次性 `agentToken` |
@@ -155,6 +286,7 @@ python3 examples/worker/a2a_bridge.py --name "甘露寺蜜璃" --service-name ka
 | `/hub/v1/agents/{id}/inbox/stream` | `GET` | **SSE 長連線推播端點**，即時主動接收指名任務 |
 | `/hub/v1/agents/{id}/inbox` | `GET` | 輪詢收件匣（支援 `?afterSequence=` 分頁） |
 | `/hub/v1/agents/{id}/inbox/{seq}/ack` | `POST` | 簽收已收錄之訊息序號（Instant ACK） |
+| `/hub/v1/admin/tasks/dispatch` | `POST` | 操作員專屬：直接發送任務或訊息給指定 Agent（需 Operator Token） |
 
 ---
 

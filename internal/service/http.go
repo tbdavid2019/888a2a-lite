@@ -28,6 +28,12 @@ var llmsText []byte
 //go:embed admin.html
 var adminHTML []byte
 
+//go:embed install.sh
+var installScript []byte
+
+//go:embed a2a_bridge.py
+var a2aBridgeScript []byte
+
 type HTTPServer struct {
 	service             *Service
 	maxBodyBytes        int64
@@ -50,10 +56,13 @@ func (server *HTTPServer) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", server.health)
 	mux.HandleFunc("GET /llms.txt", server.llms)
+	mux.HandleFunc("GET /install.sh", server.installScriptHandler)
+	mux.HandleFunc("GET /a2a_bridge.py", server.a2aBridgeScriptHandler)
 	mux.HandleFunc("GET /admin", server.adminAnnouncementsUI)
 	mux.HandleFunc("GET /admin/announcements", server.adminAnnouncementsUI)
 	mux.HandleFunc("GET /admin/messages", server.adminAnnouncementsUI)
 	mux.HandleFunc("GET /admin/agents", server.adminAnnouncementsUI)
+	mux.HandleFunc("GET /admin/chat", server.adminAnnouncementsUI)
 	mux.HandleFunc("GET /hub/v1/system-card.json", server.systemCard)
 	mux.HandleFunc("GET /hub/v1/announcements", server.announcements)
 	mux.HandleFunc("GET /hub/v1/admin/announcements", server.adminListAnnouncements)
@@ -94,6 +103,7 @@ func (server *HTTPServer) Handler() http.Handler {
 	mux.HandleFunc("DELETE /hub/v1/admin/agents/{agentId}", server.adminDeleteAgent)
 	mux.HandleFunc("POST /hub/v1/admin/agents/prune", server.adminPruneAgents)
 	mux.HandleFunc("POST /hub/v1/admin/tasks/{taskId}/cancel", server.cancelTask)
+	mux.HandleFunc("POST /hub/v1/admin/tasks/dispatch", server.adminDispatchTask)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
@@ -121,6 +131,19 @@ func (server *HTTPServer) llms(w http.ResponseWriter, r *http.Request) {
 	content = strings.ReplaceAll(content, "{{HUB_REGISTRATION_HEADER}}", regHeader)
 
 	_, _ = w.Write([]byte(content))
+}
+
+func (server *HTTPServer) installScriptHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/x-shellscript; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	content := strings.ReplaceAll(string(installScript), "https://a2a.david888.com", server.baseURLFor(r))
+	_, _ = w.Write([]byte(content))
+}
+
+func (server *HTTPServer) a2aBridgeScriptHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/x-python; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(a2aBridgeScript)
 }
 
 func (server *HTTPServer) baseURLFor(r *http.Request) string {
@@ -1026,6 +1049,42 @@ func (server *HTTPServer) listEvents(w http.ResponseWriter, r *http.Request) {
 		next = events[len(events)-1].ID
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"events": events, "nextId": next})
+}
+
+func (server *HTTPServer) adminDispatchTask(w http.ResponseWriter, r *http.Request) {
+	token, ok := server.operatorToken(w, r)
+	if !ok {
+		return
+	}
+	var task hub.TaskDelivery
+	if !decodeJSON(w, r, server.maxBodyBytes, &task) {
+		return
+	}
+	if strings.TrimSpace(task.TaskID) == "" {
+		task.TaskID = fmt.Sprintf("task-admin-%d", time.Now().UnixNano())
+	}
+	if strings.TrimSpace(task.ContextID) == "" {
+		task.ContextID = fmt.Sprintf("ctx-admin-%d", time.Now().UnixNano())
+	}
+	if strings.TrimSpace(task.IdempotencyKey) == "" {
+		task.IdempotencyKey = fmt.Sprintf("idem-%s", task.TaskID)
+	}
+	if strings.TrimSpace(task.RequesterAgentID) == "" {
+		task.RequesterAgentID = "operator"
+	}
+	item, duplicate, err := server.service.SendTaskAdmin(r.Context(), token, task)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	status := "QUEUED"
+	if duplicate {
+		status = "DUPLICATE"
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"item":   item,
+		"status": status,
+	})
 }
 
 func (server *HTTPServer) adminListMessages(w http.ResponseWriter, r *http.Request) {

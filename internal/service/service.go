@@ -264,6 +264,58 @@ func (service *Service) SendTask(ctx context.Context, requesterID, token string,
 	return stored, duplicate, err
 }
 
+func (service *Service) SendTaskAdmin(ctx context.Context, operatorToken string, task hub.TaskDelivery) (hub.InboxItem, bool, error) {
+	if err := service.AuthenticateOperator(operatorToken); err != nil {
+		return hub.InboxItem{}, false, err
+	}
+	if strings.TrimSpace(task.RequesterAgentID) == "" {
+		task.RequesterAgentID = "operator"
+	}
+	if err := hub.ValidateTaskDelivery(task); err != nil {
+		return hub.InboxItem{}, false, fmt.Errorf("%w: %s", ErrValidation, err.Error())
+	}
+	target, err := service.store.Agents().FindAgent(ctx, task.TargetAgentID)
+	if err != nil {
+		return hub.InboxItem{}, false, ErrAgentUnavailable
+	}
+	state := target.StateAt(service.now().UTC())
+	if state == hub.AgentStateExpired || state == hub.AgentStateRevoked {
+		return hub.InboxItem{}, false, ErrAgentUnavailable
+	}
+	if existing, found, err := service.store.Inbox().FindByIdempotencyKey(ctx, hub.IdempotencyKey{
+		HubID: service.config.HubID, TargetAgentID: task.TargetAgentID,
+		RequesterAgentID: task.RequesterAgentID, Key: task.IdempotencyKey,
+	}); err == nil && found {
+		service.audit(ctx, hub.Event{Type: hub.EventTaskDuplicate, ActorAgentID: task.RequesterAgentID, TargetAgentID: task.TargetAgentID, TaskID: existing.TaskID})
+		return existing, true, nil
+	} else if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return hub.InboxItem{}, false, err
+	}
+	item := hub.InboxItem{
+		HubID:            service.config.HubID,
+		TargetAgentID:    task.TargetAgentID,
+		RequesterAgentID: task.RequesterAgentID,
+		TaskID:           task.TaskID,
+		ContextID:        task.ContextID,
+		IdempotencyKey:   task.IdempotencyKey,
+		Message:          task.Message,
+		State:            hub.DeliveryStatePending,
+		CreatedAt:        service.now().UTC(),
+	}
+	stored, duplicate, err := service.store.Inbox().Enqueue(ctx, item)
+	if err == nil {
+		eventType := hub.EventTaskQueued
+		if duplicate {
+			eventType = hub.EventTaskDuplicate
+		}
+		service.audit(ctx, hub.Event{Type: eventType, ActorAgentID: task.RequesterAgentID, TargetAgentID: task.TargetAgentID, TaskID: stored.TaskID})
+		if !duplicate && service.broker != nil {
+			service.broker.Publish(stored)
+		}
+	}
+	return stored, duplicate, err
+}
+
 func (service *Service) Poll(ctx context.Context, agentID, token string, after uint64, limit int) ([]hub.InboxItem, error) {
 	if _, err := service.AuthenticateAgent(ctx, agentID, token); err != nil {
 		return nil, err
