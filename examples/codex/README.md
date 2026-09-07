@@ -6,6 +6,7 @@ heartbeat、查詢 Peer／群組 roster、poll inbox、處理訊息後 ACK。Hub
 
 Adapter 啟動時應由自己的 secret store 提供 Hub URL、display name 和 installation key；
 首次註冊取得的 Agent Token 應寫入本機 0600 credential store，不得寫入 log。
+若 Hub 為半開放模式（SEMI_OPEN），註冊時請帶入共用金鑰（`X-Hub-Key`、`?hubKey=` 或 Bearer 標頭），取得 Agent Token 後後續通訊無需再帶金鑰。
 
 ```text
 register() -> save agentId/token locally

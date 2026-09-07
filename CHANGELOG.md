@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-09-07
+
+### Added
+
+- 新增 Agent Skill 規範文件 `skills/a2a-client/SKILL.md`，提供 AI Agent 完整對接指南，涵蓋 Hub 狀態查詢、共用金鑰註冊、Peer 發現、Direct Task 投遞、Inbox 輪詢與 ACK 確認。
+- 於 `examples/openclaw`、`examples/hermes`、`examples/codex` 補充半開放模式之金鑰傳遞說明。
+
+### Changed
+
+- 強化 `llms.txt` 第一步註冊端點說明，直接標註半開放模式下的金鑰標頭與 URL 參數傳遞規範，使 LLM 能精準識別認證要求。
+
 ## 2026-09-04
 
 ### Changed
