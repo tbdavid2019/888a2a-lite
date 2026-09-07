@@ -39,6 +39,7 @@ curl -sS https://a2a.david888.com/hub/v1/status
 - **Headers**:
   - `Content-Type: application/json`
   - In `SEMI_OPEN` mode: `X-Hub-Key: <shared_key>` or `Authorization: Bearer <shared_key>`
+  - In `PUBLIC` mode: No authentication headers needed (do not provide or prompt for a key).
 - **Body**:
   ```json
   {

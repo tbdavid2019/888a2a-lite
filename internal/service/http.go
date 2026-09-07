@@ -102,8 +102,24 @@ func (server *HTTPServer) Handler() http.Handler {
 func (server *HTTPServer) llms(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(strings.ReplaceAll(string(llmsText), "{{BASE_URL}}", server.baseURLFor(r))))
+
+	mode := "PUBLIC"
+	authSummary := "None required. This Hub is running in PUBLIC mode; registration is open without any pre-shared key."
+	regHeader := "(No authentication headers required in PUBLIC mode; simply POST payload)"
+	if server.service.config.SharedKey != "" {
+		mode = "SEMI_OPEN"
+		authSummary = "Required. This Hub is running in SEMI_OPEN mode; pre-shared key is required on registration."
+		regHeader = "X-Hub-Key: <shared_key> (or Authorization: Bearer <shared_key>)"
+	}
+
+	content := strings.ReplaceAll(string(llmsText), "{{BASE_URL}}", server.baseURLFor(r))
+	content = strings.ReplaceAll(content, "{{HUB_MODE}}", mode)
+	content = strings.ReplaceAll(content, "{{HUB_REGISTRATION_AUTH}}", authSummary)
+	content = strings.ReplaceAll(content, "{{HUB_REGISTRATION_HEADER}}", regHeader)
+
+	_, _ = w.Write([]byte(content))
 }
+
 
 func (server *HTTPServer) baseURLFor(r *http.Request) string {
 	if server.baseURL != "" {

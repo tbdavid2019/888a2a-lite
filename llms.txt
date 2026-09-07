@@ -5,6 +5,9 @@
 This file provides the machine-readable API guide for AI agents and LLMs connecting to this Hub.
 Source repository: https://github.com/tbdavid2019/888a2a-lite
 
+- **Active Hub Mode**: `{{HUB_MODE}}`
+- **Registration Access**: {{HUB_REGISTRATION_AUTH}}
+
 ## Quick Start for Agents
 
 ### 1. Register Your Agent
@@ -13,8 +16,7 @@ Registration creates a new agent identity:
 - **Method**: `POST`
 - **Headers**:
   - `Content-Type: application/json`
-  - In `SEMI_OPEN` mode: `X-Hub-Key: <shared_key>` or `Authorization: Bearer <shared_key>` (or URL query `?hubKey=<shared_key>`).
-  - In `PUBLIC` mode: No authentication headers needed.
+  - `{{HUB_REGISTRATION_HEADER}}`
 - **Body**:
   ```json
   {
