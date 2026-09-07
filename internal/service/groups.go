@@ -21,7 +21,8 @@ var (
 )
 
 func (service *Service) CreateGroup(ctx context.Context, agentID, token string, input hub.CreateGroupInput) (hub.Group, error) {
-	if _, err := service.AuthenticateAgent(ctx, agentID, token); err != nil {
+	owner, err := service.AuthenticateAgent(ctx, agentID, token)
+	if err != nil {
 		return hub.Group{}, err
 	}
 	if err := hub.ValidateCreateGroup(input); err != nil {
@@ -33,7 +34,7 @@ func (service *Service) CreateGroup(ctx context.Context, agentID, token string, 
 	}
 	now := service.now().UTC()
 	group, err := service.store.Groups().CreateGroup(ctx, hub.Group{
-		HubID: service.config.HubID, GroupID: groupID, Name: strings.TrimSpace(input.Name),
+		HubID: service.config.HubID, CircleID: owner.CircleID, GroupID: groupID, Name: strings.TrimSpace(input.Name),
 		State: hub.GroupStateActive, OwnerAgentID: agentID, CreatedAt: now,
 	})
 	if err == nil {
@@ -84,6 +85,9 @@ func (service *Service) InviteMember(ctx context.Context, agentID, token, groupI
 	if state == hub.AgentStateExpired || state == hub.AgentStateRevoked {
 		return hub.GroupInvitation{}, ErrAgentUnavailable
 	}
+	if invitee.CircleID != actor.CircleID {
+		return hub.GroupInvitation{}, store.ErrNotFound
+	}
 	if existing, err := service.store.Groups().FindMember(ctx, groupID, invitee.AgentID); err == nil && existing.IsActive() {
 		return hub.GroupInvitation{}, ErrGroupUnavailable
 	} else if err != nil && !errors.Is(err, store.ErrNotFound) {
@@ -103,7 +107,7 @@ func (service *Service) InviteMember(ctx context.Context, agentID, token, groupI
 	}
 	now := service.now().UTC()
 	invitation, err := service.store.Groups().CreateInvitation(ctx, hub.GroupInvitation{
-		HubID: service.config.HubID, GroupID: groupID, InviterAgentID: agentID, InviteeAgentID: invitee.AgentID,
+		HubID: service.config.HubID, CircleID: actor.CircleID, GroupID: groupID, InviterAgentID: agentID, InviteeAgentID: invitee.AgentID,
 		State: hub.InvitationPending, CreatedAt: now, ExpiresAt: now.Add(24 * time.Hour),
 	})
 	if err == nil {
@@ -114,6 +118,7 @@ func (service *Service) InviteMember(ctx context.Context, agentID, token, groupI
 			agentID, group.Name, groupID, invitation.ID, invitation.ID, groupID)
 		inboxItem := hub.InboxItem{
 			HubID:            service.config.HubID,
+			CircleID:         actor.CircleID,
 			TargetAgentID:    invitee.AgentID,
 			RequesterAgentID: agentID,
 			TaskID:           fmt.Sprintf("invite-%s-%d", groupID, invitation.ID),
@@ -159,6 +164,7 @@ func (service *Service) AcceptInvitation(ctx context.Context, agentID, token str
 			joinMsg := fmt.Sprintf("[群組動態] Agent %s 已接受邀請，正式加入群組「%s」(群組ID: %s)！", agentID, group.Name, member.GroupID)
 			ownerNotice := hub.InboxItem{
 				HubID:            service.config.HubID,
+				CircleID:         member.CircleID,
 				TargetAgentID:    group.OwnerAgentID,
 				RequesterAgentID: agentID,
 				TaskID:           fmt.Sprintf("member-joined-%s-%s-%d", member.GroupID, agentID, now.Unix()),
@@ -298,14 +304,15 @@ func (service *Service) GroupHistory(ctx context.Context, agentID, token, groupI
 }
 
 func (service *Service) SendGroupMessage(ctx context.Context, agentID, token, groupID string, input hub.GroupMessageInput) (hub.GroupMessage, bool, error) {
-	if _, err := service.requireActiveGroupMember(ctx, agentID, token, groupID); err != nil {
-		return hub.GroupMessage{}, false, err
-	}
 	if err := hub.ValidateGroupMessage(input, service.config.MaxPayloadBytes); err != nil {
 		return hub.GroupMessage{}, false, fmt.Errorf("%w: %s", ErrValidation, err.Error())
 	}
+	member, err := service.requireActiveGroupMember(ctx, agentID, token, groupID)
+	if err != nil {
+		return hub.GroupMessage{}, false, err
+	}
 	message, duplicate, err := service.store.Groups().SendGroupMessage(ctx, hub.GroupMessage{
-		HubID: service.config.HubID, GroupID: groupID, SenderAgentID: agentID,
+		HubID: service.config.HubID, CircleID: member.CircleID, GroupID: groupID, SenderAgentID: agentID,
 		ContextID: strings.TrimSpace(input.ContextID), IdempotencyKey: input.IdempotencyKey,
 		Message: input.Message, Trust: "UNTRUSTED_DATA", CreatedAt: service.now().UTC(),
 	}, service.maxGroupFanout())
@@ -320,6 +327,7 @@ func (service *Service) SendGroupMessage(ctx context.Context, agentID, token, gr
 				service.broker.Publish(hub.InboxItem{
 					Sequence:         d.Sequence,
 					HubID:            message.HubID,
+					CircleID:         message.CircleID,
 					TargetAgentID:    d.TargetAgentID,
 					RequesterAgentID: message.SenderAgentID,
 					TaskID:           fmt.Sprintf("group-%s-%d", message.GroupID, message.ID),
@@ -339,13 +347,21 @@ func (service *Service) SendGroupMessage(ctx context.Context, agentID, token, gr
 }
 
 func (service *Service) requireGroupMember(ctx context.Context, agentID, token, groupID string) (hub.GroupMember, error) {
-	if _, err := service.AuthenticateAgent(ctx, agentID, token); err != nil {
+	agent, err := service.AuthenticateAgent(ctx, agentID, token)
+	if err != nil {
 		return hub.GroupMember{}, err
 	}
 	member, err := service.store.Groups().FindMember(ctx, groupID, agentID)
 	if err != nil || !member.IsActive() {
 		service.audit(ctx, hub.Event{Type: hub.EventGroupAuthorizationDenied, ActorAgentID: agentID, Details: map[string]any{"groupId": groupID}})
 		return hub.GroupMember{}, ErrForbidden
+	}
+	if member.CircleID != agent.CircleID {
+		return hub.GroupMember{}, ErrForbidden
+	}
+	group, err := service.store.Groups().FindGroup(ctx, groupID)
+	if err != nil || group.CircleID != agent.CircleID {
+		return hub.GroupMember{}, ErrGroupUnavailable
 	}
 	return member, nil
 }
@@ -358,6 +374,9 @@ func (service *Service) requireActiveGroupMember(ctx context.Context, agentID, t
 	group, err := service.store.Groups().FindGroup(ctx, groupID)
 	if err != nil {
 		return hub.GroupMember{}, err
+	}
+	if group.CircleID != member.CircleID {
+		return hub.GroupMember{}, ErrGroupUnavailable
 	}
 	if !group.IsActive() {
 		return hub.GroupMember{}, ErrGroupArchived

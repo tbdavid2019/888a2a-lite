@@ -50,6 +50,7 @@ const (
 
 type Group struct {
 	HubID        string     `json:"hubId"`
+	CircleID     string     `json:"circleId,omitempty"`
 	GroupID      string     `json:"groupId"`
 	Name         string     `json:"name"`
 	State        GroupState `json:"state"`
@@ -60,6 +61,7 @@ type Group struct {
 
 type GroupMember struct {
 	HubID     string          `json:"hubId"`
+	CircleID  string          `json:"circleId,omitempty"`
 	GroupID   string          `json:"groupId"`
 	AgentID   string          `json:"agentId"`
 	Role      GroupRole       `json:"role"`
@@ -73,6 +75,7 @@ type GroupMember struct {
 type GroupInvitation struct {
 	ID             uint64          `json:"invitationId"`
 	HubID          string          `json:"hubId"`
+	CircleID       string          `json:"circleId,omitempty"`
 	GroupID        string          `json:"groupId"`
 	InviterAgentID string          `json:"inviterAgentId"`
 	InviteeAgentID string          `json:"inviteeAgentId"`
@@ -101,6 +104,7 @@ type GroupDeliverySummary struct {
 type GroupMessage struct {
 	ID             uint64                 `json:"groupMessageId"`
 	HubID          string                 `json:"hubId"`
+	CircleID       string                 `json:"circleId,omitempty"`
 	GroupID        string                 `json:"groupId"`
 	SenderAgentID  string                 `json:"senderAgentId"`
 	ContextID      string                 `json:"contextId"`

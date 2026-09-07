@@ -87,6 +87,9 @@ func (repository *Repository) CreateAgent(ctx context.Context, agent hub.Registe
 	if agent.State == "" {
 		agent.State = hub.AgentStatePending
 	}
+	if agent.CircleID == "" {
+		agent.CircleID = "public"
+	}
 	capabilities, err := json.Marshal(agent.Capabilities)
 	if err != nil {
 		return fmt.Errorf("marshal capabilities: %w", err)
@@ -94,12 +97,12 @@ func (repository *Repository) CreateAgent(ctx context.Context, agent hub.Registe
 	return repository.withTransaction(ctx, func(tx *Repository) error {
 		_, err := tx.executor().ExecContext(ctx, `
 INSERT INTO agent (
-    hub_id, agent_id, registration_key_hash, token_hash, display_name,
+    hub_id, agent_id, circle_id, registration_key_hash, token_hash, display_name,
     provider_family, transport_id, capabilities_json, agent_card_json,
     automatic_execution, state, last_seen_at, expires_at, lease_expires_at,
     created_at, revoked_at, revoke_reason
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			agent.HubID, agent.AgentID, agent.RegistrationKeyHash, agent.TokenHash,
+			agent.HubID, agent.AgentID, agent.CircleID, agent.RegistrationKeyHash, agent.TokenHash,
 			agent.DisplayName, agent.ProviderFamily, agent.TransportID, string(capabilities),
 			agent.AgentCardJSON, boolInt(agent.AutomaticExecution), string(agent.State),
 			nullTime(agent.LastSeenAt), formatTime(agent.ExpiresAt), nullTime(agent.LeaseExpiresAt),
@@ -111,20 +114,20 @@ INSERT INTO agent (
 
 func (repository *Repository) FindAgent(ctx context.Context, agentID string) (hub.RegisteredAgent, error) {
 	return repository.findAgent(ctx, `
-SELECT hub_id, agent_id, registration_key_hash, token_hash, display_name,
+	SELECT hub_id, agent_id, circle_id, registration_key_hash, token_hash, display_name,
        provider_family, transport_id, capabilities_json, agent_card_json,
        automatic_execution, state, last_seen_at, expires_at, lease_expires_at,
        created_at, revoked_at, revoke_reason
 FROM agent WHERE agent_id = ?`, agentID)
 }
 
-func (repository *Repository) FindAgentByRegistrationKey(ctx context.Context, key string) (hub.RegisteredAgent, error) {
+func (repository *Repository) FindAgentByRegistrationKey(ctx context.Context, circleID, key string) (hub.RegisteredAgent, error) {
 	return repository.findAgent(ctx, `
-SELECT hub_id, agent_id, registration_key_hash, token_hash, display_name,
+	SELECT hub_id, agent_id, circle_id, registration_key_hash, token_hash, display_name,
        provider_family, transport_id, capabilities_json, agent_card_json,
        automatic_execution, state, last_seen_at, expires_at, lease_expires_at,
        created_at, revoked_at, revoke_reason
-FROM agent WHERE registration_key_hash = ?`, hub.HashToken(key))
+FROM agent WHERE circle_id = ? AND registration_key_hash = ?`, circleID, hub.HashToken(key))
 }
 
 func (repository *Repository) findAgent(ctx context.Context, query string, args ...any) (hub.RegisteredAgent, error) {
@@ -138,7 +141,7 @@ func (repository *Repository) findAgent(ctx context.Context, query string, args 
 		created, revoked         sql.NullString
 	)
 	err := row.Scan(
-		&agent.HubID, &agent.AgentID, &agent.RegistrationKeyHash, &agent.TokenHash,
+		&agent.HubID, &agent.AgentID, &agent.CircleID, &agent.RegistrationKeyHash, &agent.TokenHash,
 		&agent.DisplayName, &agent.ProviderFamily, &agent.TransportID, &capabilitiesJSON,
 		&agent.AgentCardJSON, &automaticExecution, &state, &lastSeen, &expires, &lease,
 		&created, &revoked, &agent.RevokeReason,
@@ -213,6 +216,13 @@ func (repository *Repository) CountAgents(ctx context.Context) (int, error) {
 	return count, err
 }
 
+func (repository *Repository) CountAgentsInCircle(ctx context.Context, circleID string) (int, error) {
+	var count int
+	err := repository.executor().QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM agent WHERE circle_id = ?", circleID).Scan(&count)
+	return count, err
+}
+
 func (repository *Repository) AuthenticateAgent(ctx context.Context, agentID, token string) (hub.RegisteredAgent, error) {
 	agent, err := repository.FindAgent(ctx, agentID)
 	if err != nil || !hub.VerifyToken(agent.TokenHash, token) {
@@ -260,6 +270,16 @@ WHERE agent_id = ? AND revoked_at IS NULL`, formatTime(revokedAt), reason, agent
 		return ErrNotFound
 	}
 	return nil
+}
+
+func (repository *Repository) RevokeAgentsInCircle(ctx context.Context, circleID, reason string, revokedAt time.Time) (int64, error) {
+	result, err := repository.executor().ExecContext(ctx, `
+UPDATE agent SET state = 'REVOKED', revoked_at = ?, revoke_reason = ?
+WHERE circle_id = ? AND revoked_at IS NULL`, formatTime(revokedAt), reason, circleID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 func (repository *Repository) cleanupAgentDependencies(ctx context.Context, tx *Repository, agentID string) error {
@@ -444,6 +464,9 @@ func (repository *Repository) Enqueue(ctx context.Context, item hub.InboxItem) (
 	if item.State == "" {
 		item.State = hub.DeliveryStatePending
 	}
+	if item.CircleID == "" {
+		item.CircleID = "public"
+	}
 	returnItem := hub.InboxItem{}
 	duplicate := false
 	err := repository.withTransaction(ctx, func(tx *Repository) error {
@@ -464,11 +487,11 @@ func (repository *Repository) Enqueue(ctx context.Context, item hub.InboxItem) (
 		}
 		result, insertErr := tx.executor().ExecContext(ctx, `
 INSERT INTO inbox_item (
-    hub_id, target_agent_id, requester_agent_id, task_id, context_id,
+    hub_id, circle_id, target_agent_id, requester_agent_id, task_id, context_id,
     idempotency_key, message, state, created_at, acknowledged_at, canceled_at, cancel_reason,
     group_id, group_message_id
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			item.HubID, item.TargetAgentID, item.RequesterAgentID, item.TaskID, item.ContextID,
+			item.HubID, item.CircleID, item.TargetAgentID, item.RequesterAgentID, item.TaskID, item.ContextID,
 			item.IdempotencyKey, item.Message, string(item.State), formatTime(item.CreatedAt),
 			nullTimePtr(item.AcknowledgedAt), nullTimePtr(item.CanceledAt), "", item.GroupID, item.GroupMessageID)
 		if insertErr != nil {
@@ -487,7 +510,7 @@ INSERT INTO inbox_item (
 
 func (repository *Repository) FindByIdempotencyKey(ctx context.Context, key hub.IdempotencyKey) (hub.InboxItem, bool, error) {
 	item, err := repository.findInbox(ctx, `
-SELECT sequence, hub_id, target_agent_id, requester_agent_id, task_id, context_id,
+	SELECT sequence, hub_id, circle_id, target_agent_id, requester_agent_id, task_id, context_id,
        idempotency_key, message, state, created_at, acknowledged_at, canceled_at,
        group_id, group_message_id
 FROM inbox_item
@@ -501,7 +524,7 @@ WHERE hub_id = ? AND target_agent_id = ? AND requester_agent_id = ? AND idempote
 
 func (repository *Repository) Poll(ctx context.Context, targetAgentID string, afterSequence uint64, limit int) ([]hub.InboxItem, error) {
 	rows, err := repository.executor().QueryContext(ctx, `
-SELECT sequence, hub_id, target_agent_id, requester_agent_id, task_id, context_id,
+	SELECT sequence, hub_id, circle_id, target_agent_id, requester_agent_id, task_id, context_id,
        idempotency_key, message, state, created_at, acknowledged_at, canceled_at,
        group_id, group_message_id
 FROM inbox_item
@@ -602,13 +625,20 @@ func (repository *Repository) PendingCount(ctx context.Context, targetAgentID st
 	return count, err
 }
 
+func (repository *Repository) PendingCountInCircle(ctx context.Context, circleID string) (int, error) {
+	var count int
+	err := repository.executor().QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM inbox_item WHERE circle_id = ? AND state = 'PENDING'", circleID).Scan(&count)
+	return count, err
+}
+
 func (repository *Repository) ListDirectMessagesAdmin(ctx context.Context, beforeSequence uint64, limit int, agentID string) ([]hub.InboxItem, error) {
 	if limit < 1 || limit > 200 {
 		limit = 50
 	}
 	agentID = strings.TrimSpace(agentID)
 	query := `
-SELECT sequence, hub_id, target_agent_id, requester_agent_id, task_id, context_id,
+SELECT sequence, hub_id, circle_id, target_agent_id, requester_agent_id, task_id, context_id,
        idempotency_key, message, state, created_at, acknowledged_at, canceled_at,
        group_id, group_message_id
 FROM inbox_item
@@ -639,6 +669,9 @@ func (repository *Repository) AppendEvent(ctx context.Context, event hub.Event) 
 	if strings.TrimSpace(event.HubID) == "" || strings.TrimSpace(event.Type) == "" {
 		return errors.New("event requires hub id and type")
 	}
+	if event.CircleID == "" {
+		event.CircleID = "public"
+	}
 	if event.Details == nil {
 		event.Details = map[string]any{}
 	}
@@ -650,14 +683,14 @@ func (repository *Repository) AppendEvent(ctx context.Context, event hub.Event) 
 		event.CreatedAt = time.Now().UTC()
 	}
 	_, err = repository.executor().ExecContext(ctx, `
-INSERT INTO event_log (hub_id, event_type, actor_agent_id, target_agent_id, task_id, details_json, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?)`, event.HubID, event.Type, event.ActorAgentID, event.TargetAgentID, event.TaskID, string(details), formatTime(event.CreatedAt))
+INSERT INTO event_log (hub_id, circle_id, event_type, actor_agent_id, target_agent_id, task_id, details_json, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, event.HubID, event.CircleID, event.Type, event.ActorAgentID, event.TargetAgentID, event.TaskID, string(details), formatTime(event.CreatedAt))
 	return err
 }
 
 func (repository *Repository) ListEvents(ctx context.Context, afterID uint64, limit int) ([]hub.Event, error) {
 	rows, err := repository.executor().QueryContext(ctx, `
-SELECT id, hub_id, event_type, actor_agent_id, target_agent_id, task_id, details_json, created_at
+SELECT id, hub_id, circle_id, event_type, actor_agent_id, target_agent_id, task_id, details_json, created_at
 FROM event_log WHERE id > ? ORDER BY id LIMIT ?`, afterID, limit)
 	if err != nil {
 		return nil, err
@@ -667,7 +700,7 @@ FROM event_log WHERE id > ? ORDER BY id LIMIT ?`, afterID, limit)
 	for rows.Next() {
 		var event hub.Event
 		var detailsJSON, createdAt string
-		if err := rows.Scan(&event.ID, &event.HubID, &event.Type, &event.ActorAgentID, &event.TargetAgentID, &event.TaskID, &detailsJSON, &createdAt); err != nil {
+		if err := rows.Scan(&event.ID, &event.HubID, &event.CircleID, &event.Type, &event.ActorAgentID, &event.TargetAgentID, &event.TaskID, &detailsJSON, &createdAt); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(detailsJSON), &event.Details); err != nil {
@@ -861,7 +894,7 @@ func scanInbox(row scanner) (hub.InboxItem, error) {
 		state, created, acknowledged, canceled sql.NullString
 	)
 	err := row.Scan(
-		&item.Sequence, &item.HubID, &item.TargetAgentID, &item.RequesterAgentID,
+		&item.Sequence, &item.HubID, &item.CircleID, &item.TargetAgentID, &item.RequesterAgentID,
 		&item.TaskID, &item.ContextID, &item.IdempotencyKey, &item.Message, &state,
 		&created, &acknowledged, &canceled, &item.GroupID, &item.GroupMessageID)
 	if errors.Is(err, sql.ErrNoRows) {

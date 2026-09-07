@@ -37,6 +37,7 @@ func (key IdempotencyKey) String() string {
 type InboxItem struct {
 	Sequence         uint64        `json:"sequence"`
 	HubID            string        `json:"hubId"`
+	CircleID         string        `json:"circleId,omitempty"`
 	TargetAgentID    string        `json:"targetAgentId"`
 	RequesterAgentID string        `json:"requesterAgentId"`
 	TaskID           string        `json:"taskId"`

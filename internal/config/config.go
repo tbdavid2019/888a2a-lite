@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/tbdavid2019/888a2a-lite/internal/circle"
 )
 
 const (
@@ -25,44 +27,52 @@ const (
 )
 
 type Config struct {
-	HubID                 string
-	ListenAddr            string
-	DatabasePath          string
-	PublicBaseURL         string
-	RegistrationEnabled   bool
-	RegistrationTTL       time.Duration
-	PeerLease             time.Duration
-	MaxRegisteredAgents   int
-	MaxTasksPerMinute     int
-	MaxConcurrentTasks    int
-	MaxPayloadBytes       int64
-	MaxGroupMembers       int
-	MaxGroupFanout        int
-	MaxGroupHistoryPage   int
-	RegistrationPerMinute int
-	OperatorToken         string
-	SharedKey             string
+	HubID                  string
+	ListenAddr             string
+	DatabasePath           string
+	PublicBaseURL          string
+	RegistrationEnabled    bool
+	RegistrationTTL        time.Duration
+	PeerLease              time.Duration
+	MaxRegisteredAgents    int
+	MaxTasksPerMinute      int
+	MaxConcurrentTasks     int
+	MaxPayloadBytes        int64
+	MaxGroupMembers        int
+	MaxGroupFanout         int
+	MaxGroupHistoryPage    int
+	RegistrationPerMinute  int
+	OperatorToken          string
+	SharedKey              string
+	CircleMode             string
+	SharedKeys             string
+	AllowDynamicCircles    bool
+	CircleDerivationSecret string
 }
 
 func Load() (Config, error) {
 	config := Config{
-		HubID:                 valueOr("A2A888_HUB_ID", DefaultHubID),
-		ListenAddr:            valueOr("A2A888_HUB_LISTEN_ADDR", DefaultListenAddr),
-		DatabasePath:          valueOr("A2A888_HUB_DB_PATH", DefaultDatabasePath),
-		PublicBaseURL:         strings.TrimRight(os.Getenv("A2A888_HUB_PUBLIC_URL"), "/"),
-		RegistrationEnabled:   envBool("A2A888_HUB_REGISTRATION_ENABLED", true),
-		RegistrationTTL:       DefaultRegistrationTTL,
-		PeerLease:             DefaultPeerLease,
-		MaxRegisteredAgents:   DefaultMaxRegisteredAgents,
-		MaxTasksPerMinute:     DefaultMaxTasksPerMinute,
-		MaxConcurrentTasks:    DefaultMaxConcurrentTasks,
-		MaxPayloadBytes:       DefaultMaxPayloadBytes,
-		MaxGroupMembers:       DefaultMaxGroupMembers,
-		MaxGroupFanout:        DefaultMaxGroupFanout,
-		MaxGroupHistoryPage:   DefaultMaxGroupHistoryPage,
-		RegistrationPerMinute: DefaultRegistrationPerMinute,
-		OperatorToken:         os.Getenv("A2A888_HUB_OPERATOR_TOKEN"),
-		SharedKey:             strings.TrimSpace(valueOr("A2A888_HUB_SHARED_KEY", os.Getenv("A2A888_HUB_ACCESS_KEY"))),
+		HubID:                  valueOr("A2A888_HUB_ID", DefaultHubID),
+		ListenAddr:             valueOr("A2A888_HUB_LISTEN_ADDR", DefaultListenAddr),
+		DatabasePath:           valueOr("A2A888_HUB_DB_PATH", DefaultDatabasePath),
+		PublicBaseURL:          strings.TrimRight(os.Getenv("A2A888_HUB_PUBLIC_URL"), "/"),
+		RegistrationEnabled:    envBool("A2A888_HUB_REGISTRATION_ENABLED", true),
+		RegistrationTTL:        DefaultRegistrationTTL,
+		PeerLease:              DefaultPeerLease,
+		MaxRegisteredAgents:    DefaultMaxRegisteredAgents,
+		MaxTasksPerMinute:      DefaultMaxTasksPerMinute,
+		MaxConcurrentTasks:     DefaultMaxConcurrentTasks,
+		MaxPayloadBytes:        DefaultMaxPayloadBytes,
+		MaxGroupMembers:        DefaultMaxGroupMembers,
+		MaxGroupFanout:         DefaultMaxGroupFanout,
+		MaxGroupHistoryPage:    DefaultMaxGroupHistoryPage,
+		RegistrationPerMinute:  DefaultRegistrationPerMinute,
+		OperatorToken:          os.Getenv("A2A888_HUB_OPERATOR_TOKEN"),
+		SharedKey:              strings.TrimSpace(valueOr("A2A888_HUB_SHARED_KEY", os.Getenv("A2A888_HUB_ACCESS_KEY"))),
+		CircleMode:             strings.ToLower(valueOr("A2A888_HUB_CIRCLE_MODE", circle.ModeSingle)),
+		SharedKeys:             strings.TrimSpace(os.Getenv("A2A888_HUB_SHARED_KEYS")),
+		AllowDynamicCircles:    envBool("A2A888_HUB_ALLOW_DYNAMIC_CIRCLES", false),
+		CircleDerivationSecret: strings.TrimSpace(os.Getenv("A2A888_HUB_CIRCLE_DERIVATION_SECRET")),
 	}
 	var err error
 	if config.RegistrationTTL, err = envDurationSeconds("A2A888_HUB_REGISTRATION_TTL_SECONDS", config.RegistrationTTL); err != nil {
@@ -102,6 +112,9 @@ func Load() (Config, error) {
 }
 
 func (config Config) Validate() error {
+	if config.CircleMode == "" {
+		config.CircleMode = circle.ModeSingle
+	}
 	if strings.TrimSpace(config.HubID) == "" || strings.TrimSpace(config.ListenAddr) == "" || strings.TrimSpace(config.DatabasePath) == "" {
 		return fmt.Errorf("hub id, listen address, and database path are required")
 	}
@@ -116,6 +129,12 @@ func (config Config) Validate() error {
 	}
 	if config.MaxPayloadBytes <= 0 || config.MaxPayloadBytes > 16<<20 {
 		return fmt.Errorf("max payload bytes must be between 1 and 16777216")
+	}
+	if config.CircleMode != circle.ModeSingle && config.CircleMode != circle.ModeMulti {
+		return fmt.Errorf("circle mode must be %q or %q", circle.ModeSingle, circle.ModeMulti)
+	}
+	if _, err := circle.NewResolver(config.CircleMode, config.SharedKeys, config.CircleDerivationSecret, config.AllowDynamicCircles); err != nil {
+		return fmt.Errorf("circle configuration is invalid: %w", err)
 	}
 	return nil
 }

@@ -5,6 +5,7 @@ import "time"
 type Event struct {
 	ID            uint64         `json:"id"`
 	HubID         string         `json:"hubId"`
+	CircleID      string         `json:"circleId,omitempty"`
 	Type          string         `json:"type"`
 	ActorAgentID  string         `json:"actorAgentId,omitempty"`
 	TargetAgentID string         `json:"targetAgentId,omitempty"`
@@ -46,4 +47,5 @@ const (
 	EventGroupAuthorizationDenied    = "group.authorization_denied"
 	EventAgentDeleted                = "agent.deleted"
 	EventAgentsPruned                = "agents.pruned"
+	EventCircleDisabled              = "circle.disabled"
 )

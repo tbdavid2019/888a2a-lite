@@ -18,13 +18,15 @@ var (
 type AgentStore interface {
 	CreateAgent(context.Context, hub.RegisteredAgent) error
 	FindAgent(context.Context, string) (hub.RegisteredAgent, error)
-	FindAgentByRegistrationKey(context.Context, string) (hub.RegisteredAgent, error)
+	FindAgentByRegistrationKey(context.Context, string, string) (hub.RegisteredAgent, error)
 	ListAgents(context.Context) ([]hub.RegisteredAgent, error)
 	CountAgents(context.Context) (int, error)
+	CountAgentsInCircle(context.Context, string) (int, error)
 	AuthenticateAgent(context.Context, string, string) (hub.RegisteredAgent, error)
 	HeartbeatAgent(context.Context, string, time.Time, time.Time) (hub.RegisteredAgent, error)
 	DisconnectAgent(context.Context, string, time.Time) error
 	RevokeAgent(context.Context, string, string, time.Time) error
+	RevokeAgentsInCircle(context.Context, string, string, time.Time) (int64, error)
 	DeleteAgent(context.Context, string) error
 	PruneInactiveAgents(context.Context, time.Time) (int64, error)
 }
@@ -43,12 +45,23 @@ type InboxStore interface {
 	AcknowledgeTask(context.Context, string, string, time.Time) error
 	CancelTask(context.Context, string, string, time.Time) error
 	PendingCount(context.Context, string) (int, error)
+	PendingCountInCircle(context.Context, string) (int, error)
 	ListDirectMessagesAdmin(context.Context, uint64, int, string) ([]hub.InboxItem, error)
 }
 
 type EventStore interface {
 	AppendEvent(context.Context, hub.Event) error
 	ListEvents(context.Context, uint64, int) ([]hub.Event, error)
+}
+
+type CircleStore interface {
+	CreateCircle(context.Context, hub.Circle) error
+	FindCircle(context.Context, string) (hub.Circle, error)
+	ListCircles(context.Context) ([]hub.Circle, error)
+	SetCircleState(context.Context, string, hub.CircleState, *time.Time) error
+	CreateCircleKey(context.Context, hub.CircleKey) error
+	FindActiveCircleKey(context.Context, string, string, time.Time) (hub.CircleKey, error)
+	ListCircleKeys(context.Context, string) ([]hub.CircleKey, error)
 }
 
 type AnnouncementStore interface {
@@ -83,6 +96,7 @@ type GroupStore interface {
 }
 
 type TxStore interface {
+	Circles() CircleStore
 	Agents() AgentStore
 	Policy() PolicyStore
 	Inbox() InboxStore

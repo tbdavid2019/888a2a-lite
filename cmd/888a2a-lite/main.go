@@ -98,6 +98,11 @@ func runServer(args []string) error {
 		existing.MaxGroupHistoryPage = cfg.MaxGroupHistoryPage
 		_ = repository.Policy().SavePolicy(ctx, existing)
 	}
+	if err := repository.Circles().CreateCircle(ctx, hub.Circle{
+		HubID: cfg.HubID, CircleID: "public", State: hub.CircleStateActive, CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		return fmt.Errorf("initialize public circle: %w", err)
+	}
 	hubService := service.New(repository, cfg)
 	hubService.RecordEvent(ctx, hub.EventHubStarted)
 

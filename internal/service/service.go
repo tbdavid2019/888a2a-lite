@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tbdavid2019/888a2a-lite/internal/circle"
 	"github.com/tbdavid2019/888a2a-lite/internal/config"
 	"github.com/tbdavid2019/888a2a-lite/internal/hub"
 	"github.com/tbdavid2019/888a2a-lite/internal/store"
@@ -23,22 +24,25 @@ var (
 	ErrAgentLimit           = errors.New("registered agent limit reached")
 	ErrTaskLimit            = errors.New("task limit reached")
 	ErrValidation           = errors.New("validation failed")
+	ErrCircleDisabled       = errors.New("circle is disabled")
 )
 
 type HubStatus struct {
 	HubID               string `json:"hubId"`
 	Mode                string `json:"mode"`
+	CircleID            string `json:"circleId,omitempty"`
 	RegistrationEnabled bool   `json:"registrationEnabled"`
 	RegisteredAgents    int    `json:"registeredAgents"`
 	PendingTasks        int    `json:"pendingTasks"`
 }
 
 type Service struct {
-	store        store.Store
-	config       config.Config
-	operatorHash string
-	now          func() time.Time
-	broker       *hub.InboxEventBroker
+	store          store.Store
+	config         config.Config
+	operatorHash   string
+	now            func() time.Time
+	broker         *hub.InboxEventBroker
+	circleResolver circle.Resolver
 }
 
 func New(database store.Store, cfg config.Config) *Service {
@@ -46,12 +50,18 @@ func New(database store.Store, cfg config.Config) *Service {
 	if cfg.OperatorToken != "" {
 		operatorHash = hub.HashToken(cfg.OperatorToken)
 	}
+	resolver, err := circle.NewResolver(cfg.CircleMode, cfg.SharedKeys, cfg.CircleDerivationSecret, cfg.AllowDynamicCircles)
+	if err != nil {
+		log.Printf("circle configuration invalid; falling back to single mode: %v", err)
+		resolver, _ = circle.NewResolver(circle.ModeSingle, "", "", false)
+	}
 	return &Service{
-		store:        database,
-		config:       cfg,
-		operatorHash: operatorHash,
-		now:          time.Now,
-		broker:       hub.NewInboxEventBroker(),
+		store:          database,
+		config:         cfg,
+		operatorHash:   operatorHash,
+		now:            time.Now,
+		broker:         hub.NewInboxEventBroker(),
+		circleResolver: resolver,
 	}
 }
 
@@ -60,6 +70,10 @@ func (service *Service) Broker() *hub.InboxEventBroker {
 }
 
 func (service *Service) Register(ctx context.Context, declaration hub.AgentDeclaration) (hub.AgentIdentity, bool, error) {
+	return service.RegisterWithSharedKey(ctx, declaration, "")
+}
+
+func (service *Service) RegisterWithSharedKey(ctx context.Context, declaration hub.AgentDeclaration, sharedKey string) (hub.AgentIdentity, bool, error) {
 	if err := hub.ValidateDeclaration(declaration); err != nil {
 		return hub.AgentIdentity{}, false, fmt.Errorf("%w: %s", ErrValidation, err.Error())
 	}
@@ -75,9 +89,16 @@ func (service *Service) Register(ctx context.Context, declaration hub.AgentDecla
 	if !policy.RegistrationEnabled {
 		return hub.AgentIdentity{}, false, ErrRegistrationDisabled
 	}
-	if existing, findErr := service.store.Agents().FindAgentByRegistrationKey(ctx, declaration.RegistrationIdempotency); findErr == nil {
+	circleIdentity, err := service.circleResolver.Resolve(sharedKey)
+	if err != nil {
+		return hub.AgentIdentity{}, false, fmt.Errorf("%w: %s", ErrValidation, err.Error())
+	}
+	if err := service.ensureCircle(ctx, circleIdentity); err != nil {
+		return hub.AgentIdentity{}, false, err
+	}
+	if existing, findErr := service.store.Agents().FindAgentByRegistrationKey(ctx, circleIdentity.ID, declaration.RegistrationIdempotency); findErr == nil {
 		service.audit(ctx, hub.Event{Type: hub.EventAgentRegistrationRetry, ActorAgentID: existing.AgentID})
-		return hub.AgentIdentity{HubID: existing.HubID, AgentID: existing.AgentID, ExpiresAt: existing.ExpiresAt}, true, nil
+		return hub.AgentIdentity{HubID: existing.HubID, AgentID: existing.AgentID, CircleID: existing.CircleID, ExpiresAt: existing.ExpiresAt}, true, nil
 	} else if !errors.Is(findErr, store.ErrNotFound) {
 		return hub.AgentIdentity{}, false, findErr
 	}
@@ -102,6 +123,7 @@ func (service *Service) Register(ctx context.Context, declaration hub.AgentDecla
 	agent := hub.RegisteredAgent{
 		HubID:               policy.HubID,
 		AgentID:             agentID,
+		CircleID:            circleIdentity.ID,
 		RegistrationKeyHash: hub.HashToken(declaration.RegistrationIdempotency),
 		TokenHash:           hub.HashToken(token),
 		DisplayName:         strings.TrimSpace(declaration.DisplayName),
@@ -118,7 +140,37 @@ func (service *Service) Register(ctx context.Context, declaration hub.AgentDecla
 		return hub.AgentIdentity{}, false, err
 	}
 	service.audit(ctx, hub.Event{Type: hub.EventAgentRegistered, ActorAgentID: agent.AgentID})
-	return hub.AgentIdentity{HubID: agent.HubID, AgentID: agent.AgentID, AgentToken: token, ExpiresAt: agent.ExpiresAt}, false, nil
+	return hub.AgentIdentity{HubID: agent.HubID, AgentID: agent.AgentID, CircleID: agent.CircleID, AgentToken: token, ExpiresAt: agent.ExpiresAt}, false, nil
+}
+
+func (service *Service) ensureCircle(ctx context.Context, identity circle.Identity) error {
+	now := service.now().UTC()
+	circleRecord := hub.Circle{
+		HubID: service.config.HubID, CircleID: identity.ID, Alias: identity.Alias,
+		State: hub.CircleStateActive, ActiveKeyVersion: 0, CreatedAt: now,
+	}
+	if identity.KeyDigest != "" {
+		circleRecord.ActiveKeyVersion = 1
+	}
+	if err := service.store.Circles().CreateCircle(ctx, circleRecord); err != nil {
+		return err
+	}
+	current, err := service.store.Circles().FindCircle(ctx, identity.ID)
+	if err != nil {
+		return err
+	}
+	if current.State == hub.CircleStateDisabled {
+		return ErrCircleDisabled
+	}
+	if identity.KeyDigest != "" {
+		if err := service.store.Circles().CreateCircleKey(ctx, hub.CircleKey{
+			HubID: service.config.HubID, CircleID: identity.ID, Version: 1,
+			KeyDigest: identity.KeyDigest, State: "ACTIVE", CreatedAt: now,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (service *Service) AuthenticateAgent(ctx context.Context, agentID, token string) (hub.RegisteredAgent, error) {
@@ -131,6 +183,12 @@ func (service *Service) AuthenticateAgent(ctx context.Context, agentID, token st
 	if state == hub.AgentStateExpired || state == hub.AgentStateRevoked {
 		return hub.RegisteredAgent{}, ErrUnauthenticated
 	}
+	if service.circleResolver.Mode() == circle.ModeMulti {
+		circleRecord, circleErr := service.store.Circles().FindCircle(ctx, agent.CircleID)
+		if circleErr != nil || circleRecord.State == hub.CircleStateDisabled {
+			return hub.RegisteredAgent{}, ErrCircleDisabled
+		}
+	}
 	leaseExpiresAt := now.Add(service.config.PeerLease)
 	if updated, err := service.store.Agents().HeartbeatAgent(ctx, agentID, now, leaseExpiresAt); err == nil {
 		agent = updated
@@ -139,7 +197,8 @@ func (service *Service) AuthenticateAgent(ctx context.Context, agentID, token st
 }
 
 func (service *Service) ListAgents(ctx context.Context, agentID, token, baseURL string, stateFilter string) ([]hub.AgentView, error) {
-	if _, err := service.AuthenticateAgent(ctx, agentID, token); err != nil {
+	requester, err := service.AuthenticateAgent(ctx, agentID, token)
+	if err != nil {
 		return nil, err
 	}
 	agents, err := service.store.Agents().ListAgents(ctx)
@@ -149,6 +208,9 @@ func (service *Service) ListAgents(ctx context.Context, agentID, token, baseURL 
 	now := service.now().UTC()
 	views := make([]hub.AgentView, 0, len(agents))
 	for _, agent := range agents {
+		if agent.CircleID != requester.CircleID {
+			continue
+		}
 		state := agent.StateAt(now)
 		if state == hub.AgentStateRevoked || state == hub.AgentStateExpired {
 			continue
@@ -172,12 +234,16 @@ func (service *Service) ListAgents(ctx context.Context, agentID, token, baseURL 
 }
 
 func (service *Service) GetAgent(ctx context.Context, requesterID, token, targetID, baseURL string) (hub.AgentView, error) {
-	if _, err := service.AuthenticateAgent(ctx, requesterID, token); err != nil {
+	requester, err := service.AuthenticateAgent(ctx, requesterID, token)
+	if err != nil {
 		return hub.AgentView{}, err
 	}
 	agent, err := service.store.Agents().FindAgent(ctx, targetID)
 	if err != nil {
 		return hub.AgentView{}, err
+	}
+	if agent.CircleID != requester.CircleID {
+		return hub.AgentView{}, store.ErrNotFound
 	}
 	view := agent.SafeView(baseURL)
 	view.State = agent.StateAt(service.now().UTC())
@@ -211,7 +277,8 @@ func (service *Service) Disconnect(ctx context.Context, agentID, token string) e
 }
 
 func (service *Service) SendTask(ctx context.Context, requesterID, token string, task hub.TaskDelivery) (hub.InboxItem, bool, error) {
-	if _, err := service.AuthenticateAgent(ctx, requesterID, token); err != nil {
+	requester, err := service.AuthenticateAgent(ctx, requesterID, token)
+	if err != nil {
 		return hub.InboxItem{}, false, err
 	}
 	if err := hub.ValidateTaskDelivery(task); err != nil {
@@ -219,6 +286,9 @@ func (service *Service) SendTask(ctx context.Context, requesterID, token string,
 	}
 	target, err := service.store.Agents().FindAgent(ctx, task.TargetAgentID)
 	if err != nil {
+		return hub.InboxItem{}, false, ErrAgentUnavailable
+	}
+	if target.CircleID != requester.CircleID {
 		return hub.InboxItem{}, false, ErrAgentUnavailable
 	}
 	state := target.StateAt(service.now().UTC())
@@ -241,6 +311,7 @@ func (service *Service) SendTask(ctx context.Context, requesterID, token string,
 	}
 	item := hub.InboxItem{
 		HubID:            service.config.HubID,
+		CircleID:         requester.CircleID,
 		TargetAgentID:    task.TargetAgentID,
 		RequesterAgentID: requesterID,
 		TaskID:           task.TaskID,
@@ -299,23 +370,60 @@ func (service *Service) Acknowledge(ctx context.Context, agentID, token string, 
 }
 
 func (service *Service) Status(ctx context.Context) (HubStatus, error) {
+	return service.status(ctx, "", false, false)
+}
+
+func (service *Service) StatusForAgent(ctx context.Context, agentID, token string) (HubStatus, error) {
+	agent, err := service.AuthenticateAgent(ctx, agentID, token)
+	if err != nil {
+		return HubStatus{}, err
+	}
+	return service.status(ctx, agent.CircleID, true, false)
+}
+
+func (service *Service) StatusForOperator(ctx context.Context, token string) (HubStatus, error) {
+	if err := service.AuthenticateOperator(token); err != nil {
+		return HubStatus{}, err
+	}
+	return service.status(ctx, "", false, true)
+}
+
+func (service *Service) status(ctx context.Context, circleID string, scoped, includeGlobal bool) (HubStatus, error) {
 	policy, err := service.store.Policy().GetPolicy(ctx)
 	if err != nil {
 		policy = service.policyFromConfig()
 	}
-	registered, err := service.store.Agents().CountAgents(ctx)
+	mode := "PUBLIC"
+	if service.circleResolver.Mode() == circle.ModeMulti {
+		mode = "MULTI_CIRCLE"
+	} else if service.config.SharedKey != "" {
+		mode = "SEMI_OPEN"
+	}
+	status := HubStatus{HubID: policy.HubID, Mode: mode, RegistrationEnabled: policy.RegistrationEnabled}
+	if service.circleResolver.Mode() == circle.ModeMulti && !scoped && !includeGlobal {
+		return status, nil
+	}
+	if scoped {
+		status.CircleID = circleID
+		status.RegisteredAgents, err = service.store.Agents().CountAgentsInCircle(ctx, circleID)
+		if err != nil {
+			return HubStatus{}, err
+		}
+		status.PendingTasks, err = service.store.Inbox().PendingCountInCircle(ctx, circleID)
+		if err != nil {
+			return HubStatus{}, err
+		}
+		return status, nil
+	}
+	status.RegisteredAgents, err = service.store.Agents().CountAgents(ctx)
 	if err != nil {
 		return HubStatus{}, err
 	}
-	pending, err := service.store.Inbox().PendingCount(ctx, "")
+	status.PendingTasks, err = service.store.Inbox().PendingCount(ctx, "")
 	if err != nil {
-		pending = 0
+		return HubStatus{}, err
 	}
-	mode := "PUBLIC"
-	if service.config.SharedKey != "" {
-		mode = "SEMI_OPEN"
-	}
-	return HubStatus{HubID: policy.HubID, Mode: mode, RegistrationEnabled: policy.RegistrationEnabled, RegisteredAgents: registered, PendingTasks: pending}, nil
+	return status, nil
 }
 
 func (service *Service) AuthenticateOperator(token string) error {
@@ -366,6 +474,7 @@ func (service *Service) ListAgentsAdmin(ctx context.Context, token string) ([]hu
 		details = append(details, hub.AgentAdminDetail{
 			HubID:          agent.HubID,
 			AgentID:        agent.AgentID,
+			CircleID:       agent.CircleID,
 			DisplayName:    agent.DisplayName,
 			ProviderFamily: agent.ProviderFamily,
 			TransportID:    agent.TransportID,
@@ -406,6 +515,31 @@ func (service *Service) PruneInactiveAgents(ctx context.Context, token string) (
 	return pruned, err
 }
 
+func (service *Service) ListCirclesAdmin(ctx context.Context, token string) ([]hub.Circle, error) {
+	if err := service.AuthenticateOperator(token); err != nil {
+		return nil, err
+	}
+	return service.store.Circles().ListCircles(ctx)
+}
+
+func (service *Service) DisableCircle(ctx context.Context, token, circleID string) (int64, error) {
+	if err := service.AuthenticateOperator(token); err != nil {
+		return 0, err
+	}
+	if _, err := service.store.Circles().FindCircle(ctx, circleID); err != nil {
+		return 0, err
+	}
+	now := service.now().UTC()
+	if err := service.store.Circles().SetCircleState(ctx, circleID, hub.CircleStateDisabled, &now); err != nil {
+		return 0, err
+	}
+	revoked, err := service.store.Agents().RevokeAgentsInCircle(ctx, circleID, "circle disabled", now)
+	if err == nil {
+		service.audit(ctx, hub.Event{Type: hub.EventCircleDisabled, CircleID: circleID, Details: map[string]any{"circleId": circleID, "revokedAgents": revoked}})
+	}
+	return revoked, err
+}
+
 func (service *Service) CancelTask(ctx context.Context, taskID, reason string) error {
 	err := service.store.Inbox().CancelTask(ctx, taskID, reason, service.now().UTC())
 	if err == nil {
@@ -427,7 +561,9 @@ func (service *Service) ListEvents(ctx context.Context, token string, afterID ui
 func (service *Service) BuildSystemCard(baseURL string) hub.HubSystemCard {
 	baseURL = strings.TrimRight(baseURL, "/")
 	mode := "PUBLIC"
-	if service.config.SharedKey != "" {
+	if service.circleResolver.Mode() == circle.ModeMulti {
+		mode = "MULTI_CIRCLE"
+	} else if service.config.SharedKey != "" {
 		mode = "SEMI_OPEN"
 	}
 	return hub.HubSystemCard{
@@ -640,6 +776,20 @@ func (service *Service) RecordEvent(ctx context.Context, eventType string) {
 func (service *Service) audit(ctx context.Context, event hub.Event) {
 	if event.HubID == "" {
 		event.HubID = service.config.HubID
+	}
+	if event.CircleID == "" {
+		agentID := event.ActorAgentID
+		if agentID == "" {
+			agentID = event.TargetAgentID
+		}
+		if agentID != "" {
+			if agent, err := service.store.Agents().FindAgent(ctx, agentID); err == nil && agent.CircleID != "" {
+				event.CircleID = agent.CircleID
+			}
+		}
+		if event.CircleID == "" {
+			event.CircleID = circle.PublicID
+		}
 	}
 	if err := service.store.Events().AppendEvent(ctx, event); err != nil {
 		log.Printf("audit event failed type=%s", event.Type)

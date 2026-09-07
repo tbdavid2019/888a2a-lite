@@ -88,6 +88,14 @@ func (database *DB) migrate(ctx context.Context) error {
 		{table: "hub_policy", name: "max_group_history_page", ddl: "INTEGER NOT NULL DEFAULT 100"},
 		{table: "inbox_item", name: "group_id", ddl: "TEXT NOT NULL DEFAULT ''"},
 		{table: "inbox_item", name: "group_message_id", ddl: "INTEGER NOT NULL DEFAULT 0"},
+		{table: "agent", name: "circle_id", ddl: "TEXT NOT NULL DEFAULT 'public'"},
+		{table: "inbox_item", name: "circle_id", ddl: "TEXT NOT NULL DEFAULT 'public'"},
+		{table: "agent_group", name: "circle_id", ddl: "TEXT NOT NULL DEFAULT 'public'"},
+		{table: "group_member", name: "circle_id", ddl: "TEXT NOT NULL DEFAULT 'public'"},
+		{table: "group_invitation", name: "circle_id", ddl: "TEXT NOT NULL DEFAULT 'public'"},
+		{table: "group_message", name: "circle_id", ddl: "TEXT NOT NULL DEFAULT 'public'"},
+		{table: "group_delivery", name: "circle_id", ddl: "TEXT NOT NULL DEFAULT 'public'"},
+		{table: "event_log", name: "circle_id", ddl: "TEXT NOT NULL DEFAULT 'public'"},
 	} {
 		if err := ensureColumn(ctx, database.db, column.table, column.name, column.ddl); err != nil {
 			return err
@@ -96,6 +104,16 @@ func (database *DB) migrate(ctx context.Context) error {
 	if _, err := database.db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_inbox_group_message
 ON inbox_item (hub_id, group_id, group_message_id, target_agent_id, state)`); err != nil {
 		return err
+	}
+	for _, statement := range []string{
+		`CREATE INDEX IF NOT EXISTS idx_agent_circle_state ON agent (hub_id, circle_id, state)`,
+		`CREATE INDEX IF NOT EXISTS idx_inbox_circle_state ON inbox_item (hub_id, circle_id, target_agent_id, state, sequence)`,
+		`CREATE INDEX IF NOT EXISTS idx_group_circle_state ON agent_group (hub_id, circle_id, state, created_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_event_circle_id ON event_log (hub_id, circle_id, id)`,
+	} {
+		if _, err := database.db.ExecContext(ctx, statement); err != nil {
+			return err
+		}
 	}
 	_, err := database.db.ExecContext(ctx, `INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (3, CURRENT_TIMESTAMP)`)
 	return err
@@ -127,6 +145,36 @@ func ensureColumn(ctx context.Context, database *sql.DB, table, column, definiti
 }
 
 const schemaSQL = `
+CREATE TABLE IF NOT EXISTS hub_circle (
+    hub_id TEXT NOT NULL,
+    circle_id TEXT NOT NULL,
+    alias TEXT NOT NULL DEFAULT '',
+    state TEXT NOT NULL CHECK (state IN ('ACTIVE', 'DISABLED')),
+    active_key_version INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    disabled_at TEXT,
+    PRIMARY KEY (hub_id, circle_id)
+);
+
+CREATE TABLE IF NOT EXISTS hub_circle_key (
+    hub_id TEXT NOT NULL,
+    circle_id TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    key_digest TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('ACTIVE', 'GRACE', 'REVOKED')),
+    created_at TEXT NOT NULL,
+    grace_until TEXT,
+    revoked_at TEXT,
+    PRIMARY KEY (hub_id, circle_id, version),
+    UNIQUE (hub_id, key_digest),
+    FOREIGN KEY (hub_id, circle_id) REFERENCES hub_circle (hub_id, circle_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_circle_state ON hub_circle (hub_id, state, circle_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_circle_alias
+    ON hub_circle (hub_id, alias) WHERE alias <> '';
+CREATE INDEX IF NOT EXISTS idx_circle_key_digest ON hub_circle_key (hub_id, key_digest, state);
+
 CREATE TABLE IF NOT EXISTS hub_policy (
     hub_id TEXT PRIMARY KEY NOT NULL,
     registration_enabled INTEGER NOT NULL CHECK (registration_enabled IN (0, 1)),
@@ -145,6 +193,7 @@ CREATE TABLE IF NOT EXISTS hub_policy (
 CREATE TABLE IF NOT EXISTS agent (
     hub_id TEXT NOT NULL,
     agent_id TEXT NOT NULL,
+    circle_id TEXT NOT NULL DEFAULT 'public',
     registration_key_hash TEXT NOT NULL,
     token_hash TEXT NOT NULL,
     display_name TEXT NOT NULL,
@@ -170,6 +219,7 @@ CREATE INDEX IF NOT EXISTS idx_agent_hub_state
 CREATE TABLE IF NOT EXISTS inbox_item (
     sequence INTEGER PRIMARY KEY AUTOINCREMENT,
     hub_id TEXT NOT NULL,
+    circle_id TEXT NOT NULL DEFAULT 'public',
     target_agent_id TEXT NOT NULL,
     requester_agent_id TEXT NOT NULL,
     task_id TEXT NOT NULL,
@@ -194,6 +244,7 @@ CREATE INDEX IF NOT EXISTS idx_inbox_pending
 CREATE TABLE IF NOT EXISTS event_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     hub_id TEXT NOT NULL,
+    circle_id TEXT NOT NULL DEFAULT 'public',
     event_type TEXT NOT NULL,
     actor_agent_id TEXT NOT NULL DEFAULT '',
     target_agent_id TEXT NOT NULL DEFAULT '',
@@ -232,6 +283,7 @@ CREATE INDEX IF NOT EXISTS idx_announcement_active
 CREATE TABLE IF NOT EXISTS agent_group (
     hub_id TEXT NOT NULL,
     group_id TEXT NOT NULL,
+    circle_id TEXT NOT NULL DEFAULT 'public',
     name TEXT NOT NULL,
     state TEXT NOT NULL CHECK (state IN ('ACTIVE', 'ARCHIVED')),
     owner_agent_id TEXT NOT NULL,
@@ -248,6 +300,7 @@ CREATE TABLE IF NOT EXISTS group_member (
     hub_id TEXT NOT NULL,
     group_id TEXT NOT NULL,
     agent_id TEXT NOT NULL,
+    circle_id TEXT NOT NULL DEFAULT 'public',
     role TEXT NOT NULL CHECK (role IN ('OWNER', 'ADMIN', 'MEMBER')),
     state TEXT NOT NULL CHECK (state IN ('ACTIVE', 'LEFT', 'REMOVED')),
     joined_at TEXT NOT NULL,
@@ -265,6 +318,7 @@ CREATE TABLE IF NOT EXISTS group_invitation (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     hub_id TEXT NOT NULL,
     group_id TEXT NOT NULL,
+    circle_id TEXT NOT NULL DEFAULT 'public',
     inviter_agent_id TEXT NOT NULL,
     invitee_agent_id TEXT NOT NULL,
     state TEXT NOT NULL CHECK (state IN ('PENDING', 'ACCEPTED', 'DECLINED', 'EXPIRED', 'REVOKED')),
@@ -286,6 +340,7 @@ CREATE TABLE IF NOT EXISTS group_message (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     hub_id TEXT NOT NULL,
     group_id TEXT NOT NULL,
+    circle_id TEXT NOT NULL DEFAULT 'public',
     sender_agent_id TEXT NOT NULL,
     context_id TEXT NOT NULL,
     idempotency_key TEXT NOT NULL,
@@ -303,6 +358,7 @@ CREATE TABLE IF NOT EXISTS group_delivery (
     sequence INTEGER PRIMARY KEY,
     hub_id TEXT NOT NULL,
     group_id TEXT NOT NULL,
+    circle_id TEXT NOT NULL DEFAULT 'public',
     group_message_id INTEGER NOT NULL,
     target_agent_id TEXT NOT NULL,
     state TEXT NOT NULL CHECK (state IN ('PENDING', 'ACKNOWLEDGED', 'CANCELED')),

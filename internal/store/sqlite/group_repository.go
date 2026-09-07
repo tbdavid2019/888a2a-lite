@@ -19,19 +19,22 @@ func (repository *Repository) CreateGroup(ctx context.Context, group hub.Group) 
 	if group.State == "" {
 		group.State = hub.GroupStateActive
 	}
+	if group.CircleID == "" {
+		group.CircleID = "public"
+	}
 	if group.CreatedAt.IsZero() {
 		group.CreatedAt = time.Now().UTC()
 	}
 	err := repository.withTransaction(ctx, func(tx *Repository) error {
 		if _, err := tx.executor().ExecContext(ctx, `
-INSERT INTO agent_group (hub_id, group_id, name, state, owner_agent_id, created_at, archived_at)
-VALUES (?, ?, ?, ?, ?, ?, ?)`, group.HubID, group.GroupID, group.Name, string(group.State),
+INSERT INTO agent_group (hub_id, group_id, circle_id, name, state, owner_agent_id, created_at, archived_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, group.HubID, group.GroupID, group.CircleID, group.Name, string(group.State),
 			group.OwnerAgentID, formatTime(group.CreatedAt), nullTimePtr(group.ArchivedAt)); err != nil {
 			return err
 		}
 		_, err := tx.executor().ExecContext(ctx, `
-INSERT INTO group_member (hub_id, group_id, agent_id, role, state, joined_at, left_at, removed_at)
-VALUES (?, ?, ?, 'OWNER', 'ACTIVE', ?, NULL, NULL)`, group.HubID, group.GroupID, group.OwnerAgentID, formatTime(group.CreatedAt))
+INSERT INTO group_member (hub_id, group_id, agent_id, circle_id, role, state, joined_at, left_at, removed_at)
+VALUES (?, ?, ?, ?, 'OWNER', 'ACTIVE', ?, NULL, NULL)`, group.HubID, group.GroupID, group.OwnerAgentID, group.CircleID, formatTime(group.CreatedAt))
 		return err
 	})
 	if err != nil {
@@ -42,16 +45,16 @@ VALUES (?, ?, ?, 'OWNER', 'ACTIVE', ?, NULL, NULL)`, group.HubID, group.GroupID,
 
 func (repository *Repository) FindGroup(ctx context.Context, groupID string) (hub.Group, error) {
 	return scanGroup(repository.executor().QueryRowContext(ctx, `
-SELECT hub_id, group_id, name, state, owner_agent_id, created_at, archived_at
+SELECT hub_id, group_id, circle_id, name, state, owner_agent_id, created_at, archived_at
 FROM agent_group WHERE group_id = ?`, groupID))
 }
 
 func (repository *Repository) ListGroups(ctx context.Context, agentID string) ([]hub.Group, error) {
 	rows, err := repository.executor().QueryContext(ctx, `
-SELECT g.hub_id, g.group_id, g.name, g.state, g.owner_agent_id, g.created_at, g.archived_at
+SELECT g.hub_id, g.group_id, g.circle_id, g.name, g.state, g.owner_agent_id, g.created_at, g.archived_at
 FROM agent_group g
 JOIN group_member m ON m.hub_id = g.hub_id AND m.group_id = g.group_id
-WHERE m.agent_id = ? AND m.state = 'ACTIVE'
+WHERE m.agent_id = ? AND m.state = 'ACTIVE' AND m.circle_id = g.circle_id
 ORDER BY g.created_at, g.group_id`, agentID)
 	if err != nil {
 		return nil, err
@@ -70,13 +73,13 @@ ORDER BY g.created_at, g.group_id`, agentID)
 
 func (repository *Repository) FindMember(ctx context.Context, groupID, agentID string) (hub.GroupMember, error) {
 	return scanGroupMember(repository.executor().QueryRowContext(ctx, `
-SELECT hub_id, group_id, agent_id, role, state, joined_at, left_at, removed_at
+SELECT hub_id, group_id, agent_id, circle_id, role, state, joined_at, left_at, removed_at
 FROM group_member WHERE group_id = ? AND agent_id = ?`, groupID, agentID))
 }
 
 func (repository *Repository) ListMembers(ctx context.Context, groupID string) ([]hub.GroupMember, error) {
 	rows, err := repository.executor().QueryContext(ctx, `
-SELECT hub_id, group_id, agent_id, role, state, joined_at, left_at, removed_at
+SELECT hub_id, group_id, agent_id, circle_id, role, state, joined_at, left_at, removed_at
 FROM group_member WHERE group_id = ? AND state = 'ACTIVE'
 ORDER BY joined_at, agent_id`, groupID)
 	if err != nil {
@@ -95,6 +98,9 @@ ORDER BY joined_at, agent_id`, groupID)
 }
 
 func (repository *Repository) CreateInvitation(ctx context.Context, invitation hub.GroupInvitation) (hub.GroupInvitation, error) {
+	if invitation.CircleID == "" {
+		invitation.CircleID = "public"
+	}
 	if invitation.CreatedAt.IsZero() {
 		invitation.CreatedAt = time.Now().UTC()
 	}
@@ -114,8 +120,8 @@ WHERE hub_id = ? AND group_id = ? AND invitee_agent_id = ? AND state = 'PENDING'
 		}
 		result, err := tx.executor().ExecContext(ctx, `
 INSERT INTO group_invitation (
-    hub_id, group_id, inviter_agent_id, invitee_agent_id, state, created_at, expires_at, responded_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, invitation.HubID, invitation.GroupID, invitation.InviterAgentID,
+    hub_id, group_id, circle_id, inviter_agent_id, invitee_agent_id, state, created_at, expires_at, responded_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, invitation.HubID, invitation.GroupID, invitation.CircleID, invitation.InviterAgentID,
 			invitation.InviteeAgentID, string(invitation.State), formatTime(invitation.CreatedAt),
 			formatTime(invitation.ExpiresAt), nullTimePtr(invitation.RespondedAt))
 		if err != nil {
@@ -137,20 +143,20 @@ INSERT INTO group_invitation (
 
 func (repository *Repository) FindInvitation(ctx context.Context, id uint64) (hub.GroupInvitation, error) {
 	return scanInvitation(repository.executor().QueryRowContext(ctx, `
-SELECT id, hub_id, group_id, inviter_agent_id, invitee_agent_id, state, created_at, expires_at, responded_at
+SELECT id, hub_id, group_id, circle_id, inviter_agent_id, invitee_agent_id, state, created_at, expires_at, responded_at
 FROM group_invitation WHERE id = ?`, id))
 }
 
 func (repository *Repository) FindPendingInvitation(ctx context.Context, groupID, inviteeAgentID string) (hub.GroupInvitation, error) {
 	return scanInvitation(repository.executor().QueryRowContext(ctx, `
-SELECT id, hub_id, group_id, inviter_agent_id, invitee_agent_id, state, created_at, expires_at, responded_at
+SELECT id, hub_id, group_id, circle_id, inviter_agent_id, invitee_agent_id, state, created_at, expires_at, responded_at
 FROM group_invitation WHERE group_id = ? AND invitee_agent_id = ? AND state = 'PENDING' AND expires_at > ?
 ORDER BY id DESC LIMIT 1`, groupID, inviteeAgentID, formatTime(time.Now().UTC())))
 }
 
 func (repository *Repository) ListInvitations(ctx context.Context, inviteeAgentID string) ([]hub.GroupInvitation, error) {
 	rows, err := repository.executor().QueryContext(ctx, `
-SELECT id, hub_id, group_id, inviter_agent_id, invitee_agent_id, state, created_at, expires_at, responded_at
+SELECT id, hub_id, group_id, circle_id, inviter_agent_id, invitee_agent_id, state, created_at, expires_at, responded_at
 FROM group_invitation WHERE invitee_agent_id = ? ORDER BY id`, inviteeAgentID)
 	if err != nil {
 		return nil, err
@@ -191,13 +197,16 @@ func (repository *Repository) AcceptInvitation(ctx context.Context, id uint64, a
 		if !group.IsActive() {
 			return store.ErrInvalidState
 		}
-		var state string
+		var state, agentCircleID string
 		var expires string
-		if err := tx.executor().QueryRowContext(ctx, `SELECT state, expires_at FROM agent WHERE agent_id = ?`, agentID).Scan(&state, &expires); err != nil {
+		if err := tx.executor().QueryRowContext(ctx, `SELECT circle_id, state, expires_at FROM agent WHERE agent_id = ?`, agentID).Scan(&agentCircleID, &state, &expires); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return store.ErrNotFound
 			}
 			return err
+		}
+		if invitation.CircleID != agentCircleID {
+			return store.ErrNotFound
 		}
 		if state == string(hub.AgentStateRevoked) {
 			return store.ErrForbidden
@@ -217,11 +226,11 @@ func (repository *Repository) AcceptInvitation(ctx context.Context, id uint64, a
 			return store.ErrInvalidState
 		}
 		_, err = tx.executor().ExecContext(ctx, `
-INSERT INTO group_member (hub_id, group_id, agent_id, role, state, joined_at, left_at, removed_at)
-VALUES (?, ?, ?, 'MEMBER', 'ACTIVE', ?, NULL, NULL)
+INSERT INTO group_member (hub_id, group_id, agent_id, circle_id, role, state, joined_at, left_at, removed_at)
+VALUES (?, ?, ?, ?, 'MEMBER', 'ACTIVE', ?, NULL, NULL)
 ON CONFLICT (hub_id, group_id, agent_id) DO UPDATE SET
     role = 'MEMBER', state = 'ACTIVE', joined_at = excluded.joined_at,
-    left_at = NULL, removed_at = NULL`, invitation.HubID, invitation.GroupID, agentID, formatTime(acceptedAt))
+			left_at = NULL, removed_at = NULL`, invitation.HubID, invitation.GroupID, agentID, invitation.CircleID, formatTime(acceptedAt))
 		if err != nil {
 			return err
 		}
@@ -366,9 +375,15 @@ func (repository *Repository) SendGroupMessage(ctx context.Context, message hub.
 		if message.CreatedAt.IsZero() {
 			message.CreatedAt = time.Now().UTC()
 		}
+		if message.CircleID == "" {
+			message.CircleID = group.CircleID
+		}
+		if message.CircleID != group.CircleID {
+			return store.ErrNotFound
+		}
 		result, err := tx.executor().ExecContext(ctx, `
-INSERT INTO group_message (hub_id, group_id, sender_agent_id, context_id, idempotency_key, message, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?)`, message.HubID, message.GroupID, message.SenderAgentID, message.ContextID,
+INSERT INTO group_message (hub_id, group_id, circle_id, sender_agent_id, context_id, idempotency_key, message, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, message.HubID, message.GroupID, message.CircleID, message.SenderAgentID, message.ContextID,
 			message.IdempotencyKey, message.Message, formatTime(message.CreatedAt))
 		if err != nil {
 			return err
@@ -384,9 +399,9 @@ VALUES (?, ?, ?, ?, ?, ?, ?)`, message.HubID, message.GroupID, message.SenderAge
 			internalKey := "group:" + message.GroupID + ":" + message.IdempotencyKey
 			result, err := tx.executor().ExecContext(ctx, `
 INSERT INTO inbox_item (
-    hub_id, target_agent_id, requester_agent_id, task_id, context_id, idempotency_key,
+    hub_id, circle_id, target_agent_id, requester_agent_id, task_id, context_id, idempotency_key,
     message, state, created_at, acknowledged_at, canceled_at, cancel_reason, group_id, group_message_id
-) VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, NULL, NULL, '', ?, ?)`, message.HubID, recipient.AgentID,
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, NULL, NULL, '', ?, ?)`, message.HubID, message.CircleID, recipient.AgentID,
 				message.SenderAgentID, fmt.Sprintf("group-message-%d", message.ID), message.ContextID, internalKey,
 				message.Message, formatTime(message.CreatedAt), message.GroupID, message.ID)
 			if err != nil {
@@ -397,8 +412,8 @@ INSERT INTO inbox_item (
 				return err
 			}
 			if _, err := tx.executor().ExecContext(ctx, `
-INSERT INTO group_delivery (sequence, hub_id, group_id, group_message_id, target_agent_id, state)
-VALUES (?, ?, ?, ?, ?, 'PENDING')`, sequence, message.HubID, message.GroupID, message.ID, recipient.AgentID); err != nil {
+INSERT INTO group_delivery (sequence, hub_id, circle_id, group_id, group_message_id, target_agent_id, state)
+VALUES (?, ?, ?, ?, ?, ?, 'PENDING')`, sequence, message.HubID, message.CircleID, message.GroupID, message.ID, recipient.AgentID); err != nil {
 				return err
 			}
 			message.Deliveries = append(message.Deliveries, hub.GroupDeliverySummary{
@@ -413,11 +428,11 @@ VALUES (?, ?, ?, ?, ?, 'PENDING')`, sequence, message.HubID, message.GroupID, me
 
 func (repository *Repository) ListGroupMessages(ctx context.Context, groupID, agentID string, afterID uint64, limit int) ([]hub.GroupMessage, error) {
 	rows, err := repository.executor().QueryContext(ctx, `
-SELECT m.id, m.hub_id, m.group_id, m.sender_agent_id, m.context_id,
+SELECT m.id, m.hub_id, m.group_id, m.circle_id, m.sender_agent_id, m.context_id,
        m.idempotency_key, m.message, m.created_at
 FROM group_message m
 JOIN group_member member ON member.hub_id = m.hub_id AND member.group_id = m.group_id
-WHERE m.group_id = ? AND member.agent_id = ? AND member.state = 'ACTIVE'
+WHERE m.group_id = ? AND member.agent_id = ? AND member.state = 'ACTIVE' AND member.circle_id = m.circle_id
   AND m.id > ? AND m.created_at >= member.joined_at
 ORDER BY m.id LIMIT ?`, groupID, agentID, afterID, limit)
 	if err != nil {
@@ -492,7 +507,7 @@ WHERE group_id = ? AND target_agent_id = ? AND state = 'PENDING' AND polled_at I
 
 func (repository *Repository) findGroupMessageByIdempotency(ctx context.Context, groupID, senderID, key string) (hub.GroupMessage, error) {
 	return scanGroupMessage(repository.executor().QueryRowContext(ctx, `
-SELECT id, hub_id, group_id, sender_agent_id, context_id, idempotency_key, message, created_at
+SELECT id, hub_id, group_id, circle_id, sender_agent_id, context_id, idempotency_key, message, created_at
 FROM group_message WHERE group_id = ? AND sender_agent_id = ? AND idempotency_key = ?`, groupID, senderID, key))
 }
 
@@ -503,7 +518,7 @@ func (repository *Repository) ListGroupMessagesAdmin(ctx context.Context, before
 	groupID = strings.TrimSpace(groupID)
 	agentID = strings.TrimSpace(agentID)
 	query := `
-SELECT id, hub_id, group_id, sender_agent_id, context_id, idempotency_key, message, created_at
+SELECT id, hub_id, group_id, circle_id, sender_agent_id, context_id, idempotency_key, message, created_at
 FROM group_message
 WHERE (? = 0 OR id < ?)
   AND (? = '' OR group_id = ?)
@@ -560,7 +575,7 @@ WHERE group_message_id = ? ORDER BY sequence`, messageID)
 func scanGroup(row scanner) (hub.Group, error) {
 	var group hub.Group
 	var state, created, archived sql.NullString
-	if err := row.Scan(&group.HubID, &group.GroupID, &group.Name, &state, &group.OwnerAgentID, &created, &archived); err != nil {
+	if err := row.Scan(&group.HubID, &group.GroupID, &group.CircleID, &group.Name, &state, &group.OwnerAgentID, &created, &archived); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return hub.Group{}, ErrNotFound
 		}
@@ -580,7 +595,7 @@ func scanGroup(row scanner) (hub.Group, error) {
 func scanGroupMember(row scanner) (hub.GroupMember, error) {
 	var member hub.GroupMember
 	var role, state, joined, left, removed sql.NullString
-	if err := row.Scan(&member.HubID, &member.GroupID, &member.AgentID, &role, &state, &joined, &left, &removed); err != nil {
+	if err := row.Scan(&member.HubID, &member.GroupID, &member.AgentID, &member.CircleID, &role, &state, &joined, &left, &removed); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return hub.GroupMember{}, ErrNotFound
 		}
@@ -604,7 +619,7 @@ func scanGroupMember(row scanner) (hub.GroupMember, error) {
 func scanInvitation(row scanner) (hub.GroupInvitation, error) {
 	var invitation hub.GroupInvitation
 	var state, created, expires, responded sql.NullString
-	if err := row.Scan(&invitation.ID, &invitation.HubID, &invitation.GroupID, &invitation.InviterAgentID,
+	if err := row.Scan(&invitation.ID, &invitation.HubID, &invitation.GroupID, &invitation.CircleID, &invitation.InviterAgentID,
 		&invitation.InviteeAgentID, &state, &created, &expires, &responded); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return hub.GroupInvitation{}, ErrNotFound
@@ -628,7 +643,7 @@ func scanInvitation(row scanner) (hub.GroupInvitation, error) {
 func scanGroupMessage(row scanner) (hub.GroupMessage, error) {
 	var message hub.GroupMessage
 	var created string
-	if err := row.Scan(&message.ID, &message.HubID, &message.GroupID, &message.SenderAgentID,
+	if err := row.Scan(&message.ID, &message.HubID, &message.GroupID, &message.CircleID, &message.SenderAgentID,
 		&message.ContextID, &message.IdempotencyKey, &message.Message, &created); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return hub.GroupMessage{}, ErrNotFound

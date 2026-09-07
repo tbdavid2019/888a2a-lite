@@ -98,6 +98,8 @@ func (server *HTTPServer) Handler() http.Handler {
 	mux.HandleFunc("POST /hub/v1/groups/{groupId}/messages", server.sendGroupMessage)
 	mux.HandleFunc("POST /hub/v1/admin/registration", server.setRegistration)
 	mux.HandleFunc("GET /hub/v1/admin/agents", server.adminListAgents)
+	mux.HandleFunc("GET /hub/v1/admin/circles", server.adminListCircles)
+	mux.HandleFunc("POST /hub/v1/admin/circles/{circleId}/disable", server.adminDisableCircle)
 	mux.HandleFunc("POST /hub/v1/admin/agents/{agentId}/revoke", server.revokeAgent)
 	mux.HandleFunc("DELETE /hub/v1/admin/agents/{agentId}", server.adminDeleteAgent)
 	mux.HandleFunc("POST /hub/v1/admin/agents/prune", server.adminPruneAgents)
@@ -117,7 +119,11 @@ func (server *HTTPServer) llms(w http.ResponseWriter, r *http.Request) {
 	mode := "PUBLIC"
 	authSummary := "None required. This Hub is running in PUBLIC mode; registration is open without any pre-shared key."
 	regHeader := "(No authentication headers required in PUBLIC mode; simply POST payload)"
-	if server.service.config.SharedKey != "" {
+	if server.service.circleResolver.Mode() == "multi" {
+		mode = "MULTI_CIRCLE"
+		authSummary = "Optional. Registration without a pre-shared key enters the public circle; an allowed shared key enters its private circle."
+		regHeader = "(No key for public circle; X-Hub-Key: <shared_key> for a private circle)"
+	} else if server.service.config.SharedKey != "" {
 		mode = "SEMI_OPEN"
 		authSummary = "Required. This Hub is running in SEMI_OPEN mode; pre-shared key is required on registration."
 		regHeader = "X-Hub-Key: <shared_key> (or Authorization: Bearer <shared_key>)"
@@ -373,7 +379,23 @@ func (server *HTTPServer) health(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *HTTPServer) status(w http.ResponseWriter, r *http.Request) {
-	status, err := server.service.Status(r.Context())
+	var status HubStatus
+	var err error
+	if strings.TrimSpace(r.Header.Get("X-Agent-ID")) != "" {
+		agentID, token, ok := server.agentCredentials(w, r, "")
+		if !ok {
+			return
+		}
+		status, err = server.service.StatusForAgent(r.Context(), agentID, token)
+	} else if bearer, ok := bearerToken(r.Header.Get("Authorization")); ok {
+		if server.service.AuthenticateOperator(bearer) != nil {
+			writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "authentication failed")
+			return
+		}
+		status, err = server.service.StatusForOperator(r.Context(), bearer)
+	} else {
+		status, err = server.service.Status(r.Context())
+	}
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -382,7 +404,8 @@ func (server *HTTPServer) status(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *HTTPServer) register(w http.ResponseWriter, r *http.Request) {
-	if !server.verifySharedKey(r) {
+	sharedKey := sharedKeyFromRequest(r)
+	if server.service.config.CircleMode != "multi" && !server.verifySharedKey(r) {
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "shared key required or invalid")
 		return
 	}
@@ -394,7 +417,7 @@ func (server *HTTPServer) register(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, server.maxBodyBytes, &declaration) {
 		return
 	}
-	identity, duplicate, err := server.service.Register(r.Context(), declaration)
+	identity, duplicate, err := server.service.RegisterWithSharedKey(r.Context(), declaration, sharedKey)
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -978,6 +1001,32 @@ func (server *HTTPServer) adminListAgents(w http.ResponseWriter, r *http.Request
 	})
 }
 
+func (server *HTTPServer) adminListCircles(w http.ResponseWriter, r *http.Request) {
+	token, ok := server.operatorToken(w, r)
+	if !ok {
+		return
+	}
+	circles, err := server.service.ListCirclesAdmin(r.Context(), token)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"circles": circles})
+}
+
+func (server *HTTPServer) adminDisableCircle(w http.ResponseWriter, r *http.Request) {
+	token, ok := server.operatorToken(w, r)
+	if !ok {
+		return
+	}
+	revoked, err := server.service.DisableCircle(r.Context(), token, r.PathValue("circleId"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"circleId": r.PathValue("circleId"), "state": hub.CircleStateDisabled, "revokedAgents": revoked})
+}
+
 func (server *HTTPServer) adminDeleteAgent(w http.ResponseWriter, r *http.Request) {
 	token, ok := server.operatorToken(w, r)
 	if !ok {
@@ -1077,6 +1126,14 @@ func (server *HTTPServer) verifySharedKey(r *http.Request) bool {
 	if sharedKey == "" {
 		return true
 	}
+	candidate := sharedKeyFromRequest(r)
+	if candidate == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(candidate), []byte(sharedKey)) == 1
+}
+
+func sharedKeyFromRequest(r *http.Request) string {
 	candidate := strings.TrimSpace(r.Header.Get("X-Hub-Key"))
 	if candidate == "" {
 		candidate = strings.TrimSpace(r.Header.Get("X-Shared-Key"))
@@ -1104,14 +1161,11 @@ func (server *HTTPServer) verifySharedKey(r *http.Request) bool {
 			candidate = bearer
 		}
 	}
-	if candidate == "" {
-		return false
-	}
-	return subtle.ConstantTimeCompare([]byte(candidate), []byte(sharedKey)) == 1
+	return candidate
 }
 
 func (server *HTTPServer) agentCredentials(w http.ResponseWriter, r *http.Request, pathAgentID string) (string, string, bool) {
-	if server.service.config.SharedKey != "" {
+	if server.service.config.CircleMode != "multi" && server.service.config.SharedKey != "" {
 		candidate := strings.TrimSpace(r.Header.Get("X-Hub-Key"))
 		if candidate == "" {
 			candidate = strings.TrimSpace(r.Header.Get("X-Shared-Key"))
@@ -1231,6 +1285,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "authentication failed")
 	case errors.Is(err, ErrRegistrationDisabled):
 		writeError(w, http.StatusForbidden, "REGISTRATION_DISABLED", "registration is disabled")
+	case errors.Is(err, ErrCircleDisabled):
+		writeError(w, http.StatusForbidden, "CIRCLE_DISABLED", "circle is disabled")
 	case errors.Is(err, ErrAgentLimit):
 		writeError(w, http.StatusTooManyRequests, "AGENT_LIMIT_REACHED", "agent limit reached")
 	case errors.Is(err, ErrTaskLimit):

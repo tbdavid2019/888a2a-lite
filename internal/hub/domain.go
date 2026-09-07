@@ -43,6 +43,7 @@ type AgentDeclaration struct {
 type AgentIdentity struct {
 	HubID      string    `json:"hubId"`
 	AgentID    string    `json:"agentId"`
+	CircleID   string    `json:"circleId,omitempty"`
 	AgentToken string    `json:"agentToken,omitempty"`
 	ExpiresAt  time.Time `json:"expiresAt"`
 }
@@ -64,6 +65,7 @@ type HubPolicy struct {
 type RegisteredAgent struct {
 	HubID               string
 	AgentID             string
+	CircleID            string
 	DisplayName         string
 	ProviderFamily      string
 	TransportID         string
@@ -94,6 +96,7 @@ type AgentCard struct {
 type AgentView struct {
 	HubID              string     `json:"hubId"`
 	AgentID            string     `json:"agentId"`
+	CircleID           string     `json:"circleId,omitempty"`
 	DisplayName        string     `json:"displayName"`
 	ProviderFamily     string     `json:"providerFamily"`
 	TransportID        string     `json:"transportId"`
@@ -108,6 +111,7 @@ type AgentView struct {
 type AgentAdminDetail struct {
 	HubID          string     `json:"hubId"`
 	AgentID        string     `json:"agentId"`
+	CircleID       string     `json:"circleId"`
 	DisplayName    string     `json:"displayName"`
 	ProviderFamily string     `json:"providerFamily"`
 	TransportID    string     `json:"transportId"`
@@ -166,6 +170,7 @@ func (agent RegisteredAgent) SafeView(baseURL string) AgentView {
 	return AgentView{
 		HubID:              agent.HubID,
 		AgentID:            agent.AgentID,
+		CircleID:           agent.CircleID,
 		DisplayName:        agent.DisplayName,
 		ProviderFamily:     agent.ProviderFamily,
 		TransportID:        agent.TransportID,
