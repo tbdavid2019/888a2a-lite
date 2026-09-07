@@ -377,7 +377,9 @@ func (client *Client) StreamInbox(ctx context.Context, afterSequence uint64, onE
 	if err != nil {
 		return fmt.Errorf("execute stream request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))

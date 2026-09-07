@@ -519,7 +519,11 @@ func TestHTTPSSEInboxStream(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sqlite.Open: %v", err)
 	}
-	defer database.Close()
+	defer func() {
+		if err := database.Close(); err != nil {
+			t.Errorf("close database: %v", err)
+		}
+	}()
 
 	repository := sqlite.NewRepository(database)
 	cfg := config.Config{
@@ -570,7 +574,9 @@ func TestHTTPSSEInboxStream(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stream request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("stream status = %d, want 200", resp.StatusCode)
