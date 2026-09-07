@@ -100,6 +100,8 @@ func (server *HTTPServer) Handler() http.Handler {
 	mux.HandleFunc("GET /hub/v1/admin/agents", server.adminListAgents)
 	mux.HandleFunc("GET /hub/v1/admin/circles", server.adminListCircles)
 	mux.HandleFunc("POST /hub/v1/admin/circles/{circleId}/disable", server.adminDisableCircle)
+	mux.HandleFunc("POST /hub/v1/admin/circles/{circleId}/keys/rotate", server.adminRotateCircleKey)
+	mux.HandleFunc("POST /hub/v1/admin/circles/{circleId}/keys/{version}/revoke", server.adminRevokeCircleKey)
 	mux.HandleFunc("POST /hub/v1/admin/agents/{agentId}/revoke", server.revokeAgent)
 	mux.HandleFunc("DELETE /hub/v1/admin/agents/{agentId}", server.adminDeleteAgent)
 	mux.HandleFunc("POST /hub/v1/admin/agents/prune", server.adminPruneAgents)
@@ -227,6 +229,11 @@ type groupMessageRequest struct {
 	ContextID      string `json:"contextId"`
 	IdempotencyKey string `json:"idempotencyKey"`
 	Message        string `json:"message"`
+}
+
+type circleRotateKeyRequest struct {
+	SharedKey    string `json:"sharedKey"`
+	GraceSeconds int64  `json:"graceSeconds"`
 }
 
 func (request announcementRequest) input() hub.AnnouncementInput {
@@ -979,7 +986,7 @@ func (server *HTTPServer) adminListAgents(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	agents, err := server.service.ListAgentsAdmin(r.Context(), token)
+	agents, err := server.service.ListAgentsAdmin(r.Context(), token, strings.TrimSpace(r.URL.Query().Get("circleId")))
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -1025,6 +1032,44 @@ func (server *HTTPServer) adminDisableCircle(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"circleId": r.PathValue("circleId"), "state": hub.CircleStateDisabled, "revokedAgents": revoked})
+}
+
+func (server *HTTPServer) adminRotateCircleKey(w http.ResponseWriter, r *http.Request) {
+	token, ok := server.operatorToken(w, r)
+	if !ok {
+		return
+	}
+	var request circleRotateKeyRequest
+	if !decodeJSON(w, r, server.maxBodyBytes, &request) {
+		return
+	}
+	if request.GraceSeconds < 0 || request.GraceSeconds > 30*24*60*60 {
+		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "graceSeconds must be between 0 and 2592000")
+		return
+	}
+	circleRecord, err := server.service.RotateCircleKey(r.Context(), token, r.PathValue("circleId"), strings.TrimSpace(request.SharedKey), time.Duration(request.GraceSeconds)*time.Second)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, circleRecord)
+}
+
+func (server *HTTPServer) adminRevokeCircleKey(w http.ResponseWriter, r *http.Request) {
+	token, ok := server.operatorToken(w, r)
+	if !ok {
+		return
+	}
+	version, err := strconv.Atoi(r.PathValue("version"))
+	if err != nil || version < 1 {
+		writeError(w, http.StatusBadRequest, "INVALID_PATH", "version must be a positive integer")
+		return
+	}
+	if err := server.service.RevokeCircleKey(r.Context(), token, r.PathValue("circleId"), version); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"circleId": r.PathValue("circleId"), "version": version, "state": "REVOKED"})
 }
 
 func (server *HTTPServer) adminDeleteAgent(w http.ResponseWriter, r *http.Request) {
@@ -1086,7 +1131,7 @@ func (server *HTTPServer) listEvents(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "INVALID_QUERY", "limit must be an integer")
 		return
 	}
-	events, err := server.service.ListEvents(r.Context(), token, afterID, limit)
+	events, err := server.service.ListEvents(r.Context(), token, afterID, limit, strings.TrimSpace(r.URL.Query().Get("circleId")))
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -1113,7 +1158,7 @@ func (server *HTTPServer) adminListMessages(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadRequest, "INVALID_QUERY", "limit must be an integer")
 		return
 	}
-	messages, err := server.service.ListMessagesAdmin(r.Context(), token, msgType, beforeSequence, beforeID, limit, groupID, agentID)
+	messages, err := server.service.ListMessagesAdmin(r.Context(), token, msgType, beforeSequence, beforeID, limit, groupID, agentID, strings.TrimSpace(r.URL.Query().Get("circleId")))
 	if err != nil {
 		writeServiceError(w, err)
 		return

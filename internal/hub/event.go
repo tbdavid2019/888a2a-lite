@@ -48,4 +48,6 @@ const (
 	EventAgentDeleted                = "agent.deleted"
 	EventAgentsPruned                = "agents.pruned"
 	EventCircleDisabled              = "circle.disabled"
+	EventCircleKeyRotated            = "circle.key_rotated"
+	EventCircleKeyRevoked            = "circle.key_revoked"
 )

@@ -149,15 +149,19 @@ FROM group_invitation WHERE id = ?`, id))
 
 func (repository *Repository) FindPendingInvitation(ctx context.Context, groupID, inviteeAgentID string) (hub.GroupInvitation, error) {
 	return scanInvitation(repository.executor().QueryRowContext(ctx, `
-SELECT id, hub_id, group_id, circle_id, inviter_agent_id, invitee_agent_id, state, created_at, expires_at, responded_at
-FROM group_invitation WHERE group_id = ? AND invitee_agent_id = ? AND state = 'PENDING' AND expires_at > ?
-ORDER BY id DESC LIMIT 1`, groupID, inviteeAgentID, formatTime(time.Now().UTC())))
+SELECT i.id, i.hub_id, i.group_id, i.circle_id, i.inviter_agent_id, i.invitee_agent_id, i.state, i.created_at, i.expires_at, i.responded_at
+FROM group_invitation i
+JOIN agent a ON a.hub_id = i.hub_id AND a.agent_id = i.invitee_agent_id AND a.circle_id = i.circle_id
+WHERE i.group_id = ? AND i.invitee_agent_id = ? AND i.state = 'PENDING' AND i.expires_at > ?
+ORDER BY i.id DESC LIMIT 1`, groupID, inviteeAgentID, formatTime(time.Now().UTC())))
 }
 
 func (repository *Repository) ListInvitations(ctx context.Context, inviteeAgentID string) ([]hub.GroupInvitation, error) {
 	rows, err := repository.executor().QueryContext(ctx, `
-SELECT id, hub_id, group_id, circle_id, inviter_agent_id, invitee_agent_id, state, created_at, expires_at, responded_at
-FROM group_invitation WHERE invitee_agent_id = ? ORDER BY id`, inviteeAgentID)
+SELECT i.id, i.hub_id, i.group_id, i.circle_id, i.inviter_agent_id, i.invitee_agent_id, i.state, i.created_at, i.expires_at, i.responded_at
+FROM group_invitation i
+JOIN agent a ON a.hub_id = i.hub_id AND a.agent_id = i.invitee_agent_id AND a.circle_id = i.circle_id
+WHERE i.invitee_agent_id = ? ORDER BY i.id`, inviteeAgentID)
 	if err != nil {
 		return nil, err
 	}

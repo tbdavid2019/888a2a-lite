@@ -101,6 +101,9 @@ func (database *DB) migrate(ctx context.Context) error {
 			return err
 		}
 	}
+	if err := migrateAgentRegistrationScope(ctx, database.db); err != nil {
+		return err
+	}
 	if _, err := database.db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_inbox_group_message
 ON inbox_item (hub_id, group_id, group_message_id, target_agent_id, state)`); err != nil {
 		return err
@@ -141,6 +144,84 @@ func ensureColumn(ctx context.Context, database *sql.DB, table, column, definiti
 		return err
 	}
 	_, err = database.ExecContext(ctx, "ALTER TABLE "+table+" ADD COLUMN "+column+" "+definition)
+	return err
+}
+
+func migrateAgentRegistrationScope(ctx context.Context, database *sql.DB) error {
+	var applied int
+	if err := database.QueryRowContext(ctx, "SELECT COUNT(*) FROM schema_migrations WHERE version = 4").Scan(&applied); err != nil {
+		return err
+	}
+	if applied > 0 {
+		return nil
+	}
+	conn, err := database.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = conn.Close() }()
+	if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys = OFF"); err != nil {
+		return err
+	}
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	rollback := func(cause error) error {
+		_ = tx.Rollback()
+		_, _ = conn.ExecContext(ctx, "PRAGMA foreign_keys = ON")
+		return cause
+	}
+	statements := []string{
+		`CREATE TABLE agent_v4 (
+    hub_id TEXT NOT NULL,
+    agent_id TEXT NOT NULL,
+    circle_id TEXT NOT NULL DEFAULT 'public',
+    registration_key_hash TEXT NOT NULL,
+    token_hash TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    provider_family TEXT NOT NULL,
+    transport_id TEXT NOT NULL,
+    capabilities_json TEXT NOT NULL,
+    agent_card_json TEXT NOT NULL DEFAULT '',
+    automatic_execution INTEGER NOT NULL DEFAULT 0 CHECK (automatic_execution IN (0, 1)),
+    state TEXT NOT NULL,
+    last_seen_at TEXT,
+    expires_at TEXT NOT NULL,
+    lease_expires_at TEXT,
+    created_at TEXT NOT NULL,
+    revoked_at TEXT,
+    revoke_reason TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (hub_id, agent_id)
+)`,
+		`INSERT INTO agent_v4 (
+    hub_id, agent_id, circle_id, registration_key_hash, token_hash, display_name,
+    provider_family, transport_id, capabilities_json, agent_card_json,
+    automatic_execution, state, last_seen_at, expires_at, lease_expires_at,
+    created_at, revoked_at, revoke_reason
+)
+SELECT hub_id, agent_id, circle_id, registration_key_hash, token_hash, display_name,
+       provider_family, transport_id, capabilities_json, agent_card_json,
+       automatic_execution, state, last_seen_at, expires_at, lease_expires_at,
+       created_at, revoked_at, revoke_reason
+FROM agent`,
+		`DROP TABLE agent`,
+		`ALTER TABLE agent_v4 RENAME TO agent`,
+		`CREATE INDEX IF NOT EXISTS idx_agent_hub_state ON agent (hub_id, state)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_registration_circle ON agent (hub_id, circle_id, registration_key_hash)`,
+		`CREATE INDEX IF NOT EXISTS idx_agent_circle_state ON agent (hub_id, circle_id, state)`,
+		`INSERT INTO schema_migrations (version, applied_at) VALUES (4, CURRENT_TIMESTAMP)`,
+	}
+	for _, statement := range statements {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return rollback(fmt.Errorf("migrate agent registration scope: %w", err))
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		_, _ = conn.ExecContext(ctx, "PRAGMA foreign_keys = ON")
+		return err
+	}
+	_, err = conn.ExecContext(ctx, "PRAGMA foreign_keys = ON")
 	return err
 }
 
@@ -209,9 +290,11 @@ CREATE TABLE IF NOT EXISTS agent (
     created_at TEXT NOT NULL,
     revoked_at TEXT,
     revoke_reason TEXT NOT NULL DEFAULT '',
-    PRIMARY KEY (hub_id, agent_id),
-    UNIQUE (hub_id, registration_key_hash)
+    PRIMARY KEY (hub_id, agent_id)
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_registration_circle
+    ON agent (hub_id, circle_id, registration_key_hash);
 
 CREATE INDEX IF NOT EXISTS idx_agent_hub_state
     ON agent (hub_id, state);

@@ -89,7 +89,17 @@ func (service *Service) RegisterWithSharedKey(ctx context.Context, declaration h
 	if !policy.RegistrationEnabled {
 		return hub.AgentIdentity{}, false, ErrRegistrationDisabled
 	}
-	circleIdentity, err := service.circleResolver.Resolve(sharedKey)
+	circleIdentity := circle.Identity{}
+	if service.circleResolver.Mode() == circle.ModeMulti && strings.TrimSpace(sharedKey) != "" {
+		keyDigest := service.circleResolver.KeyDigest(sharedKey)
+		if existingCircle, findErr := service.store.Circles().FindCircleByKeyDigest(ctx, keyDigest, service.now().UTC()); findErr == nil {
+			circleIdentity = circle.Identity{ID: existingCircle.CircleID, Alias: existingCircle.Alias, KeyDigest: keyDigest, KeyVersion: fmt.Sprintf("%d", existingCircle.ActiveKeyVersion)}
+		} else {
+			circleIdentity, err = service.circleResolver.Resolve(sharedKey)
+		}
+	} else {
+		circleIdentity, err = service.circleResolver.Resolve(sharedKey)
+	}
 	if err != nil {
 		return hub.AgentIdentity{}, false, fmt.Errorf("%w: %s", ErrValidation, err.Error())
 	}
@@ -163,10 +173,25 @@ func (service *Service) ensureCircle(ctx context.Context, identity circle.Identi
 		return ErrCircleDisabled
 	}
 	if identity.KeyDigest != "" {
-		if err := service.store.Circles().CreateCircleKey(ctx, hub.CircleKey{
-			HubID: service.config.HubID, CircleID: identity.ID, Version: 1,
-			KeyDigest: identity.KeyDigest, State: "ACTIVE", CreatedAt: now,
-		}); err != nil {
+		if _, err := service.store.Circles().FindActiveCircleKey(ctx, identity.ID, identity.KeyDigest, now); errors.Is(err, store.ErrNotFound) {
+			keys, listErr := service.store.Circles().ListCircleKeys(ctx, identity.ID)
+			if listErr != nil {
+				return listErr
+			}
+			if len(keys) == 0 {
+				if err := service.store.Circles().CreateCircleKey(ctx, hub.CircleKey{
+					HubID: service.config.HubID, CircleID: identity.ID, Version: 1,
+					KeyDigest: identity.KeyDigest, State: "ACTIVE", CreatedAt: now,
+				}); err != nil {
+					return err
+				}
+			} else if err := service.store.Circles().RotateCircleKey(ctx, identity.ID, hub.CircleKey{
+				HubID: service.config.HubID, CircleID: identity.ID, Version: keys[len(keys)-1].Version + 1,
+				KeyDigest: identity.KeyDigest, CreatedAt: now,
+			}, nil); err != nil {
+				return err
+			}
+		} else if err != nil {
 			return err
 		}
 	}
@@ -449,7 +474,7 @@ func (service *Service) Revoke(ctx context.Context, agentID, reason string) erro
 	return err
 }
 
-func (service *Service) ListAgentsAdmin(ctx context.Context, token string) ([]hub.AgentAdminDetail, error) {
+func (service *Service) ListAgentsAdmin(ctx context.Context, token, circleID string) ([]hub.AgentAdminDetail, error) {
 	if err := service.AuthenticateOperator(token); err != nil {
 		return nil, err
 	}
@@ -460,6 +485,9 @@ func (service *Service) ListAgentsAdmin(ctx context.Context, token string) ([]hu
 	now := service.now().UTC()
 	details := make([]hub.AgentAdminDetail, 0, len(agents))
 	for _, agent := range agents {
+		if strings.TrimSpace(circleID) != "" && agent.CircleID != circleID {
+			continue
+		}
 		state := agent.StateAt(now)
 		var lastSeen *time.Time
 		if !agent.LastSeenAt.IsZero() {
@@ -540,6 +568,59 @@ func (service *Service) DisableCircle(ctx context.Context, token, circleID strin
 	return revoked, err
 }
 
+func (service *Service) RotateCircleKey(ctx context.Context, token, circleID, newSharedKey string, grace time.Duration) (hub.Circle, error) {
+	if err := service.AuthenticateOperator(token); err != nil {
+		return hub.Circle{}, err
+	}
+	if service.circleResolver.Mode() != circle.ModeMulti || strings.TrimSpace(newSharedKey) == "" {
+		return hub.Circle{}, fmt.Errorf("%w: circle key rotation requires multi mode and a new key", ErrValidation)
+	}
+	circleRecord, err := service.store.Circles().FindCircle(ctx, circleID)
+	if err != nil {
+		return hub.Circle{}, err
+	}
+	if circleRecord.State == hub.CircleStateDisabled {
+		return hub.Circle{}, ErrCircleDisabled
+	}
+	keys, err := service.store.Circles().ListCircleKeys(ctx, circleID)
+	if err != nil {
+		return hub.Circle{}, err
+	}
+	version := circleRecord.ActiveKeyVersion + 1
+	if version <= 1 && len(keys) > 0 {
+		version = len(keys) + 1
+	}
+	now := service.now().UTC()
+	var graceUntil *time.Time
+	if grace > 0 {
+		value := now.Add(grace)
+		graceUntil = &value
+	}
+	if err := service.store.Circles().RotateCircleKey(ctx, circleID, hub.CircleKey{
+		HubID: service.config.HubID, CircleID: circleID, Version: version,
+		KeyDigest: service.circleResolver.KeyDigest(newSharedKey), CreatedAt: now,
+	}, graceUntil); err != nil {
+		return hub.Circle{}, err
+	}
+	circleRecord.ActiveKeyVersion = version
+	service.audit(ctx, hub.Event{Type: hub.EventCircleKeyRotated, CircleID: circleID, Details: map[string]any{"circleId": circleID, "version": version}})
+	return circleRecord, nil
+}
+
+func (service *Service) RevokeCircleKey(ctx context.Context, token, circleID string, version int) error {
+	if err := service.AuthenticateOperator(token); err != nil {
+		return err
+	}
+	if version < 1 {
+		return fmt.Errorf("%w: key version must be positive", ErrValidation)
+	}
+	if err := service.store.Circles().RevokeCircleKey(ctx, circleID, version, service.now().UTC()); err != nil {
+		return err
+	}
+	service.audit(ctx, hub.Event{Type: hub.EventCircleKeyRevoked, CircleID: circleID, Details: map[string]any{"circleId": circleID, "version": version}})
+	return nil
+}
+
 func (service *Service) CancelTask(ctx context.Context, taskID, reason string) error {
 	err := service.store.Inbox().CancelTask(ctx, taskID, reason, service.now().UTC())
 	if err == nil {
@@ -548,14 +629,24 @@ func (service *Service) CancelTask(ctx context.Context, taskID, reason string) e
 	return err
 }
 
-func (service *Service) ListEvents(ctx context.Context, token string, afterID uint64, limit int) ([]hub.Event, error) {
+func (service *Service) ListEvents(ctx context.Context, token string, afterID uint64, limit int, circleID string) ([]hub.Event, error) {
 	if err := service.AuthenticateOperator(token); err != nil {
 		return nil, err
 	}
 	if limit < 1 || limit > 1000 {
 		return nil, fmt.Errorf("event limit must be between 1 and 1000")
 	}
-	return service.store.Events().ListEvents(ctx, afterID, limit)
+	events, err := service.store.Events().ListEvents(ctx, afterID, limit)
+	if err != nil || strings.TrimSpace(circleID) == "" {
+		return events, err
+	}
+	filtered := make([]hub.Event, 0, len(events))
+	for _, event := range events {
+		if event.CircleID == circleID {
+			filtered = append(filtered, event)
+		}
+	}
+	return filtered, nil
 }
 
 func (service *Service) BuildSystemCard(baseURL string) hub.HubSystemCard {
@@ -742,7 +833,7 @@ type AdminMessagesResult struct {
 	GroupMessages  []hub.GroupMessage `json:"groupMessages"`
 }
 
-func (service *Service) ListMessagesAdmin(ctx context.Context, token string, msgType string, beforeSequence, beforeID uint64, limit int, groupID, agentID string) (AdminMessagesResult, error) {
+func (service *Service) ListMessagesAdmin(ctx context.Context, token string, msgType string, beforeSequence, beforeID uint64, limit int, groupID, agentID, circleID string) (AdminMessagesResult, error) {
 	if err := service.AuthenticateOperator(token); err != nil {
 		return AdminMessagesResult{}, err
 	}
@@ -765,6 +856,22 @@ func (service *Service) ListMessagesAdmin(ctx context.Context, token string, msg
 		if err != nil {
 			return AdminMessagesResult{}, err
 		}
+	}
+	if strings.TrimSpace(circleID) != "" {
+		direct := result.DirectMessages[:0]
+		for _, item := range result.DirectMessages {
+			if item.CircleID == circleID {
+				direct = append(direct, item)
+			}
+		}
+		result.DirectMessages = direct
+		groups := result.GroupMessages[:0]
+		for _, message := range result.GroupMessages {
+			if message.CircleID == circleID {
+				groups = append(groups, message)
+			}
+		}
+		result.GroupMessages = groups
 	}
 	return result, nil
 }

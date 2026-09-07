@@ -60,8 +60,11 @@ type CircleStore interface {
 	ListCircles(context.Context) ([]hub.Circle, error)
 	SetCircleState(context.Context, string, hub.CircleState, *time.Time) error
 	CreateCircleKey(context.Context, hub.CircleKey) error
+	RotateCircleKey(context.Context, string, hub.CircleKey, *time.Time) error
 	FindActiveCircleKey(context.Context, string, string, time.Time) (hub.CircleKey, error)
+	FindCircleByKeyDigest(context.Context, string, time.Time) (hub.Circle, error)
 	ListCircleKeys(context.Context, string) ([]hub.CircleKey, error)
+	RevokeCircleKey(context.Context, string, int, time.Time) error
 }
 
 type AnnouncementStore interface {

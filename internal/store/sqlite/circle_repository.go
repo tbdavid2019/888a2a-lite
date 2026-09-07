@@ -121,6 +121,32 @@ ON CONFLICT (hub_id, circle_id, version) DO UPDATE SET
 	return err
 }
 
+func (repository *Repository) RotateCircleKey(ctx context.Context, circleID string, key hub.CircleKey, graceUntil *time.Time) error {
+	if key.Version < 1 || strings.TrimSpace(key.KeyDigest) == "" {
+		return errors.New("rotated circle key requires version and digest")
+	}
+	return repository.withTransaction(ctx, func(tx *Repository) error {
+		if _, err := tx.executor().ExecContext(ctx, `
+UPDATE hub_circle_key SET state = 'GRACE', grace_until = ?
+WHERE circle_id = ? AND state = 'ACTIVE'`, nullTimePtr(graceUntil), circleID); err != nil {
+			return err
+		}
+		key.State = "ACTIVE"
+		if key.CreatedAt.IsZero() {
+			key.CreatedAt = time.Now().UTC()
+		}
+		if _, err := tx.executor().ExecContext(ctx, `
+INSERT INTO hub_circle_key (hub_id, circle_id, version, key_digest, state, created_at, grace_until, revoked_at)
+VALUES (?, ?, ?, ?, 'ACTIVE', ?, NULL, NULL)`, key.HubID, key.CircleID, key.Version,
+			key.KeyDigest, formatTime(key.CreatedAt)); err != nil {
+			return err
+		}
+		_, err := tx.executor().ExecContext(ctx, `
+UPDATE hub_circle SET active_key_version = ? WHERE hub_id = ? AND circle_id = ?`, key.Version, key.HubID, key.CircleID)
+		return err
+	})
+}
+
 func (repository *Repository) FindActiveCircleKey(ctx context.Context, circleID, digest string, now time.Time) (hub.CircleKey, error) {
 	var key hub.CircleKey
 	var state, createdAt string
@@ -149,6 +175,35 @@ ORDER BY version DESC LIMIT 1`, circleID, digest, formatTime(now)).Scan(
 		return hub.CircleKey{}, err
 	}
 	return key, nil
+}
+
+func (repository *Repository) FindCircleByKeyDigest(ctx context.Context, digest string, now time.Time) (hub.Circle, error) {
+	var circle hub.Circle
+	var state string
+	var createdAt string
+	var disabledAt sql.NullString
+	err := repository.executor().QueryRowContext(ctx, `
+SELECT c.hub_id, c.circle_id, c.alias, c.state, c.active_key_version, c.created_at, c.disabled_at
+FROM hub_circle c
+JOIN hub_circle_key k ON k.hub_id = c.hub_id AND k.circle_id = c.circle_id
+WHERE k.key_digest = ?
+  AND (k.state = 'ACTIVE' OR (k.state = 'GRACE' AND k.grace_until > ?))
+ORDER BY k.version DESC LIMIT 1`, digest, formatTime(now)).Scan(
+		&circle.HubID, &circle.CircleID, &circle.Alias, &state, &circle.ActiveKeyVersion, &createdAt, &disabledAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return hub.Circle{}, store.ErrNotFound
+	}
+	if err != nil {
+		return hub.Circle{}, err
+	}
+	circle.State = hub.CircleState(state)
+	if circle.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAt); err != nil {
+		return hub.Circle{}, err
+	}
+	if circle.DisabledAt, err = parseNullableTime(disabledAt); err != nil {
+		return hub.Circle{}, err
+	}
+	return circle, nil
 }
 
 func (repository *Repository) ListCircleKeys(ctx context.Context, circleID string) ([]hub.CircleKey, error) {
@@ -180,4 +235,17 @@ FROM hub_circle_key WHERE circle_id = ? ORDER BY version`, circleID)
 		keys = append(keys, key)
 	}
 	return keys, rows.Err()
+}
+
+func (repository *Repository) RevokeCircleKey(ctx context.Context, circleID string, version int, revokedAt time.Time) error {
+	result, err := repository.executor().ExecContext(ctx, `
+UPDATE hub_circle_key SET state = 'REVOKED', revoked_at = ?, grace_until = NULL
+WHERE circle_id = ? AND version = ? AND state <> 'REVOKED'`, formatTime(revokedAt), circleID, version)
+	if err != nil {
+		return err
+	}
+	if affected, _ := result.RowsAffected(); affected != 1 {
+		return store.ErrNotFound
+	}
+	return nil
 }

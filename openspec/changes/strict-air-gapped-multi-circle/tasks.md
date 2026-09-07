@@ -3,13 +3,13 @@
 - [x] 1.1 Define `A2A888_HUB_CIRCLE_MODE=single|multi`; preserve current global PUBLIC/SEMI_OPEN behavior in `single` mode and enable circle coexistence only in `multi` mode.
 - [x] 1.2 Define and validate `A2A888_HUB_SHARED_KEYS`, `A2A888_HUB_ALLOW_DYNAMIC_CIRCLES`, and persistent `A2A888_HUB_CIRCLE_DERIVATION_SECRET`; reject unsafe or ambiguous configuration without logging secrets.
 - [x] 1.3 Add `hub_circle` and `hub_circle_key` storage for ACTIVE/DISABLED state, aliases, key versions, rotation grace periods, and key digests; never store plaintext shared keys.
-- [ ] 1.4 Add circle disable, key-version rotation, and circle Agent-session revoke operator operations.
+- [x] 1.4 Add circle disable, key-version rotation, and circle Agent-session revoke operator operations.
 
 ## 2. SQLite Schema Migration & Store Scoping
 
 - [x] 2.1 Add `circle_id TEXT NOT NULL DEFAULT 'public'` to `agent`, `inbox_item`, `agent_group`, `group_invitation`, `group_message`, `group_delivery`, and `event_log` in `internal/store/sqlite/sqlite.go` / repository migrations.
 - [x] 2.2 Update Go data structures (`RegisteredAgent`, `InboxItem`, `Group`, `GroupMember`, invitations, messages, events) with `CircleID string` where the resource is circle-scoped.
-- [ ] 2.3 Add composite indices for `(hub_id, circle_id, state)` and circle-aware uniqueness/FK constraints where applicable.
+- [x] 2.3 Add composite indices for `(hub_id, circle_id, state)` and circle-aware uniqueness/FK constraints where applicable.
 - [x] 2.4 Migrate all existing rows to `public`; do not infer private membership for historical rows.
 - [ ] 2.5 Update repository methods to require or derive circle scope for Agent, mailbox, group, invitation, delivery, message, and event queries.
 

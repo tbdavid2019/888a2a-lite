@@ -102,6 +102,10 @@ func ParseAliases(value string) ([]Alias, error) {
 
 func (resolver Resolver) Mode() string { return resolver.mode }
 
+func (resolver Resolver) KeyDigest(sharedKey string) string {
+	return resolver.digest("key:" + strings.TrimSpace(sharedKey))
+}
+
 func (resolver Resolver) Resolve(sharedKey string) (Identity, error) {
 	if resolver.mode == ModeSingle {
 		return Identity{ID: PublicID, KeyVersion: "0"}, nil
@@ -115,7 +119,7 @@ func (resolver Resolver) Resolve(sharedKey string) (Identity, error) {
 			return Identity{
 				ID:         resolver.aliasID(alias.Name),
 				Alias:      alias.Name,
-				KeyDigest:  resolver.digest("alias:" + alias.Name),
+				KeyDigest:  resolver.KeyDigest(sharedKey),
 				KeyVersion: "1",
 			}, nil
 		}
