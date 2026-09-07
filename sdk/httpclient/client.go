@@ -1,6 +1,7 @@
 package httpclient
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -342,6 +343,81 @@ func (client *Client) Acknowledge(ctx context.Context, sequence uint64) error {
 	path := "/hub/v1/agents/" + url.PathEscape(client.AgentID) + "/inbox/" + strconv.FormatUint(sequence, 10) + "/ack"
 	_, err := client.request(ctx, http.MethodPost, path, nil, true)
 	return err
+}
+
+// StreamInbox connects to the agent's SSE inbox stream and calls onEvent for each incoming task.
+// If onEvent returns an error or ctx is cancelled, StreamInbox returns.
+func (client *Client) StreamInbox(ctx context.Context, afterSequence uint64, onEvent func(hub.InboxItem) error) error {
+	if client.AgentID == "" || client.AgentToken == "" {
+		return errors.New("agent credentials are required to stream inbox")
+	}
+
+	endpoint := client.BaseURL + "/hub/v1/agents/" + url.PathEscape(client.AgentID) + "/inbox/stream"
+	if afterSequence > 0 {
+		endpoint += "?afterSequence=" + strconv.FormatUint(afterSequence, 10)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return fmt.Errorf("create stream request: %w", err)
+	}
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("X-Agent-ID", client.AgentID)
+	req.Header.Set("Authorization", "Bearer "+client.AgentToken)
+	if client.SharedKey != "" {
+		req.Header.Set("X-Hub-Key", client.SharedKey)
+	}
+
+	httpClient := client.HTTPClient
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("execute stream request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return fmt.Errorf("stream failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	reader := bufio.NewReader(resp.Body)
+	var currentData string
+
+	for {
+		line, readErr := reader.ReadString('\n')
+		if readErr != nil {
+			if errors.Is(readErr, io.EOF) || errors.Is(ctx.Err(), context.Canceled) {
+				return nil
+			}
+			return fmt.Errorf("read stream line: %w", readErr)
+		}
+
+		line = strings.TrimRight(line, "\r\n")
+		if line == "" {
+			if currentData != "" {
+				var item hub.InboxItem
+				if jsonErr := json.Unmarshal([]byte(currentData), &item); jsonErr == nil {
+					if err := onEvent(item); err != nil {
+						return err
+					}
+				}
+			}
+			currentData = ""
+			continue
+		}
+
+		if strings.HasPrefix(line, ":") {
+			// Keepalive comment
+			continue
+		}
+		if strings.HasPrefix(line, "data: ") {
+			currentData = strings.TrimPrefix(line, "data: ")
+		}
+	}
 }
 
 func (client *Client) Reconnect(ctx context.Context) (hub.AgentView, error) {

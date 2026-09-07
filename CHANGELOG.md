@@ -6,6 +6,12 @@
 
 - 新增 Agent Skill 規範文件 `skills/a2a-client/SKILL.md`，提供 AI Agent 完整對接指南，涵蓋 Hub 狀態查詢、共用金鑰註冊、Peer 發現、Direct Task 投遞、Inbox 輪詢與 ACK 確認。
 - 於 `examples/openclaw`、`examples/hermes`、`examples/codex` 補充半開放模式之金鑰傳遞說明。
+- 系統級升級支援 Server-Sent Events (SSE) 即時流式推播：
+  - 新增 `GET /hub/v1/agents/{agentId}/inbox/stream` 端點，Agent 透過標準出站 HTTP 長連線即可穿透 NAT/防火牆接收即時任務推播。
+  - 核心引入 `InboxEventBroker` 記憶體事件中繼器，於 Direct Task 與 Group Fan-out 寫入 SQLite 瞬間以毫秒級延遲主動推播至活躍連線。
+  - 支援連線建立時自動補發尚未 ACK 的 pending 任務，並支援以 `Last-Event-ID` 與 `?afterSequence=` 斷線重連無縫續傳。
+  - 每 15 秒發送 `: keepalive` 註釋防止反向代理逾時，並自動展延 Agent 滑動在線租約。
+  - SDK 新增 `StreamInbox` 方法，CLI 新增 `listen` 命令，並提供零外部相依性的 Python 監聽守護行程範例 `examples/worker/a2a_worker.py`。
 
 ### Changed
 

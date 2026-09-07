@@ -30,6 +30,8 @@ func runCLI(command string, args []string) error {
 		return runNotify(args)
 	case "inbox":
 		return runInbox(args)
+	case "listen":
+		return runListen(args)
 	case "ack":
 		return runAck(args)
 	case "groups":
@@ -57,7 +59,7 @@ func runCLI(command string, args []string) error {
 	case "group-archive":
 		return runGroupArchive(args)
 	default:
-		return fmt.Errorf("unknown command %q; supported commands: server, register, peers, notify, inbox, ack, groups, group-create, group-invitations, group-invite, group-accept, group-roster, group-history, group-send, group-leave, group-remove, group-transfer, group-archive", command)
+		return fmt.Errorf("unknown command %q; supported commands: server, register, peers, notify, inbox, listen, ack, groups, group-create, group-invitations, group-invite, group-accept, group-roster, group-history, group-send, group-leave, group-remove, group-transfer, group-archive", command)
 	}
 }
 
@@ -162,6 +164,29 @@ func runInbox(args []string) error {
 		return err
 	}
 	return writeOutput(response)
+}
+
+func runListen(args []string) error {
+	flags := flag.NewFlagSet("listen", flag.ContinueOnError)
+	credentialPath := flags.String("credential-file", "", "credential file path")
+	after := flags.Uint64("after-sequence", 0, "stream items after this sequence")
+	autoAck := flags.Bool("auto-ack", false, "automatically acknowledge received tasks")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	client, err := loadClient(*credentialPath)
+	if err != nil {
+		return err
+	}
+	return client.StreamInbox(context.Background(), *after, func(item hub.InboxItem) error {
+		_ = writeOutput(item)
+		if *autoAck {
+			if ackErr := client.Acknowledge(context.Background(), item.Sequence); ackErr != nil {
+				fmt.Fprintf(os.Stderr, "failed to ack sequence %d: %v\n", item.Sequence, ackErr)
+			}
+		}
+		return nil
+	})
 }
 
 func runAck(args []string) error {

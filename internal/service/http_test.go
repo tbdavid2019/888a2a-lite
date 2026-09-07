@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -509,5 +510,123 @@ func TestHTTPSemiOpenSharedKeyEnforcement(t *testing.T) {
 	handler.ServeHTTP(queryKeyAgentRec, queryKeyAgentReq)
 	if queryKeyAgentRec.Code != http.StatusOK {
 		t.Fatalf("query key agent list status = %d, want 200; body=%s", queryKeyAgentRec.Code, queryKeyAgentRec.Body.String())
+	}
+}
+
+func TestHTTPSSEInboxStream(t *testing.T) {
+	ctx := context.Background()
+	database, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "hub.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open: %v", err)
+	}
+	defer database.Close()
+
+	repository := sqlite.NewRepository(database)
+	cfg := config.Config{
+		HubID: "public", ListenAddr: ":0", DatabasePath: filepath.Join(t.TempDir(), "unused.db"),
+		RegistrationEnabled: true, RegistrationTTL: 24 * time.Hour, PeerLease: 90 * time.Second,
+		MaxRegisteredAgents: 10, MaxTasksPerMinute: 20, MaxConcurrentTasks: 4,
+		MaxPayloadBytes: 1 << 20, RegistrationPerMinute: 20,
+	}
+	svc := New(repository, cfg)
+	ts := httptest.NewServer(NewHTTPServer(svc).Handler())
+	defer ts.Close()
+
+	// Register sender (agentA) and recipient (agentB)
+	identA, _, err := svc.Register(ctx, hub.AgentDeclaration{
+		DisplayName: "sender", ProviderFamily: "test", TransportID: "http",
+		Capabilities: []string{"text/plain"}, RegistrationIdempotency: "sender-inst",
+	})
+	if err != nil {
+		t.Fatalf("register A: %v", err)
+	}
+	identB, _, err := svc.Register(ctx, hub.AgentDeclaration{
+		DisplayName: "recipient", ProviderFamily: "test", TransportID: "http",
+		Capabilities: []string{"text/plain"}, RegistrationIdempotency: "recipient-inst",
+	})
+	if err != nil {
+		t.Fatalf("register B: %v", err)
+	}
+
+	// 1. Send Task 1 before stream opens (tests catch-up)
+	_, _, err = svc.SendTask(ctx, identA.AgentID, identA.AgentToken, hub.TaskDelivery{
+		TargetAgentID: identB.AgentID, ContextID: "ctx-1", IdempotencyKey: "idem-1",
+		Message: "task 1 message", TaskID: "task-1",
+	})
+	if err != nil {
+		t.Fatalf("send task 1: %v", err)
+	}
+
+	// 2. Open SSE stream for agentB
+	streamReq, err := http.NewRequest(http.MethodGet, ts.URL+"/hub/v1/agents/"+identB.AgentID+"/inbox/stream", nil)
+	if err != nil {
+		t.Fatalf("new stream req: %v", err)
+	}
+	streamReq.Header.Set("X-Agent-ID", identB.AgentID)
+	streamReq.Header.Set("Authorization", "Bearer "+identB.AgentToken)
+
+	client := &http.Client{}
+	resp, err := client.Do(streamReq)
+	if err != nil {
+		t.Fatalf("stream request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("stream status = %d, want 200", resp.StatusCode)
+	}
+	if !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
+		t.Fatalf("Content-Type = %q, want text/event-stream", resp.Header.Get("Content-Type"))
+	}
+
+	reader := bufio.NewReader(resp.Body)
+
+	readEvent := func() (string, string, string) {
+		var id, event, data string
+		for {
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				t.Fatalf("read line: %v", err)
+			}
+			line = strings.TrimRight(line, "\r\n")
+			if line == "" {
+				if event != "" || data != "" {
+					return id, event, data
+				}
+				continue
+			}
+			if strings.HasPrefix(line, ":") {
+				continue
+			}
+			if strings.HasPrefix(line, "id: ") {
+				id = strings.TrimPrefix(line, "id: ")
+			} else if strings.HasPrefix(line, "event: ") {
+				event = strings.TrimPrefix(line, "event: ")
+			} else if strings.HasPrefix(line, "data: ") {
+				data = strings.TrimPrefix(line, "data: ")
+			}
+		}
+	}
+
+	id1, event1, data1 := readEvent()
+	if id1 != "1" || event1 != "task" || !strings.Contains(data1, "task 1 message") {
+		t.Fatalf("event 1 mismatch: id=%q, event=%q, data=%q", id1, event1, data1)
+	}
+
+	// 3. Send Task 2 while stream is open (tests instant live push)
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		_, _, sendErr := svc.SendTask(context.Background(), identA.AgentID, identA.AgentToken, hub.TaskDelivery{
+			TargetAgentID: identB.AgentID, ContextID: "ctx-2", IdempotencyKey: "idem-2",
+			Message: "task 2 message", TaskID: "task-2",
+		})
+		if sendErr != nil {
+			t.Errorf("send task 2: %v", sendErr)
+		}
+	}()
+
+	id2, event2, data2 := readEvent()
+	if id2 != "2" || event2 != "task" || !strings.Contains(data2, "task 2 message") {
+		t.Fatalf("event 2 mismatch: id=%q, event=%q, data=%q", id2, event2, data2)
 	}
 }

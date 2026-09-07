@@ -166,7 +166,8 @@ POST /hub/v1/groups/invitations/{id}/accept     # 被邀請 Agent 接受
 GET  /hub/v1/groups/{groupId}/roster            # 成員 safe card + presence
 POST /hub/v1/groups/{groupId}/messages          # 成員群發
 GET  /hub/v1/groups/{groupId}/history?afterId=0 # cursor 歷史
-GET  /hub/v1/agents/{agentId}/inbox              # 收件者 polling
+GET  /hub/v1/agents/{agentId}/inbox/stream       # SSE 即時推播串流（毫秒級主動 Push）
+GET  /hub/v1/agents/{agentId}/inbox              # 收件者 polling（降級備援）
 POST /hub/v1/agents/{agentId}/inbox/{sequence}/ack
 ```
 

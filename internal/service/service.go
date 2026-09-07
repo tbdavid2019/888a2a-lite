@@ -38,6 +38,7 @@ type Service struct {
 	config       config.Config
 	operatorHash string
 	now          func() time.Time
+	broker       *hub.InboxEventBroker
 }
 
 func New(database store.Store, cfg config.Config) *Service {
@@ -45,7 +46,17 @@ func New(database store.Store, cfg config.Config) *Service {
 	if cfg.OperatorToken != "" {
 		operatorHash = hub.HashToken(cfg.OperatorToken)
 	}
-	return &Service{store: database, config: cfg, operatorHash: operatorHash, now: time.Now}
+	return &Service{
+		store:        database,
+		config:       cfg,
+		operatorHash: operatorHash,
+		now:          time.Now,
+		broker:       hub.NewInboxEventBroker(),
+	}
+}
+
+func (service *Service) Broker() *hub.InboxEventBroker {
+	return service.broker
 }
 
 func (service *Service) Register(ctx context.Context, declaration hub.AgentDeclaration) (hub.AgentIdentity, bool, error) {
@@ -246,6 +257,9 @@ func (service *Service) SendTask(ctx context.Context, requesterID, token string,
 			eventType = hub.EventTaskDuplicate
 		}
 		service.audit(ctx, hub.Event{Type: eventType, ActorAgentID: requesterID, TargetAgentID: task.TargetAgentID, TaskID: stored.TaskID})
+		if !duplicate && service.broker != nil {
+			service.broker.Publish(stored)
+		}
 	}
 	return stored, duplicate, err
 }

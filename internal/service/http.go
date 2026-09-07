@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -71,6 +72,7 @@ func (server *HTTPServer) Handler() http.Handler {
 	mux.HandleFunc("POST /hub/v1/agents/{agentId}/disconnect", server.disconnect)
 	mux.HandleFunc("POST /hub/v1/agents/{targetAgentId}/tasks", server.sendTask)
 	mux.HandleFunc("GET /hub/v1/agents/{agentId}/inbox", server.pollInbox)
+	mux.HandleFunc("GET /hub/v1/agents/{agentId}/inbox/stream", server.streamInbox)
 	mux.HandleFunc("POST /hub/v1/agents/{agentId}/inbox/{sequence}/ack", server.ackInbox)
 	mux.HandleFunc("GET /hub/v1/groups", server.listGroups)
 	mux.HandleFunc("POST /hub/v1/groups", server.createGroup)
@@ -522,6 +524,89 @@ func (server *HTTPServer) pollInbox(w http.ResponseWriter, r *http.Request) {
 		next = items[len(items)-1].Sequence
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items, "nextSequence": next})
+}
+
+func (server *HTTPServer) streamInbox(w http.ResponseWriter, r *http.Request) {
+	agentID, token, ok := server.agentCredentials(w, r, r.PathValue("agentId"))
+	if !ok {
+		return
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "STREAMING_UNSUPPORTED", "streaming is not supported by the underlying transport")
+		return
+	}
+
+	after, err := parseUintQuery(r, "afterSequence", 0)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_QUERY", "afterSequence must be a non-negative integer")
+		return
+	}
+	if after == 0 {
+		if lastEventID := strings.TrimSpace(r.Header.Get("Last-Event-ID")); lastEventID != "" {
+			if parsed, parseErr := strconv.ParseUint(lastEventID, 10, 64); parseErr == nil {
+				after = parsed
+			}
+		}
+	}
+
+	if _, err := server.service.AuthenticateAgent(r.Context(), agentID, token); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache, no-transform")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	sub := server.service.Broker().Subscribe(agentID, 64)
+	defer server.service.Broker().Unsubscribe(sub)
+
+	// Catch-up: query pending unacknowledged items from SQLite
+	items, err := server.service.Poll(r.Context(), agentID, token, after, 100)
+	if err == nil {
+		for _, item := range items {
+			if item.Sequence > after {
+				after = item.Sequence
+			}
+			data, jsonErr := json.Marshal(item)
+			if jsonErr != nil {
+				continue
+			}
+			_, _ = fmt.Fprintf(w, "id: %d\nevent: task\ndata: %s\n\n", item.Sequence, data)
+			flusher.Flush()
+		}
+	}
+
+	keepaliveTicker := time.NewTicker(15 * time.Second)
+	defer keepaliveTicker.Stop()
+
+	ctx := r.Context()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case item := <-sub.C:
+			if item.Sequence <= after {
+				continue
+			}
+			after = item.Sequence
+			data, jsonErr := json.Marshal(item)
+			if jsonErr != nil {
+				continue
+			}
+			_, _ = fmt.Fprintf(w, "id: %d\nevent: task\ndata: %s\n\n", item.Sequence, data)
+			flusher.Flush()
+		case <-keepaliveTicker.C:
+			_, _ = fmt.Fprint(w, ": keepalive\n\n")
+			flusher.Flush()
+			_, _ = server.service.Heartbeat(ctx, agentID, token, "")
+		}
+	}
 }
 
 func (server *HTTPServer) ackInbox(w http.ResponseWriter, r *http.Request) {

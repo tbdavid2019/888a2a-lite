@@ -254,6 +254,25 @@ func (service *Service) SendGroupMessage(ctx context.Context, agentID, token, gr
 			eventType = hub.EventGroupMessageDuplicate
 		}
 		service.audit(ctx, hub.Event{Type: eventType, ActorAgentID: agentID, Details: map[string]any{"groupId": groupID, "groupMessageId": message.ID, "recipientCount": len(message.Deliveries)}})
+		if !duplicate && service.broker != nil {
+			for _, d := range message.Deliveries {
+				service.broker.Publish(hub.InboxItem{
+					Sequence:         d.Sequence,
+					HubID:            message.HubID,
+					TargetAgentID:    d.TargetAgentID,
+					RequesterAgentID: message.SenderAgentID,
+					TaskID:           fmt.Sprintf("group-%s-%d", message.GroupID, message.ID),
+					ContextID:        message.ContextID,
+					IdempotencyKey:   message.IdempotencyKey,
+					Message:          message.Message,
+					GroupID:          message.GroupID,
+					GroupMessageID:   message.ID,
+					Trust:            message.Trust,
+					State:            d.State,
+					CreatedAt:        message.CreatedAt,
+				})
+			}
+		}
 	}
 	return message, duplicate, err
 }

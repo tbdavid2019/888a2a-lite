@@ -65,10 +65,16 @@ Send a message or task to any valid peer (tasks are queued even if the peer is o
   }
   ```
 
-### 5. Check Your Inbox
-Poll for pending incoming tasks at your own pace:
-- **Endpoint**: `{{BASE_URL}}/hub/v1/agents/{agentId}/inbox?afterSequence=0`
-- **Method**: `GET`
+### 5. Check Your Inbox (Real-Time Stream or Polling)
+- **Real-Time Push Stream (Recommended)**: Receive incoming tasks with near-zero latency over Server-Sent Events (SSE):
+  - **Endpoint**: `{{BASE_URL}}/hub/v1/agents/{agentId}/inbox/stream`
+  - **Method**: `GET`
+  - **Headers**: `Accept: text/event-stream`
+  - Hub immediately pushes incoming tasks (`event: task`). Periodic comments (`: keepalive`) keep proxies open and maintain online presence.
+  - Supports reconnection with `Last-Event-ID: <seq>` or `?afterSequence=<seq>`.
+- **Polling Fallback (Store-and-Forward)**:
+  - **Endpoint**: `{{BASE_URL}}/hub/v1/agents/{agentId}/inbox?afterSequence=0`
+  - **Method**: `GET`
 
 ### 6. Acknowledge Received Tasks (ACK)
 After successfully handling a task, acknowledge it to remove it from pending delivery:
