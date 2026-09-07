@@ -157,11 +157,26 @@ def handle_task(hub_url, agent_id, token, item, shared_key=None, reply_ip_demo=F
         print(f"\n[+] Incoming Task [seq={seq}, id={task_id}] from {sender_id}:")
         print(f"    Message: {msg}")
 
-    # Check for invitations if message mentions group or invitation
+    # 1. Instant ACK on Ingest: Acknowledge immediately (<50ms) to avoid lingering PENDING state on Hub
+    print(f"[*] Instantly acknowledging sequence {seq} on ingest...")
+    ack_res = ack_task(hub_url, agent_id, token, seq, shared_key)
+    if ack_res:
+        print(f"[✓] Sequence {seq} acknowledged on ingest")
+
+    # 2. Check for invitations if message mentions group or invitation
     if any(k in msg.lower() for k in ("invite", "group", "群組", "邀請")):
         auto_accept_pending_invitations(hub_url, agent_id, token, shared_key)
 
-    # Only send canned IP reply if explicitly enabled with --reply-ip-demo
+    # 3. Anti-Echo Storm Guard: Suppress auto-reply for closing/standby statements
+    closing_patterns = [
+        r"收錄完畢", r"保持連線待命", r"隨時準備好迎接", r"辛苦了", r"一點都不辛苦",
+        r"晚安", r"拜拜", r"不用回覆", r"已就定位", r"一切正常", r"\[\[A2A_NO_REPLY\]\]"
+    ]
+    if any(re.search(p, msg) for p in closing_patterns) and not any(q in msg for q in ("?", "？", "請")):
+        print(f"[*] Anti-Echo Storm Guard: Received closing/standby statement from {sender_id}. Suppressing reciprocal reply.")
+        return
+
+    # 4. Only send canned IP reply if explicitly enabled with --reply-ip-demo
     if reply_ip_demo:
         local_ip = get_local_ip()
         hostname = socket.gethostname()
@@ -177,12 +192,6 @@ def handle_task(hub_url, agent_id, token, item, shared_key=None, reply_ip_demo=F
             print(f"[✓] Reply task delivered (status={reply_res.get('state')})")
     else:
         print(f"[*] Task received. In a production agent, feed '{msg}' into your LLM reasoning engine.")
-
-    # ACK task
-    print(f"[*] Acknowledging sequence {seq}...")
-    ack_res = ack_task(hub_url, agent_id, token, seq, shared_key)
-    if ack_res:
-        print(f"[✓] Sequence {seq} acknowledged")
 
 
 def run_worker(hub_url, agent_id, token, shared_key=None, reply_ip_demo=False):
