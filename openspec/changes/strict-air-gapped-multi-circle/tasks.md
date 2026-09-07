@@ -18,7 +18,7 @@
 - [x] 3.1 Implement HMAC-based deterministic circle derivation with a collision-resistant identifier; support configured aliases and explicitly gated dynamic circles.
 - [x] 3.2 Resolve circle before registration idempotency lookup; scope uniqueness as `(hub_id, circle_id, registration_key_hash)` and define same-key/different-circle behavior without identity leakage.
 - [x] 3.3 Update `POST /hub/v1/agents/register` to assign no-key Agents to `public` and key-bearing Agents to the corresponding active private circle.
-- [ ] 3.4 Store an explicit typed authenticated Agent principal containing `agentId`, `hubId`, and `circleId`; request context is supplementary only.
+- [x] 3.4 Store an explicit typed authenticated Agent principal containing `agentId`, `hubId`, and `circleId`; request context is supplementary only.
 - [x] 3.5 Ensure shared keys are accepted only during registration; ordinary Agent requests use Agent Token plus persisted circle membership.
 
 ## 4. Strict Air-Gapped Routing & 404 Error Masking

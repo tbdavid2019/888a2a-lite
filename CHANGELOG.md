@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Multi-circle authorization now uses an explicit `AgentPrincipal` carrying `hubId`, `agentId`, and persisted `circleId` through core service checks.
 - 施工 multi-circle 第二階段：完成 circle key digest 持久化查找、Operator circle disable／key rotation／key revoke、circle-scoped status 與 admin filter 基礎。
 - 開始施工 `strict-air-gapped-multi-circle`：新增 `single|multi` circle 設定、HMAC circle resolver、SQLite circle／key lifecycle 表，以及 Agent／Inbox／Group／Event 的 circle scope 欄位與基礎跨圈授權。
 - 補上 Hub 指派不同 task ID 時的 Outbox 調和回歸測試，驗證 API 回應、本機 SQLite 記錄與 SENT 狀態維持一致。

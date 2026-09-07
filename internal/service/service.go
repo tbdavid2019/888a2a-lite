@@ -45,6 +45,12 @@ type Service struct {
 	circleResolver circle.Resolver
 }
 
+type AgentPrincipal struct {
+	HubID    string
+	AgentID  string
+	CircleID string
+}
+
 func New(database store.Store, cfg config.Config) *Service {
 	operatorHash := ""
 	if cfg.OperatorToken != "" {
@@ -199,6 +205,19 @@ func (service *Service) ensureCircle(ctx context.Context, identity circle.Identi
 }
 
 func (service *Service) AuthenticateAgent(ctx context.Context, agentID, token string) (hub.RegisteredAgent, error) {
+	agent, err := service.authenticateAgentRecord(ctx, agentID, token)
+	return agent, err
+}
+
+func (service *Service) AuthenticateAgentPrincipal(ctx context.Context, agentID, token string) (AgentPrincipal, error) {
+	agent, err := service.authenticateAgentRecord(ctx, agentID, token)
+	if err != nil {
+		return AgentPrincipal{}, err
+	}
+	return AgentPrincipal{HubID: agent.HubID, AgentID: agent.AgentID, CircleID: agent.CircleID}, nil
+}
+
+func (service *Service) authenticateAgentRecord(ctx context.Context, agentID, token string) (hub.RegisteredAgent, error) {
 	agent, err := service.store.Agents().AuthenticateAgent(ctx, agentID, token)
 	if err != nil {
 		return hub.RegisteredAgent{}, ErrUnauthenticated
@@ -222,7 +241,7 @@ func (service *Service) AuthenticateAgent(ctx context.Context, agentID, token st
 }
 
 func (service *Service) ListAgents(ctx context.Context, agentID, token, baseURL string, stateFilter string) ([]hub.AgentView, error) {
-	requester, err := service.AuthenticateAgent(ctx, agentID, token)
+	principal, err := service.AuthenticateAgentPrincipal(ctx, agentID, token)
 	if err != nil {
 		return nil, err
 	}
@@ -233,7 +252,7 @@ func (service *Service) ListAgents(ctx context.Context, agentID, token, baseURL 
 	now := service.now().UTC()
 	views := make([]hub.AgentView, 0, len(agents))
 	for _, agent := range agents {
-		if agent.CircleID != requester.CircleID {
+		if agent.CircleID != principal.CircleID {
 			continue
 		}
 		state := agent.StateAt(now)
@@ -259,7 +278,7 @@ func (service *Service) ListAgents(ctx context.Context, agentID, token, baseURL 
 }
 
 func (service *Service) GetAgent(ctx context.Context, requesterID, token, targetID, baseURL string) (hub.AgentView, error) {
-	requester, err := service.AuthenticateAgent(ctx, requesterID, token)
+	principal, err := service.AuthenticateAgentPrincipal(ctx, requesterID, token)
 	if err != nil {
 		return hub.AgentView{}, err
 	}
@@ -267,7 +286,7 @@ func (service *Service) GetAgent(ctx context.Context, requesterID, token, target
 	if err != nil {
 		return hub.AgentView{}, err
 	}
-	if agent.CircleID != requester.CircleID {
+	if agent.CircleID != principal.CircleID {
 		return hub.AgentView{}, store.ErrNotFound
 	}
 	view := agent.SafeView(baseURL)
@@ -302,7 +321,7 @@ func (service *Service) Disconnect(ctx context.Context, agentID, token string) e
 }
 
 func (service *Service) SendTask(ctx context.Context, requesterID, token string, task hub.TaskDelivery) (hub.InboxItem, bool, error) {
-	requester, err := service.AuthenticateAgent(ctx, requesterID, token)
+	principal, err := service.AuthenticateAgentPrincipal(ctx, requesterID, token)
 	if err != nil {
 		return hub.InboxItem{}, false, err
 	}
@@ -313,7 +332,7 @@ func (service *Service) SendTask(ctx context.Context, requesterID, token string,
 	if err != nil {
 		return hub.InboxItem{}, false, ErrAgentUnavailable
 	}
-	if target.CircleID != requester.CircleID {
+	if target.CircleID != principal.CircleID {
 		return hub.InboxItem{}, false, ErrAgentUnavailable
 	}
 	state := target.StateAt(service.now().UTC())
@@ -336,7 +355,7 @@ func (service *Service) SendTask(ctx context.Context, requesterID, token string,
 	}
 	item := hub.InboxItem{
 		HubID:            service.config.HubID,
-		CircleID:         requester.CircleID,
+		CircleID:         principal.CircleID,
 		TargetAgentID:    task.TargetAgentID,
 		RequesterAgentID: requesterID,
 		TaskID:           task.TaskID,
