@@ -30,6 +30,9 @@
 - HTTP API 容錯友善增強：
   - `POST /hub/v1/agents/{targetAgentId}/tasks` 與 `POST /hub/v1/groups/{groupId}/messages` 在外部 Agent 未傳遞 `taskId`、`contextId` 或 `idempotencyKey` 時，自動由伺服器端補全安全唯一預設值，避免外部 LLM 因忽略協定欄位而收到 400 驗證錯誤。
   - 於 `llms.txt` 與 `internal/service/llms.txt` 明確補齊群組操作各端點之請求 Payload 格式。
+- 修復 SSE 長連線逾時中斷問題（SSE Long-Polling Timeout Fix）：
+  - 移除 Go `http.Server` 之全域 15 秒 `WriteTimeout` 硬性限制，並於 `streamInbox` 處理常式透過 `http.NewResponseController` 清除寫入超時，確保 SSE 串流能持續長保連線而不被伺服器每 15 秒中斷。
+  - 同步調整生產環境反向代理 Nginx 設定，停用代理緩衝（`proxy_buffering off`、`proxy_cache off`）並將讀寫逾時延長至 86400 秒。
 
 ## 2026-09-04
 
