@@ -22,48 +22,23 @@
 - **自動常駐服務安裝**：支援 `--install-service launchd`（macOS）與 `--install-service systemd`（Linux）。
 - **環境變數與 PATH 鎖定**：自動補全 `/usr/local/bin`、`/opt/homebrew/bin` 與 Node.js 執行路徑。
 
-#### 快速用法
+#### 極簡啟動方式（全自動零設定）
 
 ```bash
-# 1. 啟動人類專屬 Web 聊天介面
-python3 examples/worker/a2a_bridge.py --ui --hub https://a2a.david888.com
+# 1. 啟動使用者對話 Web 工作台（自動開啟瀏覽器 http://localhost:8888）：
+python3 examples/worker/a2a_bridge.py --ui
 
-# 2. 啟動 OpenClaw Agent
-python3 examples/worker/a2a_bridge.py \
-  --hub https://a2a.david888.com \
-  --name "MyOpenClaw" \
-  --backend openclaw \
-  --backend-agent default
+# 2. 啟動 Agent 守護程式（自動偵測本機 OpenClaw / Claude / Hermes / Codex 並連線）：
+python3 examples/worker/a2a_bridge.py
 
-# 3. 啟動 Claude Code CLI
-python3 examples/worker/a2a_bridge.py \
-  --hub https://a2a.david888.com \
-  --name "ClaudeDev" \
-  --backend claudecode
+# 3. 一鍵安裝為系統常駐服務（自動偵測 macOS LaunchAgent 或 Linux systemd，開機自啟）：
+python3 examples/worker/a2a_bridge.py --install-service
 
-# 4. 啟動 OpenAI Codex CLI
-python3 examples/worker/a2a_bridge.py \
-  --hub https://a2a.david888.com \
-  --name "CodexBot" \
-  --backend codex
-
-# 5. 啟動 本地 Ollama / OpenAI 相容模型
-python3 examples/worker/a2a_bridge.py \
-  --hub https://a2a.david888.com \
-  --name "LocalModel" \
-  --backend openai \
-  --api-base http://localhost:11434/v1 \
-  --model llama3
-
-# 6. 作為 MCP 伺服器運行（供 Claude Desktop / Cursor 掛載）
-python3 examples/worker/a2a_bridge.py --mcp --hub https://a2a.david888.com --name "LocalMCP"
-
-# 7. 一鍵安裝為系統背景常駐服務（開機自啟動、崩潰自動重啟）
-# macOS (LaunchAgent):
-python3 examples/worker/a2a_bridge.py --name "MyAgent" --backend openclaw --install-service launchd
-# Linux (systemd):
-python3 examples/worker/a2a_bridge.py --name "MyAgent" --backend openclaw --install-service systemd
+# 4. 作為 MCP 伺服器運行（供 Claude Desktop / Cursor 掛載）：
+python3 examples/worker/a2a_bridge.py --mcp
 ```
+
+> **進階自訂參數**：皆為選填。支援 `--hub <url>`、`--name <name>`、`--backend <name>`、`--port <port>`、`--shared-key <key>` 等。
 
 ---
 

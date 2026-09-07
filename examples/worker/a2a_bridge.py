@@ -37,6 +37,7 @@ import plistlib
 import queue
 import re
 import shlex
+import shutil
 import socket
 import sqlite3
 import subprocess
@@ -1736,20 +1737,46 @@ def run_local_ui(hub_client, user_name, port=8888, open_browser=True):
 # Service Installation (LaunchAgent & systemd)
 # ---------------------------------------------------------------------------
 
+def detect_backend():
+    """Auto-detect available local AI CLI backend."""
+    enhanced_env = get_enhanced_env()
+    for candidate, name in [
+        ("openclaw", "openclaw"),
+        ("claude", "claudecode"),
+        ("hermes", "hermes"),
+        ("codex", "codex"),
+    ]:
+        if shutil.which(candidate, path=enhanced_env.get("PATH")):
+            return name
+    return "openclaw"
+
+
+def get_default_service_type():
+    """Auto-detect background service manager based on host platform."""
+    if sys.platform == "darwin":
+        return "launchd"
+    if sys.platform.startswith("linux"):
+        return "systemd"
+    return None
+
+
 def filter_service_args(args):
-    """Cleanly strip --install-service and its option value from args."""
+    """Cleanly strip --install-service and its optional option value from args."""
     clean = []
-    skip_next = False
-    for a in args:
-        if skip_next:
-            skip_next = False
-            continue
+    i = 0
+    while i < len(args):
+        a = args[i]
         if a == "--install-service":
-            skip_next = True
+            if i + 1 < len(args) and args[i + 1] in ("auto", "launchd", "systemd"):
+                i += 2
+                continue
+            i += 1
             continue
         if a.startswith("--install-service="):
+            i += 1
             continue
         clean.append(a)
+        i += 1
     return clean
 
 
@@ -1846,7 +1873,7 @@ def main():
     parser = argparse.ArgumentParser(description="888a2a-lite Universal Agent Bridge")
     parser.add_argument("--hub", default=os.getenv("A2A888_HUB_URL", "https://a2a.david888.com"),
                         help="Hub Base URL (default: https://a2a.david888.com)")
-    parser.add_argument("--name", default="A2A-Agent", help="Human-readable Agent Name")
+    parser.add_argument("--name", default=None, help="Human-readable Agent Name (default: auto-detected)")
     parser.add_argument("--agent-id", help="Explicit Agent ID (optional, auto-loaded/registered)")
     parser.add_argument("--token", help="Explicit Agent Token (optional, auto-loaded/registered)")
     parser.add_argument("--shared-key", default=os.getenv("A2A888_HUB_SHARED_KEY"),
@@ -1855,8 +1882,8 @@ def main():
     parser.add_argument("--queue-db", help="Durable local work queue SQLite path")
 
     # Backend selection
-    parser.add_argument("--backend", choices=["openclaw", "hermes", "openai", "claudecode", "codex", "command", "echo"], default="openclaw",
-                        help="AI Execution Backend (default: openclaw)")
+    parser.add_argument("--backend", choices=["openclaw", "hermes", "openai", "claudecode", "codex", "command", "echo"], default=None,
+                        help="AI Execution Backend (default: auto-detected)")
     parser.add_argument("--backend-agent", default="default", help="Agent profile for OpenClaw (default: default)")
     parser.add_argument("--backend-cmd", help="Command string or template for command backend")
     parser.add_argument("--system-prompt", default="", help="Persona or system prompt instructions")
@@ -1874,19 +1901,50 @@ def main():
     parser.add_argument("--port", type=int, default=8888, help="Port for local User Chat Web UI (default: 8888)")
 
     # Service installation
-    parser.add_argument("--install-service", choices=["launchd", "systemd"],
-                        help="Install and start as background OS service (launchd on macOS, systemd on Linux)")
+    parser.add_argument("--install-service", nargs="?", const="auto",
+                        choices=["auto", "launchd", "systemd"],
+                        help="Install and start as background OS service (auto-detects macOS launchd / Linux systemd)")
     parser.add_argument("--service-name", help="Custom ASCII service name for launchd/systemd")
 
     args = parser.parse_args()
     if bool(args.agent_id) != bool(args.token):
         parser.error("--agent-id and --token must be provided together")
 
+    # Auto-detect backend if not specified
+    if not args.backend:
+        args.backend = detect_backend()
+
+    # Auto-detect name if not specified
+    if not args.name:
+        if args.ui:
+            args.name = os.getenv("USER") or "User"
+        elif args.mcp:
+            user = os.getenv("USER") or "User"
+            args.name = f"{user}-MCP"
+        else:
+            host_name = socket.gethostname().split(".")[0]
+            backend_title = {
+                "openclaw": "OpenClaw",
+                "claudecode": "Claude",
+                "hermes": "Hermes",
+                "codex": "Codex",
+                "openai": "OpenAI",
+                "command": "Command",
+                "echo": "Echo",
+            }.get(args.backend, args.backend.capitalize())
+            args.name = f"{backend_title}-{host_name}"
+
     # Handle service installation if requested
     if args.install_service:
-        if args.install_service == "launchd":
+        srv_type = args.install_service
+        if srv_type == "auto":
+            srv_type = get_default_service_type()
+            if not srv_type:
+                print("[!] Service installation is only supported on macOS (launchd) and Linux (systemd).", file=sys.stderr)
+                sys.exit(1)
+        if srv_type == "launchd":
             install_launchd_service(args.name, sys.argv[1:], service_name=args.service_name)
-        elif args.install_service == "systemd":
+        elif srv_type == "systemd":
             install_systemd_service(args.name, sys.argv[1:], service_name=args.service_name)
         sys.exit(0)
 
@@ -1897,8 +1955,6 @@ def main():
 
     # Resolve or auto-register credentials
     if args.ui:
-        if args.name == "A2A-Agent":
-            args.name = f"{os.getenv('USER', 'User')} (Web)"
         if not args.credentials:
             args.credentials = os.path.expanduser("~/.a2a/user_credentials.json")
 

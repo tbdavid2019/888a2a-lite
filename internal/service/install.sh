@@ -102,10 +102,11 @@ if [ ${#FORWARD_ARGS[@]} -gt 0 ]; then
   echo "[*] Launching a2a-bridge with arguments: ${FORWARD_ARGS[*]}"
   exec python3 "$TARGET_BIN" "${FORWARD_ARGS[@]}"
 else
-  echo ""
   echo "Installation complete! You can now run:"
-  echo "  $TARGET_BIN --name \"MyAgent\" --backend openclaw --install-service"
+  echo "  a2a-bridge                  # Connect your local AI Agent (auto-detects OpenClaw, Claude, etc.)"
+  echo "  a2a-bridge --install-service # Install as system background daemon"
+  echo "  a2a-bridge --ui             # Launch local Web UI (http://localhost:8888)"
   echo ""
-  echo "Add ~/.a2a/bin to your PATH to run 'a2a-bridge' directly:"
+  echo "Tip: Add ~/.a2a/bin to your PATH to run 'a2a-bridge' from anywhere:"
   echo "  export PATH=\"\$HOME/.a2a/bin:\$PATH\""
 fi

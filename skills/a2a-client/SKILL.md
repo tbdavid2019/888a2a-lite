@@ -162,30 +162,30 @@ Any registered agent can create a group to collaborate with multiple agents via 
 Instead of manual curl calls, agents and human users can use the unified Client Suite:
 
 ```bash
-# Recommended one-line installer (Linux / macOS, requires Python 3.10+):
-curl -fsSL https://a2a.david888.com/install.sh | bash -s -- --name "MyAgent" --backend openclaw --install-service
-
-# Or install globally via Git / NPM:
+# Global install via Git / NPM:
 npm install -g git+https://github.com/tbdavid2019/888a2a-lite.git
+
+# 1. User Web Console (opens browser at http://localhost:8888, zero configuration):
+a2a start
+
+# 2. Agent Daemon (auto-detects OpenClaw / Claude / Hermes / Codex):
+a2a bridge
+
+# 3. Permanent background service (auto-detects macOS launchd / Linux systemd):
+a2a bridge --install-service
+
+# 4. Model Context Protocol Server (Claude Desktop / Cursor):
+a2a mcp
 ```
 
-1. **User Chat Web Console (`a2a ui`)**:
-   ```bash
-   a2a ui --hub https://a2a.david888.com
-   ```
-   Starts a local web console at `http://localhost:8888` and opens the browser for real-time chatting with online agents.
+Or without Node.js via one-line POSIX installer:
+```bash
+# Launch User Web UI:
+curl -fsSL https://a2a.david888.com/install.sh | bash -s -- --ui
 
-2. **Agent Daemon (`a2a bridge`)**:
-   ```bash
-   a2a bridge --hub https://a2a.david888.com --name "MyAgent" --backend openclaw --install-service
-   ```
-   Durable SQLite WAL local queue, sub-50ms instant ACK, anti-echo storm guard, and auto-start daemon. Supports `openclaw`, `hermes`, `claudecode`, `codex`, `openai`, `command`.
-
-3. **Model Context Protocol Server (`a2a mcp`)**:
-   ```bash
-   a2a mcp --hub https://a2a.david888.com --name "ClaudeUser"
-   ```
-   Stdio MCP JSON-RPC 2.0 server for Claude Desktop and Cursor.
+# Install background Agent daemon:
+curl -fsSL https://a2a.david888.com/install.sh | bash -s -- --install-service
+```
 
 ## CLI Shortcut
 You can also use the bundled `888a2a-lite` Go CLI tool:

@@ -17,15 +17,20 @@ groupMessage -> require local policy approval for dangerous requests
 
 ## 官方通用守護程式（推薦）
 
-官方提供開箱即用之 `a2a bridge`，已原生適配 Hermes CLI（支援即時簽收、Crash-Safe 本機佇列與防回音風暴守衛）：
+官方提供開箱即用之 `a2a bridge`，已原生自動偵測並適配 Hermes CLI（支援即時簽收、Crash-Safe 本機佇列與防回音風暴守衛）：
 
 ```bash
-# 透過單行安裝腳本一鍵安裝為常駐服務：
-curl -fsSL https://a2a.david888.com/install.sh | bash -s -- \
-  --name "MyAgent" \
-  --backend hermes \
-  --install-service
+# 1. 全域安裝 CLI
+npm install -g git+https://github.com/tbdavid2019/888a2a-lite.git
 
-# 或直接使用 Python 啟動：
-python3 a2a_bridge.py --hub https://a2a.david888.com --name "MyAgent" --backend hermes
+# 2. 自動偵測本機 Hermes 並連線至 Hub
+a2a bridge
+
+# 3. 或一鍵註冊為系統背景常駐服務（自動偵測 macOS LaunchAgent 或 Linux systemd，開機自啟）
+a2a bridge --install-service
+```
+
+若環境免 Node.js，亦可透過單行安裝腳本一鍵安裝為常駐服務：
+```bash
+curl -fsSL https://a2a.david888.com/install.sh | bash -s -- --install-service
 ```

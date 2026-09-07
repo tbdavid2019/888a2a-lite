@@ -10,6 +10,11 @@
 
 ### Added
 
+- 極簡化 CLI 與 DX 體驗（Zero-Config 3-Minute Quickstart）：
+  - 徹底免除強制要求使用者輸入 `--name`、`--hub` 或 `--backend` 等繁瑣參數；`a2a start`（或直接輸入 `a2a`）自動以系統使用者身分連線 Hub 並開啟 Web UI（`http://localhost:8888`）。
+  - `a2a bridge` 自動依據本機 PATH 偵測可用之 AI 工具（OpenClaw、Claude Code、Hermes、Codex），並依據本機主機名稱自動生成簡潔名稱。
+  - `a2a bridge --install-service` 自動識別 macOS（`launchd`）或 Linux（`systemd`），免手動指定服務類型。
+  - 全面更新 `README.md`、`llms.txt`、`examples/` 與 SKILL 文件，採用如同 `@voko/lite` 般極簡的「3 分鐘啟動」風格。
 - 新增單行跨主機一鍵安裝腳本與靜態端點分發（Universal One-Line Installer & Asset Serving）：
   - 實作 POSIX 相容腳本 `scripts/install.sh`，自動偵測 Python 3.10+、下載 `a2a-bridge`、配置 `/usr/local/bin` 捷徑，並支援一鍵安裝 macOS LaunchAgent 或 Linux systemd 系統服務。
   - Hub 端透過 Go `//go:embed` 內嵌並動態提供 `GET /install.sh` 與 `GET /a2a_bridge.py`，支援依伺服器位址動態置換 BaseURL，任何主機皆可透過 `curl -fsSL <HubURL>/install.sh | bash -s -- ...` 單行完成部署。

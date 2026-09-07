@@ -30,49 +30,42 @@ if (!fs.existsSync(bridgePath)) {
 
 const args = process.argv.slice(2);
 
-if (args.length === 0 || args[0] === "help" || args[0] === "--help" || args[0] === "-h") {
+if (args[0] === "help" || args[0] === "--help" || args[0] === "-h") {
   console.log(`
 888a2a - Universal A2A Client & Hub Suite
 
-Usage:
-  a2a ui [options]       Launch local User Chat Web UI (http://localhost:8888)
-  a2a bridge [options]   Run background Agent bridge daemon
-  a2a mcp [options]      Run Stdio JSON-RPC 2.0 MCP server (for Claude Desktop / Cursor)
+3-Minute Quickstart:
+  a2a start              Launch User Chat Web UI (http://localhost:8888)
+  a2a bridge             Connect local AI Agent (auto-detects OpenClaw, Claude, etc.)
+  a2a bridge --install-service   Install Agent as OS background service
+  a2a mcp                Launch Stdio MCP server (Claude Desktop / Cursor)
 
-Commands:
-  ui, web      Start local user web console and open default browser
-  bridge       Run autonomous agent daemon (openclaw, hermes, claudecode, codex, openai, command)
-  mcp          Launch Model Context Protocol (MCP) server for IDEs
+Zero Configuration:
+  By default, connects to https://a2a.david888.com and uses your system user name.
+  All flags below are completely optional overrides.
 
-Common Options:
+Optional Overrides:
   --hub <url>            Hub Base URL (default: https://a2a.david888.com)
-  --name <name>          Agent or User display name
-  --backend <name>       Cognitive backend: openclaw, hermes, claudecode, codex, openai, command
-  --backend-agent <id>   Agent profile for OpenClaw (default: default)
+  --name <name>          Custom display name (default: auto-detected)
+  --backend <name>       Backend: openclaw, claudecode, hermes, codex, openai, command
+  --install-service      Install OS service (auto-detects macOS launchd / Linux systemd)
+  --port <port>          Web UI port (default: 8888)
   --shared-key <key>     Pre-shared key (for SEMI_OPEN hub mode)
-  --install-service      Install as background OS service (launchd on macOS, systemd on Linux)
-  --port <port>          Port for local web UI (default: 8888)
-
-Examples:
-  a2a ui --name "User"
-  a2a bridge --name "MyAgent" --backend openclaw --backend-agent default
-  a2a bridge --name "ClaudeBot" --backend claudecode
-  a2a mcp --name "MyCursor"
 `);
   process.exit(0);
 }
 
 // Support convenient command routing:
-// - `a2a mcp ...` -> `python3 a2a_bridge.py --mcp ...`
-// - `a2a ui ...`  -> `python3 a2a_bridge.py --ui ...`
-// - `a2a bridge ...` -> `python3 a2a_bridge.py ...`
-// - `a2a start ...` -> `python3 a2a_bridge.py ...`
+// - `a2a` or `a2a start` or `a2a ui` -> launch local Web UI
+// - `a2a bridge ...` -> launch Agent daemon
+// - `a2a mcp ...` -> launch Stdio MCP server
 let forwardedArgs = [];
-if (args[0] === "mcp") {
+if (args.length === 0 || args[0] === "start" || args[0] === "ui" || args[0] === "web") {
+  const subArgs = (args[0] === "start" || args[0] === "ui" || args[0] === "web") ? args.slice(1) : args;
+  forwardedArgs = ["--ui", ...subArgs];
+} else if (args[0] === "mcp") {
   forwardedArgs = ["--mcp", ...args.slice(1)];
-} else if (args[0] === "ui" || args[0] === "web") {
-  forwardedArgs = ["--ui", ...args.slice(1)];
-} else if (args[0] === "bridge" || args[0] === "start") {
+} else if (args[0] === "bridge") {
   forwardedArgs = args.slice(1);
 } else {
   forwardedArgs = args;

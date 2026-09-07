@@ -294,6 +294,29 @@ class DurableBridgeTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
 
+    def test_service_argument_filtering_and_detection(self):
+        # test filter_service_args with and without value
+        args1 = ["--install-service", "systemd", "--hub", "https://hub.test", "--name", "A"]
+        self.assertEqual(bridge.filter_service_args(args1), ["--hub", "https://hub.test", "--name", "A"])
+
+        args2 = ["--install-service", "--hub", "https://hub.test", "--name", "A"]
+        self.assertEqual(bridge.filter_service_args(args2), ["--hub", "https://hub.test", "--name", "A"])
+
+        args3 = ["--install-service=launchd", "--backend", "openclaw"]
+        self.assertEqual(bridge.filter_service_args(args3), ["--backend", "openclaw"])
+
+        # test get_default_service_type
+        with mock.patch("sys.platform", "darwin"):
+            self.assertEqual(bridge.get_default_service_type(), "launchd")
+        with mock.patch("sys.platform", "linux"):
+            self.assertEqual(bridge.get_default_service_type(), "systemd")
+
+        # test detect_backend fallback
+        with mock.patch("shutil.which", return_value=None):
+            self.assertEqual(bridge.detect_backend(), "openclaw")
+        with mock.patch("shutil.which", side_effect=lambda c, path=None: "/bin/claude" if c == "claude" else None):
+            self.assertEqual(bridge.detect_backend(), "claudecode")
+
 
 def json_item(row):
     import json
