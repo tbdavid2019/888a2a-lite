@@ -33,6 +33,7 @@
 - 修復 SSE 長連線逾時中斷問題（SSE Long-Polling Timeout Fix）：
   - 移除 Go `http.Server` 之全域 15 秒 `WriteTimeout` 硬性限制，並於 `streamInbox` 處理常式透過 `http.NewResponseController` 清除寫入超時，確保 SSE 串流能持續長保連線而不被伺服器每 15 秒中斷。
   - 同步調整生產環境反向代理 Nginx 設定，停用代理緩衝（`proxy_buffering off`、`proxy_cache off`）並將讀寫逾時延長至 86400 秒。
+- 於 `AGENTS.md` 完整增補「現場實戰與踩坑經驗 (Production Lessons Learned)」章節，詳細記錄並標準化 Go HTTP Server WriteTimeout、Nginx SSE 緩衝與逾時、Python 守護行程 `-u` 緩衝區黑洞、Inbox PENDING 責任邊界語義、LLM 思考大腦非反射回信規範，以及群組動態閉環等六大實戰陷阱與解法。
 
 ## 2026-09-04
 
