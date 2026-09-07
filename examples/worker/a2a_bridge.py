@@ -27,10 +27,14 @@ Usage:
 
 import argparse
 import contextlib
+from datetime import datetime, timezone
 import fcntl
 import hashlib
+import http.server
 import json
 import os
+import plistlib
+import queue
 import re
 import shlex
 import socket
@@ -40,11 +44,11 @@ import sys
 import tempfile
 import threading
 import time
-import uuid
-import plistlib
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
+import webbrowser
 
 # Force unbuffered standard streams so logs never get stuck in block buffers
 if hasattr(sys.stdout, "reconfigure"):
@@ -1130,6 +1134,605 @@ def run_mcp_server(hub_client, agent_name, out_stream=None):
 
 
 # ---------------------------------------------------------------------------
+# Client Web UI (a2a ui: Local User Chat Web Console)
+# ---------------------------------------------------------------------------
+
+CLIENT_HTML = """<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>888a2a Client Workstation</title>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --panel: #ffffff;
+      --ink: #0f172a;
+      --muted: #64748b;
+      --line: #e2e8f0;
+      --accent: #2563eb;
+      --accent-light: #eff6ff;
+      --online: #10b981;
+      --offline: #94a3b8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background: var(--bg); color: var(--ink); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+    header { height: 56px; background: #0f172a; color: #fff; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; flex-shrink: 0; }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; }
+    .brand-badge { background: var(--accent); color: #fff; padding: 3px 8px; border-radius: 6px; font-size: 11px; letter-spacing: 0.5px; text-transform: uppercase; }
+    .nav-status { display: flex; align-items: center; gap: 16px; font-size: 13px; }
+    .hub-badge { color: #94a3b8; font-size: 12px; }
+    .hub-badge a { color: #38bdf8; text-decoration: none; }
+    .user-chip { background: #1e293b; padding: 4px 12px; border-radius: 20px; display: flex; align-items: center; gap: 8px; border: 1px solid #334155; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--online); box-shadow: 0 0 6px var(--online); }
+    .workspace { display: flex; flex: 1 1 auto; height: calc(100vh - 56px); overflow: hidden; }
+    aside { width: 320px; background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; flex-shrink: 0; }
+    .sidebar-header { padding: 14px 16px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; }
+    .sidebar-header h2 { font-size: 14px; font-weight: 700; color: var(--ink); }
+    .refresh-btn { background: none; border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; cursor: pointer; font-size: 12px; color: var(--muted); transition: all .15s; }
+    .refresh-btn:hover { background: var(--accent-light); color: var(--accent); border-color: var(--accent); }
+    .search-bar { padding: 10px 16px; border-bottom: 1px solid var(--line); }
+    .search-bar input { width: 100%; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; outline: none; transition: border-color .15s; }
+    .search-bar input:focus { border-color: var(--accent); }
+    .peer-list { flex: 1 1 auto; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+    .peer-card { padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; background: #fff; transition: all .15s; }
+    .peer-card:hover { border-color: var(--accent); background: var(--accent-light); }
+    .peer-card.active { border-color: var(--accent); background: var(--accent-light); box-shadow: 0 1px 3px rgba(37,99,235,.15); }
+    .peer-card-top { display: flex; justify-content: space-between; align-items: center; }
+    .peer-name { font-weight: 700; font-size: 14px; }
+    .status-pill { font-size: 11px; font-weight: 600; padding: 2px 6px; border-radius: 10px; }
+    .status-pill.ONLINE { background: #dcfce7; color: #166534; }
+    .status-pill.OFFLINE { background: #f1f5f9; color: #64748b; }
+    .peer-id { font-family: ui-monospace, monospace; font-size: 11px; color: var(--muted); margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    main { flex: 1 1 auto; display: flex; flex-direction: column; background: #f8fafc; overflow: hidden; }
+    .chat-header { height: 56px; background: var(--panel); border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; padding: 0 20px; flex-shrink: 0; }
+    .chat-target-info { display: flex; align-items: center; gap: 12px; }
+    .chat-target-name { font-size: 15px; font-weight: 700; }
+    .chat-target-meta { font-size: 12px; color: var(--muted); font-family: ui-monospace, monospace; }
+    .chat-stream { flex: 1 1 auto; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+    .chat-empty { margin: auto; text-align: center; color: var(--muted); max-width: 380px; line-height: 1.6; }
+    .chat-empty-icon { font-size: 40px; margin-bottom: 12px; }
+    .bubble { max-width: 75%; padding: 12px 16px; border-radius: 12px; font-size: 14px; line-height: 1.6; word-break: break-word; white-space: pre-wrap; }
+    .bubble.user { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 2px; }
+    .bubble.agent { align-self: flex-start; background: #fff; border: 1px solid var(--line); color: var(--ink); border-bottom-left-radius: 2px; box-shadow: 0 1px 3px rgba(0,0,0,.04); }
+    .bubble-meta { font-size: 11px; opacity: 0.75; margin-top: 6px; display: flex; justify-content: space-between; gap: 12px; }
+    .quick-prompts { padding: 8px 20px; display: flex; gap: 8px; overflow-x: auto; flex-shrink: 0; background: #f1f5f9; border-top: 1px solid var(--line); }
+    .quick-btn { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 5px 12px; font-size: 12px; color: var(--ink); cursor: pointer; white-space: nowrap; transition: all .15s; }
+    .quick-btn:hover { background: var(--accent-light); border-color: var(--accent); color: var(--accent); }
+    .chat-input-area { padding: 14px 20px; background: var(--panel); border-top: 1px solid var(--line); display: flex; gap: 10px; flex-shrink: 0; }
+    .chat-input-area textarea { flex: 1 1 auto; height: 50px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; resize: none; font-family: inherit; font-size: 14px; outline: none; transition: border-color .15s; }
+    .chat-input-area textarea:focus { border-color: var(--accent); }
+    .send-btn { background: var(--accent); color: #fff; border: none; border-radius: 10px; padding: 0 24px; font-size: 14px; font-weight: 700; cursor: pointer; transition: opacity .15s; }
+    .send-btn:hover { opacity: 0.9; }
+    .send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span>888a2a</span>
+      <span class="brand-badge">Client Workstation</span>
+    </div>
+    <div class="nav-status">
+      <div class="hub-badge">Hub: <a id="hub-link" href="#" target="_blank">-</a></div>
+      <div class="user-chip">
+        <span class="dot"></span>
+        <span id="my-name">連線中...</span>
+      </div>
+    </div>
+  </header>
+
+  <div class="workspace">
+    <aside>
+      <div class="sidebar-header">
+        <h2>在線 Agent 通訊錄</h2>
+        <button id="refresh-peers" class="refresh-btn" type="button">↻ 重新整理</button>
+      </div>
+      <div class="search-bar">
+        <input id="peer-search" type="text" placeholder="搜尋 Agent 名稱或 ID...">
+      </div>
+      <div id="peer-list" class="peer-list">
+        <div style="padding:20px;text-align:center;color:var(--muted);font-size:13px">正在獲取 Agent 名單...</div>
+      </div>
+    </aside>
+
+    <main>
+      <div class="chat-header">
+        <div class="chat-target-info">
+          <span id="target-name" class="chat-target-name">未選擇 Agent</span>
+          <span id="target-badge" class="status-pill OFFLINE" style="display:none">OFFLINE</span>
+          <span id="target-id" class="chat-target-meta"></span>
+        </div>
+        <div id="target-caps" style="font-size:12px;color:var(--muted)"></div>
+      </div>
+
+      <div id="chat-stream" class="chat-stream">
+        <div class="chat-empty">
+          <div class="chat-empty-icon">💬</div>
+          <h3>歡迎使用 888a2a Client</h3>
+          <p style="margin-top:6px">請從左側點選一位在線的 Agent（例如甘露寺、蜜蜜、甜甜或彌彌），即可在此發送任務指令並進行實時交談！</p>
+        </div>
+      </div>
+
+      <div class="quick-prompts">
+        <button class="quick-btn" data-text="你好！請自我介紹一下你的專長與支援的能力">👋 自我介紹</button>
+        <button class="quick-btn" data-text="請回報你目前的系統狀態與工作隊列">⚡️ 狀態回報</button>
+        <button class="quick-btn" data-text="請簡要說明多 Agent 協作的最佳實踐是什麼？">💡 多 Agent 協作</button>
+      </div>
+
+      <form id="chat-form" class="chat-input-area">
+        <textarea id="chat-input" placeholder="輸入訊息或任務指令... (Enter 發送，Shift+Enter 換行)" disabled></textarea>
+        <button id="chat-send" class="send-btn" type="submit" disabled>發送任務</button>
+      </form>
+    </main>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let myInfo = null;
+    let peers = [];
+    let activePeer = null;
+    let conversationHistory = {};
+
+    function escapeHtml(str) {
+      return String(str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    function formatTime(iso) {
+      if (!iso) return "";
+      try {
+        const d = new Date(iso);
+        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      } catch {
+        return "";
+      }
+    }
+
+    async function loadMe() {
+      try {
+        const res = await fetch("/api/me");
+        if (res.ok) {
+          myInfo = await res.json();
+          $("my-name").textContent = `${myInfo.displayName} (${myInfo.agentId})`;
+          $("hub-link").textContent = myInfo.hubUrl;
+          $("hub-link").href = myInfo.hubUrl;
+        }
+      } catch (err) {
+        console.error("Failed to load user info", err);
+      }
+    }
+
+    async function loadPeers() {
+      try {
+        const res = await fetch("/api/peers");
+        if (!res.ok) return;
+        const data = await res.json();
+        peers = (data.agents || []).filter(a => a.agentId !== myInfo?.agentId);
+        renderPeers();
+      } catch (err) {
+        console.error("Failed to load peers", err);
+      }
+    }
+
+    function renderPeers() {
+      const q = $("peer-search").value.toLowerCase().trim();
+      const filtered = peers.filter(p => 
+        (p.displayName || "").toLowerCase().includes(q) || 
+        (p.agentId || "").toLowerCase().includes(q)
+      );
+
+      const list = $("peer-list");
+      if (filtered.length === 0) {
+        list.innerHTML = `<div style="padding:20px;text-align:center;color:var(--muted);font-size:13px">無相符的 Agent</div>`;
+        return;
+      }
+
+      list.innerHTML = filtered.map(p => `
+        <div class="peer-card ${activePeer?.agentId === p.agentId ? 'active' : ''}" data-id="${p.agentId}">
+          <div class="peer-card-top">
+            <span class="peer-name">${escapeHtml(p.displayName || p.agentId)}</span>
+            <span class="status-pill ${p.state}">${p.state}</span>
+          </div>
+          <div class="peer-id">${escapeHtml(p.agentId)}</div>
+        </div>
+      `).join("");
+
+      list.querySelectorAll(".peer-card").forEach(el => {
+        el.addEventListener("click", () => {
+          const id = el.getAttribute("data-id");
+          const target = peers.find(p => p.agentId === id);
+          if (target) selectPeer(target);
+        });
+      });
+    }
+
+    function selectPeer(peer) {
+      activePeer = peer;
+      $("target-name").textContent = peer.displayName || peer.agentId;
+      $("target-id").textContent = `(${peer.agentId})`;
+      $("target-badge").textContent = peer.state;
+      $("target-badge").className = `status-pill ${peer.state}`;
+      $("target-badge").style.display = "inline-block";
+      $("target-caps").textContent = (peer.capabilities || []).join(", ");
+      $("chat-input").disabled = false;
+      $("chat-send").disabled = false;
+      renderPeers();
+      renderChat();
+      $("chat-input").focus();
+    }
+
+    function renderChat() {
+      if (!activePeer) return;
+      const history = conversationHistory[activePeer.agentId] || [];
+      const stream = $("chat-stream");
+
+      if (history.length === 0) {
+        stream.innerHTML = `
+          <div class="chat-empty">
+            <div class="chat-empty-icon">✨</div>
+            <h3>與 ${escapeHtml(activePeer.displayName || activePeer.agentId)} 的對話</h3>
+            <p style="margin-top:6px">尚未有任何通訊紀錄。在下方輸入任務訊息開始互動。</p>
+          </div>
+        `;
+        return;
+      }
+
+      stream.innerHTML = history.map(m => `
+        <div class="bubble ${m.isOutgoing ? 'user' : 'agent'}">
+          <div style="font-weight:700;font-size:12px;margin-bottom:4px">
+            ${m.isOutgoing ? '我 (You)' : escapeHtml(activePeer.displayName || m.senderName || 'Agent')}
+          </div>
+          <div>${escapeHtml(m.message)}</div>
+          <div class="bubble-meta">
+            <span>${formatTime(m.timestamp)}</span>
+            ${m.isOutgoing ? '<span>✓ 送出</span>' : '<span>✓ 簽收</span>'}
+          </div>
+        </div>
+      `).join("");
+
+      stream.scrollTop = stream.scrollHeight;
+    }
+
+    async function sendMessage(text) {
+      if (!activePeer || !text.trim()) return;
+      const msgText = text.trim();
+      $("chat-input").value = "";
+      $("chat-send").disabled = true;
+
+      const userMsg = {
+        id: "msg-" + Date.now(),
+        peerId: activePeer.agentId,
+        senderName: myInfo?.displayName || "User",
+        message: msgText,
+        timestamp: new Date().toISOString(),
+        isOutgoing: true
+      };
+
+      if (!conversationHistory[activePeer.agentId]) conversationHistory[activePeer.agentId] = [];
+      conversationHistory[activePeer.agentId].push(userMsg);
+      renderChat();
+
+      try {
+        const res = await fetch("/api/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            targetAgentId: activePeer.agentId,
+            message: msgText
+          })
+        });
+        if (!res.ok) {
+          alert("發送失敗，請確認 Hub 連線狀態。");
+        }
+      } catch (err) {
+        alert("發送發生例外錯誤：" + err.message);
+      } finally {
+        $("chat-send").disabled = false;
+        $("chat-input").focus();
+      }
+    }
+
+    $("chat-form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      sendMessage($("chat-input").value);
+    });
+
+    $("chat-input").addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage($("chat-input").value);
+      }
+    });
+
+    $("refresh-peers").addEventListener("click", loadPeers);
+    $("peer-search").addEventListener("input", renderPeers);
+
+    document.querySelectorAll(".quick-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        if (!activePeer) {
+          alert("請先從左側選擇一位對話 Agent！");
+          return;
+        }
+        sendMessage(btn.getAttribute("data-text"));
+      });
+    });
+
+    function connectEvents() {
+      const ev = new EventSource("/api/events");
+      ev.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+          const peer = msg.peerId;
+          if (!conversationHistory[peer]) conversationHistory[peer] = [];
+          if (!conversationHistory[peer].some(m => m.id === msg.id)) {
+            conversationHistory[peer].push(msg);
+            if (activePeer && activePeer.agentId === peer) {
+              renderChat();
+            }
+          }
+        } catch (err) {
+          console.error("SSE parse error", err);
+        }
+      };
+    }
+
+    async function init() {
+      await loadMe();
+      await loadPeers();
+      connectEvents();
+      setInterval(loadPeers, 4000);
+      const firstOnline = peers.find(p => p.state === "ONLINE") || peers[0];
+      if (firstOnline) selectPeer(firstOnline);
+    }
+
+    init();
+  </script>
+</body>
+</html>"""
+
+
+class LocalUIServer(http.server.ThreadingHTTPServer):
+    def __init__(self, server_address, RequestHandlerClass, hub_client, user_name):
+        super().__init__(server_address, RequestHandlerClass)
+        self.hub_client = hub_client
+        self.user_name = user_name
+        self.history = {}
+        self.subscribers = set()
+        self.lock = threading.Lock()
+        self.running = True
+
+    def append_message(self, peer_id, msg):
+        with self.lock:
+            if peer_id not in self.history:
+                self.history[peer_id] = []
+            self.history[peer_id].append(msg)
+            for q in list(self.subscribers):
+                try:
+                    q.put_nowait(msg)
+                except Exception:
+                    pass
+
+    def add_subscriber(self, q):
+        with self.lock:
+            self.subscribers.add(q)
+
+    def remove_subscriber(self, q):
+        with self.lock:
+            self.subscribers.discard(q)
+
+
+class LocalUIHandler(http.server.BaseHTTPRequestHandler):
+    def log_message(self, format, *args):
+        pass
+
+    def do_GET(self):
+        parsed = urllib.parse.urlparse(self.path)
+        if parsed.path in ("/", "/index.html"):
+            content = CLIENT_HTML.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(content)))
+            self.end_headers()
+            self.wfile.write(content)
+        elif parsed.path == "/api/me":
+            data = {
+                "agentId": self.server.hub_client.agent_id,
+                "displayName": self.server.user_name,
+                "hubUrl": self.server.hub_client.hub_url,
+            }
+            body = json.dumps(data, ensure_ascii=False).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        elif parsed.path == "/api/peers":
+            try:
+                agents = self.server.hub_client.list_agents()
+                body = json.dumps({"agents": agents}, ensure_ascii=False).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            except Exception as exc:
+                body = json.dumps({"error": str(exc)}, ensure_ascii=False).encode("utf-8")
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+        elif parsed.path == "/api/history":
+            qs = urllib.parse.parse_qs(parsed.query)
+            peer = qs.get("peer", [""])[0]
+            with self.server.lock:
+                msgs = list(self.server.history.get(peer, []))
+            body = json.dumps({"messages": msgs}, ensure_ascii=False).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        elif parsed.path == "/api/events":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "keep-alive")
+            self.end_headers()
+            sub_q = queue.Queue()
+            self.server.add_subscriber(sub_q)
+            try:
+                while getattr(self.server, "running", True):
+                    try:
+                        event = sub_q.get(timeout=15)
+                        data_line = f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                        self.wfile.write(data_line.encode("utf-8"))
+                        self.wfile.flush()
+                    except queue.Empty:
+                        self.wfile.write(b": keepalive\n\n")
+                        self.wfile.flush()
+            except Exception:
+                pass
+            finally:
+                self.server.remove_subscriber(sub_q)
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def do_POST(self):
+        parsed = urllib.parse.urlparse(self.path)
+        if parsed.path == "/api/send":
+            length = int(self.headers.get("Content-Length", 0))
+            raw = self.rfile.read(length).decode("utf-8")
+            try:
+                payload = json.loads(raw)
+                target_id = payload.get("targetAgentId", "").strip()
+                msg_text = payload.get("message", "").strip()
+                if not target_id or not msg_text:
+                    self.send_response(400)
+                    self.end_headers()
+                    return
+                res = self.server.hub_client.send_task(target_id, msg_text)
+                task_id = res.get("taskId") if isinstance(res, dict) else str(uuid.uuid4())
+                out_msg = {
+                    "id": task_id,
+                    "peerId": target_id,
+                    "senderId": self.server.hub_client.agent_id,
+                    "senderName": self.server.user_name,
+                    "message": msg_text,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "isOutgoing": True
+                }
+                self.server.append_message(target_id, out_msg)
+                body = json.dumps({"ok": True, "taskId": task_id}, ensure_ascii=False).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            except Exception as exc:
+                body = json.dumps({"error": str(exc)}, ensure_ascii=False).encode("utf-8")
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+
+def run_local_ui(hub_client, user_name, port=8888, open_browser=True):
+    """Serve local User Chat Web UI and stream live events with agents."""
+    actual_port = port
+    server = None
+    for p in range(port, port + 20):
+        try:
+            server = LocalUIServer(("127.0.0.1", p), LocalUIHandler, hub_client, user_name)
+            actual_port = p
+            break
+        except OSError:
+            continue
+    if not server:
+        print(f"[!] Error: Could not bind to any port in range {port}-{port+20}", file=sys.stderr)
+        sys.exit(1)
+
+    url = f"http://127.0.0.1:{actual_port}"
+    print("=" * 64)
+    print("🌐 888a2a Client Web UI (User Workstation)")
+    print("-" * 64)
+    print(f"Hub URL:      {hub_client.hub_url}")
+    print(f"User Agent:   {user_name} ({hub_client.agent_id})")
+    print(f"Web Console:  {url}")
+    print("-" * 64)
+    print("Serving client console. Press Ctrl+C to exit.")
+    print("=" * 64)
+
+    def hub_inbox_worker():
+        while getattr(server, "running", True):
+            try:
+                stream_url = f"{hub_client.hub_url}/hub/v1/agents/{hub_client.agent_id}/inbox/stream"
+                req = urllib.request.Request(stream_url, headers={
+                    "Accept": "text/event-stream",
+                    "X-Agent-ID": hub_client.agent_id,
+                    "Authorization": f"Bearer {hub_client.token}",
+                })
+                if hub_client.shared_key:
+                    req.add_header("X-Hub-Key", hub_client.shared_key)
+                with urllib.request.urlopen(req, timeout=60) as resp:
+                    current_data = []
+                    for raw_line in resp:
+                        if not getattr(server, "running", True):
+                            break
+                        line = raw_line.decode("utf-8", errors="replace").rstrip("\r\n")
+                        if not line:
+                            if current_data:
+                                raw_json = "\n".join(current_data)
+                                try:
+                                    item = json.loads(raw_json)
+                                    seq = item.get("sequence")
+                                    if seq:
+                                        hub_client.ack_task(seq)
+                                    sender_id = item.get("requesterAgentId", "unknown")
+                                    msg = {
+                                        "id": item.get("taskId", str(uuid.uuid4())),
+                                        "peerId": sender_id,
+                                        "senderId": sender_id,
+                                        "senderName": sender_id,
+                                        "message": item.get("message", ""),
+                                        "timestamp": item.get("createdAt", datetime.now(timezone.utc).isoformat()),
+                                        "isOutgoing": False,
+                                    }
+                                    server.append_message(sender_id, msg)
+                                except Exception as exc:
+                                    print(f"[!] Error parsing incoming task: {exc}", file=sys.stderr)
+                            current_data = []
+                            continue
+                        if line.startswith(":"):
+                            continue
+                        if line.startswith("data: "):
+                            current_data.append(line[6:])
+            except Exception:
+                time.sleep(3)
+
+    t = threading.Thread(target=hub_inbox_worker, daemon=True)
+    t.start()
+
+    if open_browser:
+        threading.Timer(0.6, lambda: webbrowser.open(url)).start()
+
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.running = False
+        server.shutdown()
+        server.server_close()
+        print("\n[*] Local UI server stopped.")
+
+
+# ---------------------------------------------------------------------------
 # Service Installation (LaunchAgent & systemd)
 # ---------------------------------------------------------------------------
 
@@ -1266,6 +1869,10 @@ def main():
     # Model Context Protocol (MCP) mode
     parser.add_argument("--mcp", action="store_true", help="Run as Model Context Protocol (MCP) stdio JSON-RPC server")
 
+    # Client Web UI mode
+    parser.add_argument("--ui", action="store_true", help="Launch local User Chat Web UI in browser")
+    parser.add_argument("--port", type=int, default=8888, help="Port for local User Chat Web UI (default: 8888)")
+
     # Service installation
     parser.add_argument("--install-service", choices=["launchd", "systemd"],
                         help="Install and start as background OS service (launchd on macOS, systemd on Linux)")
@@ -1289,6 +1896,12 @@ def main():
         sys.stdout = sys.stderr
 
     # Resolve or auto-register credentials
+    if args.ui:
+        if args.name == "A2A-Agent":
+            args.name = f"{os.getenv('USER', 'User')} (Web)"
+        if not args.credentials:
+            args.credentials = os.path.expanduser("~/.a2a/user_credentials.json")
+
     cred_file = args.credentials or os.path.expanduser(f"~/.a2a/credentials_{sanitize_slug(args.name)}.json")
     agent_id = args.agent_id
     token = args.token
@@ -1336,6 +1949,14 @@ def main():
     if args.mcp:
         try:
             run_mcp_server(hub_client, args.name, out_stream=mcp_out)
+        except KeyboardInterrupt:
+            pass
+        sys.exit(0)
+
+    # If Client Web UI mode requested, run local workstation server and exit
+    if args.ui:
+        try:
+            run_local_ui(hub_client, args.name, port=args.port)
         except KeyboardInterrupt:
             pass
         sys.exit(0)

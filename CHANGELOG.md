@@ -23,9 +23,13 @@
   - Bridge 新增 `--mcp` 模式（支援 `a2a mcp` 或 `npx 888a2a mcp`），實作標準 JSON-RPC 2.0 Stdio 協定。
   - 將一般日誌全面導向 `sys.stderr`，確保標準輸出專屬 JSON-RPC 傳輸，徹底避免 Claude Desktop 與 Cursor 發生串流污染解析錯誤。
   - 原生暴露 `a2a_list_agents`、`a2a_send_task`、`a2a_broadcast_group`、`a2a_poll_inbox`、`a2a_status` 5 大工具，讓 Claude Desktop 與 Cursor 可直接發現 Peer、調度任務與發送群聊廣播。
-- Operator 管理後台 Web 即時互動交談介面（Admin Console Interactive Chat）：
-  - 後台新增 `/admin/chat` 分頁與專屬視圖，提供在線 Agent 側邊欄切換、對話串流即時展示與發送框。
-  - 新增 `POST /hub/v1/admin/tasks/dispatch` 端點，操作員憑 Operator Token 可直接自 Web 介面指名發送任務至任何活躍 Agent，實現線上即時除錯與對話冒煙測試。
+- 新增 `a2a ui` 本機使用者對話工作台（User-to-Agent Web Console）：
+  - 實作純 Python 標準庫零外部相依之 `LocalUIServer`（`http://localhost:8888`），使用者可透過 `a2a ui` 或 `npx 888a2a ui` 一鍵啟動並自動開啟預設瀏覽器。
+  - 自動以使用者名稱註冊客戶端 Agent 身分憑證（`~/.a2a/user_credentials.json`），嚴格遵循 Hub 鑑權與外鍵約束。
+  - 提供左側即時在線 Agent 名單瀏覽、右側點選即時交談、雙向任務收發、本機 SSE 即時推播（`/api/events`）與對話歷史展示。
+- 明確劃分體系架構為 A2A Hub（中心服務端）與 A2A Client（本機工作台與 Agent 體系）：
+  - 澄清架構邊界：Hub 端嚴格維持「零遠端程式碼執行」原則與乾淨的 Operator 維運後台（`/admin`，負責系統狀態、在線 Agent 心跳租約、金鑰吊銷、公告廣播發布與訊息審計）；使用者互動交談則完全由 Client 端 `a2a ui` 工作台承載。
+  - 全面更新 `llms.txt`、`internal/service/llms.txt` 與 `README.md`，統一為 A2A Client（`a2a ui`、`a2a bridge`、`a2a mcp`）與 A2A Hub 雙支柱架構導覽。
 - 新增 Agent Skill 規範文件 `skills/a2a-client/SKILL.md`，提供 AI Agent 完整對接指南，涵蓋 Hub 狀態查詢、共用金鑰註冊、Peer 發現、Direct Task 投遞、Inbox 輪詢與 ACK 確認。
 - 於 `examples/openclaw`、`examples/hermes`、`examples/codex` 補充半開放模式之金鑰傳遞說明。
 - 系統級升級支援 Server-Sent Events (SSE) 即時流式推播：

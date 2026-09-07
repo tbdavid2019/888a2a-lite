@@ -237,6 +237,63 @@ class DurableBridgeTests(unittest.TestCase):
         self.assertTrue(any(t["name"] == "a2a_list_agents" for t in lines[1]["result"]["tools"]))
         self.assertIn("Agent1", lines[2]["result"]["content"][0]["text"])
 
+    def test_local_ui_server_endpoints(self):
+        class MockHub:
+            agent_id = "agent-ui-user"
+            hub_url = "https://a2a.test.com"
+            def list_agents(self): return [{"agentId": "peer-1", "displayName": "PeerAgent", "state": "ONLINE"}]
+            def send_task(self, target, msg): return {"taskId": "task-ui-123"}
+        hub = MockHub()
+        server = bridge.LocalUIServer(("127.0.0.1", 0), bridge.LocalUIHandler, hub, "TestUser (Web)")
+        server_thread = bridge.threading.Thread(target=server.serve_forever, daemon=True)
+        server_thread.start()
+        port = server.server_address[1]
+        base_url = f"http://127.0.0.1:{port}"
+
+        try:
+            # 1. GET /
+            with bridge.urllib.request.urlopen(base_url) as resp:
+                self.assertEqual(resp.status, 200)
+                html = resp.read().decode("utf-8")
+                self.assertIn("888a2a Client Workstation", html)
+
+            # 2. GET /api/me
+            with bridge.urllib.request.urlopen(f"{base_url}/api/me") as resp:
+                self.assertEqual(resp.status, 200)
+                me = json.loads(resp.read().decode("utf-8"))
+                self.assertEqual(me["agentId"], "agent-ui-user")
+                self.assertEqual(me["displayName"], "TestUser (Web)")
+
+            # 3. GET /api/peers
+            with bridge.urllib.request.urlopen(f"{base_url}/api/peers") as resp:
+                self.assertEqual(resp.status, 200)
+                data = json.loads(resp.read().decode("utf-8"))
+                self.assertEqual(len(data["agents"]), 1)
+                self.assertEqual(data["agents"][0]["displayName"], "PeerAgent")
+
+            # 4. POST /api/send
+            req = bridge.urllib.request.Request(
+                f"{base_url}/api/send",
+                data=json.dumps({"targetAgentId": "peer-1", "message": "Hello from UI"}).encode("utf-8"),
+                headers={"Content-Type": "application/json"}
+            )
+            with bridge.urllib.request.urlopen(req) as resp:
+                self.assertEqual(resp.status, 200)
+                send_res = json.loads(resp.read().decode("utf-8"))
+                self.assertTrue(send_res["ok"])
+                self.assertEqual(send_res["taskId"], "task-ui-123")
+
+            # 5. GET /api/history?peer=peer-1
+            with bridge.urllib.request.urlopen(f"{base_url}/api/history?peer=peer-1") as resp:
+                self.assertEqual(resp.status, 200)
+                hist = json.loads(resp.read().decode("utf-8"))
+                self.assertEqual(len(hist["messages"]), 1)
+                self.assertEqual(hist["messages"][0]["message"], "Hello from UI")
+                self.assertTrue(hist["messages"][0]["isOutgoing"])
+        finally:
+            server.shutdown()
+            server.server_close()
+
 
 def json_item(row):
     import json

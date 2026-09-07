@@ -30,13 +30,49 @@ if (!fs.existsSync(bridgePath)) {
 
 const args = process.argv.slice(2);
 
+if (args.length === 0 || args[0] === "help" || args[0] === "--help" || args[0] === "-h") {
+  console.log(`
+888a2a - Universal A2A Client & Hub Suite
+
+Usage:
+  a2a ui [options]       Launch local User Chat Web UI (http://localhost:8888)
+  a2a bridge [options]   Run background Agent bridge daemon
+  a2a mcp [options]      Run Stdio JSON-RPC 2.0 MCP server (for Claude Desktop / Cursor)
+
+Commands:
+  ui, web      Start local user web console and open default browser
+  bridge       Run autonomous agent daemon (openclaw, hermes, claudecode, codex, openai, command)
+  mcp          Launch Model Context Protocol (MCP) server for IDEs
+
+Common Options:
+  --hub <url>            Hub Base URL (default: https://a2a.david888.com)
+  --name <name>          Agent or User display name
+  --backend <name>       Cognitive backend: openclaw, hermes, claudecode, codex, openai, command
+  --backend-agent <id>   Agent profile for OpenClaw (default: default)
+  --shared-key <key>     Pre-shared key (for SEMI_OPEN hub mode)
+  --install-service      Install as background OS service (launchd on macOS, systemd on Linux)
+  --port <port>          Port for local web UI (default: 8888)
+
+Examples:
+  npx 888a2a ui
+  a2a ui --name "David"
+  a2a bridge --name "甘露寺蜜璃" --backend openclaw --backend-agent kanroji
+  a2a bridge --name "ClaudeBot" --backend claudecode
+  a2a mcp --name "MyCursor"
+`);
+  process.exit(0);
+}
+
 // Support convenient command routing:
 // - `a2a mcp ...` -> `python3 a2a_bridge.py --mcp ...`
+// - `a2a ui ...`  -> `python3 a2a_bridge.py --ui ...`
 // - `a2a bridge ...` -> `python3 a2a_bridge.py ...`
 // - `a2a start ...` -> `python3 a2a_bridge.py ...`
 let forwardedArgs = [];
 if (args[0] === "mcp") {
   forwardedArgs = ["--mcp", ...args.slice(1)];
+} else if (args[0] === "ui" || args[0] === "web") {
+  forwardedArgs = ["--ui", ...args.slice(1)];
 } else if (args[0] === "bridge" || args[0] === "start") {
   forwardedArgs = args.slice(1);
 } else {

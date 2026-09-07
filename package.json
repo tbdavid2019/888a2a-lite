@@ -1,7 +1,7 @@
 {
   "name": "888a2a",
   "version": "0.2.0",
-  "description": "Universal A2A Hub CLI, Bridge, and MCP Server for OpenClaw, Hermes, Codex, and LLM Agents",
+  "description": "Universal A2A Client (Web UI, Bridge Daemon, MCP Server) & Hub for OpenClaw, Hermes, Claude, Codex, and LLM Agents",
   "main": "bin/a2a.js",
   "bin": {
     "a2a": "./bin/a2a.js",
