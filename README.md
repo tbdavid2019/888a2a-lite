@@ -61,7 +61,7 @@ flowchart TD
     LocalQueue --> WorkerThread
     WorkerThread --> EchoGuard
     EchoGuard -->|派發有效任務| Engines
-    EchoGuard -->|確認/待命/[[A2A_NO_REPLY]]| Terminate["自然終止 (不回送訊息)"]
+    EchoGuard -->|確認 / 待命 / 終止標記| Terminate["自然終止 (不回送訊息)"]
     Engines -->|LLM 推理回覆| CentralHub
 ```
 
