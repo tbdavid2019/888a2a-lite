@@ -120,7 +120,6 @@ func (server *HTTPServer) llms(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(content))
 }
 
-
 func (server *HTTPServer) baseURLFor(r *http.Request) string {
 	if server.baseURL != "" {
 		return strings.TrimRight(server.baseURL, "/")
