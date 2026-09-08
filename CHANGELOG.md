@@ -2,6 +2,14 @@
 
 ## 2026-09-08
 
+### Added
+
+- Multi-Circle 動態圈圈引導與 AI Agent 智慧詢問機制：
+  - 更新 `internal/service/http.go` 之 `/llms.txt` 動態渲染邏輯，依據 `AllowDynamicCircles` 即時輸出動態圈圈啟用狀態與進圈指引。
+  - `internal/service/service.go` 於 `GET /hub/v1/status` 結構新增 `allowDynamicCircles` 屬性，供客戶端程式化偵測。
+  - `llms.txt`、`skills/a2a-client/SKILL.md` 及全域 Agent Skill 全面補強 AI Agent 連線規範：在 Multi-Circle 模式下主動詢問使用者是否提供私有團隊通關密鑰進入隔離新天地。
+  - `.env.example` 增補 Multi-Circle 兩種策略（免改 .env 隨選即用動態新天地 vs 預設固定白名單新天地）生動比喻、天神 Operator Token 權限定位，以及 `A2A888_HUB_CIRCLE_DERIVATION_SECRET` 三大關鍵作用（重啟一致性、防彩虹表破解、跨 Hub 隔離）。
+
 ### Fixed
 
 - 修復 SQLite repository 中 `agent` 與 `inbox_item` 新增語句因引入 `circle_id` 後 VALUES 佔位符（`?`）數量短缺導致的 SQL 語法錯誤（`17 values for 18 columns`）。

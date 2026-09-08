@@ -627,8 +627,14 @@ func TestHTTPMultiCircleIsolation(t *testing.T) {
 	publicStatus := doJSON(t, handler, http.MethodGet, "/hub/v1/status", "", "", nil)
 	var publicStatusBody HubStatus
 	decodeResponse(t, publicStatus, &publicStatusBody)
-	if publicStatus.Code != http.StatusOK || publicStatusBody.RegisteredAgents != 0 || publicStatusBody.PendingTasks != 0 {
-		t.Fatalf("anonymous multi-circle status leaked global counts: %d/%+v", publicStatus.Code, publicStatusBody)
+	if publicStatus.Code != http.StatusOK || publicStatusBody.RegisteredAgents != 0 || publicStatusBody.PendingTasks != 0 || publicStatusBody.AllowDynamicCircles {
+		t.Fatalf("anonymous multi-circle status leaked global counts or wrong dynamic setting: %d/%+v", publicStatus.Code, publicStatusBody)
+	}
+
+	llmsRec := httptest.NewRecorder()
+	handler.ServeHTTP(llmsRec, httptest.NewRequest(http.MethodGet, "/llms.txt", nil))
+	if llmsRec.Code != http.StatusOK || !strings.Contains(llmsRec.Body.String(), "MULTI_CIRCLE") || !strings.Contains(llmsRec.Body.String(), "Whitelist Circles ONLY") {
+		t.Fatalf("whitelist multi-circle llms.txt mismatch: %d/%s", llmsRec.Code, llmsRec.Body.String())
 	}
 	agentStatus := doJSON(t, handler, http.MethodGet, "/hub/v1/status", privateA.AgentID, privateA.AgentToken, nil)
 	var agentStatusBody HubStatus
@@ -872,5 +878,77 @@ func TestHTTPSSEInboxStream(t *testing.T) {
 	id2, event2, data2 := readEvent()
 	if id2 != "2" || event2 != "task" || !strings.Contains(data2, "task 2 message") {
 		t.Fatalf("event 2 mismatch: id=%q, event=%q, data=%q", id2, event2, data2)
+	}
+}
+
+func TestHTTPServer_MultiCircleDynamicCircles(t *testing.T) {
+	ctx := context.Background()
+	repository, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "hub-dynamic.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open: %v", err)
+	}
+	defer func() {
+		if err := repository.Close(); err != nil {
+			t.Errorf("close repository: %v", err)
+		}
+	}()
+
+	cfg := config.Config{
+		HubID: "public", RegistrationEnabled: true,
+		RegistrationTTL: 24 * time.Hour, PeerLease: 5 * time.Minute,
+		MaxRegisteredAgents: 20, MaxTasksPerMinute: 20, MaxConcurrentTasks: 4,
+		MaxPayloadBytes: 1 << 20, RegistrationPerMinute: 20,
+		OperatorToken: "operator-fixture", CircleMode: "multi",
+		AllowDynamicCircles:     true,
+		CircleDerivationSecret: "stable-hub-secret",
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("config.Validate: %v", err)
+	}
+	_ = repository.Policy().SavePolicy(ctx, hub.HubPolicy{
+		HubID: cfg.HubID, RegistrationEnabled: cfg.RegistrationEnabled,
+		RegistrationTTL: cfg.RegistrationTTL, PeerLease: cfg.PeerLease,
+		MaxRegisteredAgents: cfg.MaxRegisteredAgents, MaxTasksPerMinute: cfg.MaxTasksPerMinute,
+		MaxConcurrentTasks: cfg.MaxConcurrentTasks, MaxPayloadBytes: cfg.MaxPayloadBytes,
+	})
+	svc := New(repository, cfg)
+	handler := NewHTTPServer(svc).Handler()
+
+	// 1. Check status exposes allowDynamicCircles: true
+	statusRes := doJSON(t, handler, http.MethodGet, "/hub/v1/status", "", "", nil)
+	var status HubStatus
+	decodeResponse(t, statusRes, &status)
+	if statusRes.Code != http.StatusOK || !status.AllowDynamicCircles || status.Mode != "MULTI_CIRCLE" {
+		t.Fatalf("dynamic multi-circle status mismatch: %d/%+v", statusRes.Code, status)
+	}
+
+	// 2. Check llms.txt indicates Dynamic Circles ENABLED
+	llmsRec := httptest.NewRecorder()
+	handler.ServeHTTP(llmsRec, httptest.NewRequest(http.MethodGet, "/llms.txt", nil))
+	if llmsRec.Code != http.StatusOK || !strings.Contains(llmsRec.Body.String(), "Dynamic Circles ENABLED") {
+		t.Fatalf("dynamic multi-circle llms.txt mismatch: %d/%s", llmsRec.Code, llmsRec.Body.String())
+	}
+
+	// 3. Register with an ad-hoc shared key (dynamically creates circle)
+	regReq := httptest.NewRequest(http.MethodPost, "/hub/v1/agents/register", bytes.NewReader([]byte(`{
+		"displayName": "dynamic-bot",
+		"providerFamily": "test",
+		"transportId": "http",
+		"capabilities": ["text/plain"],
+		"registrationIdempotencyKey": "dynamic-key-1"
+	}`)))
+	regReq.Header.Set("Content-Type", "application/json")
+	regReq.Header.Set("X-Hub-Key", "my-secret-ad-hoc-key")
+	regRec := httptest.NewRecorder()
+	handler.ServeHTTP(regRec, regReq)
+	if regRec.Code != http.StatusCreated {
+		t.Fatalf("register with dynamic key failed: %d/%s", regRec.Code, regRec.Body.String())
+	}
+	var regBody struct {
+		Identity hub.AgentIdentity `json:"identity"`
+	}
+	decodeResponse(t, regRec, &regBody)
+	if !strings.HasPrefix(regBody.Identity.CircleID, "circle-") {
+		t.Fatalf("dynamic circleID should start with 'circle-', got %q", regBody.Identity.CircleID)
 	}
 }

@@ -21,6 +21,13 @@ Source repository: https://github.com/tbdavid2019/888a2a-lite
 - **Active Hub Mode**: `{{HUB_MODE}}`
 - **Registration Access**: {{HUB_REGISTRATION_AUTH}}
 
+> 🤖 **IMPORTANT INSTRUCTION FOR CONNECTING AI AGENTS**:
+> - **Public vs Private Circle Selection**:
+>   - When connecting to a Hub in `MULTI_CIRCLE` mode on behalf of a user, **prompt the user**:
+>     *"Do you have a private team password / circle key to join an isolated workspace (新天地), or should I connect to the open public circle?"*
+>   - **No Key provided**: Omit `X-Hub-Key`. You will join the open `public` circle where all public agents can collaborate.
+>   - **Key provided**: Send `X-Hub-Key: <key>`. You will enter an isolated, air-gapped private circle. Only peer agents using the exact same key can discover or message you.
+
 ---
 
 ## Client Quickstart Guide

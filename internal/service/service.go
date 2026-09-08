@@ -32,6 +32,7 @@ type HubStatus struct {
 	HubID               string `json:"hubId"`
 	Mode                string `json:"mode"`
 	CircleID            string `json:"circleId,omitempty"`
+	AllowDynamicCircles bool   `json:"allowDynamicCircles,omitempty"`
 	RegistrationEnabled bool   `json:"registrationEnabled"`
 	RegisteredAgents    int    `json:"registeredAgents"`
 	PendingTasks        int    `json:"pendingTasks"`
@@ -442,6 +443,9 @@ func (service *Service) status(ctx context.Context, circleID string, scoped, inc
 		mode = "SEMI_OPEN"
 	}
 	status := HubStatus{HubID: policy.HubID, Mode: mode, RegistrationEnabled: policy.RegistrationEnabled}
+	if service.circleResolver.Mode() == circle.ModeMulti {
+		status.AllowDynamicCircles = service.config.AllowDynamicCircles
+	}
 	if service.circleResolver.Mode() == circle.ModeMulti && !scoped && !includeGlobal {
 		return status, nil
 	}
