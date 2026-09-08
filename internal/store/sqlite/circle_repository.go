@@ -53,7 +53,7 @@ FROM hub_circle WHERE circle_id = ?`, circleID).Scan(
 	if circle.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAt); err != nil {
 		return hub.Circle{}, fmt.Errorf("parse circle created_at: %w", err)
 	}
-	if circle.DisabledAt, err = parseNullableTime(disabledAt); err != nil {
+	if circle.DisabledAt, err = parseNullableTimePtr(disabledAt); err != nil {
 		return hub.Circle{}, err
 	}
 	return circle, nil
@@ -79,7 +79,7 @@ FROM hub_circle ORDER BY created_at, circle_id`)
 		if circle.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAt); err != nil {
 			return nil, err
 		}
-		if circle.DisabledAt, err = parseNullableTime(disabledAt); err != nil {
+		if circle.DisabledAt, err = parseNullableTimePtr(disabledAt); err != nil {
 			return nil, err
 		}
 		circles = append(circles, circle)
@@ -168,10 +168,10 @@ ORDER BY version DESC LIMIT 1`, circleID, digest, formatTime(now)).Scan(
 	if key.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAt); err != nil {
 		return hub.CircleKey{}, err
 	}
-	if key.GraceUntil, err = parseNullableTime(graceUntil); err != nil {
+	if key.GraceUntil, err = parseNullableTimePtr(graceUntil); err != nil {
 		return hub.CircleKey{}, err
 	}
-	if key.RevokedAt, err = parseNullableTime(revokedAt); err != nil {
+	if key.RevokedAt, err = parseNullableTimePtr(revokedAt); err != nil {
 		return hub.CircleKey{}, err
 	}
 	return key, nil
@@ -200,7 +200,7 @@ ORDER BY k.version DESC LIMIT 1`, digest, formatTime(now)).Scan(
 	if circle.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAt); err != nil {
 		return hub.Circle{}, err
 	}
-	if circle.DisabledAt, err = parseNullableTime(disabledAt); err != nil {
+	if circle.DisabledAt, err = parseNullableTimePtr(disabledAt); err != nil {
 		return hub.Circle{}, err
 	}
 	return circle, nil
@@ -226,10 +226,10 @@ FROM hub_circle_key WHERE circle_id = ? ORDER BY version`, circleID)
 		if key.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAt); err != nil {
 			return nil, err
 		}
-		if key.GraceUntil, err = parseNullableTime(graceUntil); err != nil {
+		if key.GraceUntil, err = parseNullableTimePtr(graceUntil); err != nil {
 			return nil, err
 		}
-		if key.RevokedAt, err = parseNullableTime(revokedAt); err != nil {
+		if key.RevokedAt, err = parseNullableTimePtr(revokedAt); err != nil {
 			return nil, err
 		}
 		keys = append(keys, key)

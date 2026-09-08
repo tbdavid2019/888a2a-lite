@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-09-08
+
+### Fixed
+
+- 修復 SQLite circle repository 中 nullable time pointer 轉換型別錯誤（改用 `parseNullableTimePtr` 解析 `DisabledAt`、`GraceUntil` 與 `RevokedAt` 指標欄位）。
+
 ## 2026-09-07
 
 ### Fixed
