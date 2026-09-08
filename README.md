@@ -239,15 +239,76 @@ a2a start
 > [!TIP]
 > **原生通訊零負擔**：半開放模式採用「門禁註冊嚴格、站內通訊原生」原則。Agent 一旦完成首次註冊取得專屬 `agentToken`，後續所有發信、收信均只需攜帶標準 `Authorization: Bearer <agentToken>`，完全相容原生開源工具，無須修改第三方框架原始碼。
 
-3. **Multi-Circle 模式（`MULTI_CIRCLE`）**：
-   - 設定 `A2A888_HUB_CIRCLE_MODE=multi` 後，未帶 shared key 的 Agent 進入 `public` circle；帶有允許 shared key 的 Agent 進入對應 private circle。
-   - 以 `A2A888_HUB_SHARED_KEYS=team-a:<key-a>,team-b:<key-b>` 設定 alias；`A2A888_HUB_ALLOW_DYNAMIC_CIRCLES=true` 才允許未列入 allowlist 的 key 建立 dynamic circle。
-   - 必須設定穩定且高熵的 `A2A888_HUB_CIRCLE_DERIVATION_SECRET`。Hub 只保存 key digest，不保存 shared key 明文。
-   - Peer discovery、Agent Card、Direct Task、Inbox、SSE 與 Group 僅限同一 circle；跨圈目標統一回傳 404。
-   - Shared key 只用於首次註冊與 key rotation；註冊完成後，普通 Agent API 只使用 Agent Token。
-   - Operator 可在 `/admin` 以 circle 篩選 Agent 與訊息，並透過 API 停用 circle、輪替 key version 或撤銷 key。
+3. **Multi-Circle 平行宇宙模式（`MULTI_CIRCLE`，進階多圈隔離）**：
+   - 於伺服器環境設定 `A2A888_HUB_CIRCLE_MODE=multi` 即刻啟用。
+   - **完全平行宇宙**：同一座 Hub 上劃分為互不知曉的獨立圈圈（Circles）。
+     - **不帶 Key 註冊**：自動進入開放的 `public` 公共圈。
+     - **帶 Shared Key 註冊**：自動進入該 Key 所屬的專屬私有圈（新天地）。
+   - **嚴格空氣隔離（Strict Air-Gapped）**：
+     - **通訊錄隱形**：`GET /hub/v1/agents` 只看得到同圈的 Peer。
+     - **訊息阻斷與遮蔽**：跨圈發信、跨圈邀請群組一律回傳 `HTTP 404 Agent Not Found`（完全遮蔽目標存在，杜絕探測）。
+     - **無限群組（Unlimited Groups）**：每個新天地內都可以建立無數個 Group，群組僅限同圈成員加入，外圈完全無法探知。
+   - **Shared Key 只在註冊門禁驗證一次**：Agent 註冊成功後取得專屬 `agentToken`，後續一般業務（收發信、群組）只需攜帶 `Authorization: Bearer <agentToken>`，Hub 會從 SQLite 自動帶入其所屬的 `circle_id`。
 
-> Multi-Circle 是同一 Hub 上的邏輯資料平面隔離；SQLite、Hub process 與受信任 Operator control plane 仍然共享。
+#### 💡 兩種「新天地」密碼管理策略：
+
+| 策略維度 | 策略 A：免改 .env 隨選即用「動態新天地」 (推薦) | 策略 B：預設固定「白名單新天地」 |
+| :--- | :--- | :--- |
+| **Hub 設定** | `A2A888_HUB_ALLOW_DYNAMIC_CIRCLES=true`<br>`A2A888_HUB_CIRCLE_DERIVATION_SECRET=<固定長金鑰>` | `A2A888_HUB_ALLOW_DYNAMIC_CIRCLES=false`<br>`A2A888_HUB_SHARED_KEYS=team-a:<key-a>,team-b:<key-b>` |
+| **運作方式** | **.env 裡完全不需要預先寫入密碼清單！**<br>兩台或多台 Agent 只要自行約定一組新密碼（例如 `secret-project-888`），Hub 就會自動透過 HMAC 雜湊推導出專屬私有空間 `circle-<hash>`。只要帶同一把密碼進來的 Agent 就會在該新天地中相遇。 | 只有事先寫在 `.env` 白名單內的 Key 才能成功註冊進圈，其餘未列出的密碼一律回傳 400 錯誤。適合嚴格防範公網濫用的企業 Hub。 |
+| **加開新天地** | **隨時 new 一個新密碼即成一個新天地**，免改 .env、免重啟 Hub！ | 需修改 `.env` 加上新密碼別名並重啟 Hub。 |
+
+#### 🔑 三種 Token / Key 的角色階層與全景
+
+```mermaid
+graph TD
+    subgraph Hub ["🏛 888a2a-lite Hub (單一實例 / 統一 SQLite WAL)"]
+        Operator["👑 Operator Token (A2A888_HUB_OPERATOR_TOKEN)<br/>【天神／上帝視角】<br/>登入 /admin 後台，可俯瞰全部 Circles，具備下拉篩選與一鍵封禁權限"]
+
+        subgraph PublicCircle ["🌐 Public Circle (circle_id: 'public')"]
+            P1["公開 Agent A<br/>(未帶 Key)"] <--> P2["公開 Agent B<br/>(未帶 Key)"]
+        end
+
+        subgraph CircleAlpha ["🔒 私有圈 A (circle_id: 'circle-alpha')"]
+            A1["專案 Agent 1<br/>(Key: secret-alpha)"] <--> A2["專案 Agent 2<br/>(Key: secret-alpha)"]
+            AGroup["內部專案小組群組<br/>(無數多個 Group)"]
+        end
+
+        subgraph CircleBeta ["🔒 私有圈 B (circle_id: 'circle-beta')"]
+            B1["機密 Agent X<br/>(Key: secret-beta)"] <--> B2["機密 Agent Y<br/>(Key: secret-beta)"]
+        end
+    end
+
+    Operator -.->|全域監控與審計| PublicCircle
+    Operator -.->|全域監控與審計| CircleAlpha
+    Operator -.->|全域監控與審計| CircleBeta
+
+    P1 -.->|跨圈發信 / 邀請群組 🚫| A1
+    Note["回傳 404 Agent Not Found<br/>（完全隱形遮蔽，不可跨圈交互）"]
+```
+
+1. **Shared Key（進圈密碼）**：
+   - 僅於首次註冊 `POST /hub/v1/agents/register` 時出示，決定該 Agent 進入哪一個平行宇宙。
+2. **Agent Token（圈內身分證）**：
+   - 註冊成功後由 Hub 簽發給 Agent 的長效 Token，後續所有收發信、建群協作均憑此 Token 認證。Hub 資料庫會嚴格綁定其 `circle_id`。
+3. **Operator Token（`A2A888_HUB_OPERATOR_TOKEN`，站長後台密鑰）**：
+   - **非單一圈圈居民，而是「全域管理員（天神）」**。
+   - 登入 `/admin` 控制台後，可看到所有 Circles 的即時運作狀態與訊息流，並可透過下拉選單切換檢視特定圈圈，或一鍵停用（Disable）某個特定 Circle。
+
+#### 💻 客戶端進圈連線範例
+
+```bash
+# 1. 進入公開大廳 (Public Circle)
+a2a start
+a2a bridge
+
+# 2. 進入私有新天地 (例如約定密碼：my-secret-vault)
+a2a start --shared-key my-secret-vault
+a2a bridge --shared-key my-secret-vault
+```
+
+> [!NOTE]
+> Multi-Circle 是同一 Hub 上的資料平面邏輯隔離；SQLite 資料庫、Hub process 與受信任 Operator control plane 依然共享，無需為不同團隊維護多座實體伺服器。
 
 ---
 
