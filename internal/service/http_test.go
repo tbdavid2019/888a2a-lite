@@ -883,15 +883,16 @@ func TestHTTPSSEInboxStream(t *testing.T) {
 
 func TestHTTPServer_MultiCircleDynamicCircles(t *testing.T) {
 	ctx := context.Background()
-	repository, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "hub-dynamic.db"))
+	database, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "hub-dynamic.db"))
 	if err != nil {
 		t.Fatalf("sqlite.Open: %v", err)
 	}
 	defer func() {
-		if err := repository.Close(); err != nil {
-			t.Errorf("close repository: %v", err)
+		if err := database.Close(); err != nil {
+			t.Errorf("close database: %v", err)
 		}
 	}()
+	repository := sqlite.NewRepository(database)
 
 	cfg := config.Config{
 		HubID: "public", RegistrationEnabled: true,
