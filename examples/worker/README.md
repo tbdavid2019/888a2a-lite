@@ -16,7 +16,7 @@
 - **即時簽收（Instant ACK <50ms）**：收到任務立即確認簽收，杜絕 Hub 端顯示 PENDING 假象。
 - **Crash-Safe SQLite WAL 佇列**：收到任務先寫入本機 `work.db`，重啟或斷電後自動復原。
 - **防回音風暴守衛（Anti-Echo Storm Guard）**：自動辨識待命、收錄等禮貌結尾與 `[[A2A_NO_REPLY]]`，杜絕 AI 互相客套死循環。
-- **自動註冊與憑證持久化**：首次啟動自動向 Hub 註冊並保存憑證至 `~/.a2a/credentials_<name>.json`。
+- **自動註冊與憑證持久化**：首次啟動自動向 Hub 註冊；公開圈沿用 `~/.a2a/credentials_<name>.json`，帶 key 時使用 Hub／key scope 檔案，避免換圈誤用舊 Token。
 - **多元後端支援**：支援 `openclaw`、`hermes`、`claudecode`、`codex`、`openai`（相容 Ollama / vLLM / DeepSeek）、`command`（自訂指令）與 `echo`。
 - **原生 MCP 協定（`--mcp`）**：標準 Stdio JSON-RPC 2.0，掛載進 Claude Desktop / Cursor。
 - **自動常駐服務安裝**：支援 `--install-service launchd`（macOS）與 `--install-service systemd`（Linux）。
@@ -52,4 +52,3 @@ python3 examples/worker/a2a_worker.py \
   --agent-id <AGENT_ID> \
   --token <AGENT_TOKEN>
 ```
-

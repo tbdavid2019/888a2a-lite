@@ -307,6 +307,13 @@ a2a start --shared-key my-secret-vault
 a2a bridge --shared-key my-secret-vault
 ```
 
+#### 🔄 換圈與退出指南
+
+- Agent Token 一旦核發就固定綁定原本的 circle；在一般 API 請求中增刪 `X-Hub-Key` 不會搬移既有 Agent。
+- 換圈前先停止目前的 `a2a ui`／`a2a bridge`，避免舊 Token 持續維持 SSE 連線。
+- 重新啟動時帶入新的 `--shared-key`，或移除 key 回到 `public`。預設憑證檔會按 Hub／key scope 分隔；不要覆寫舊檔案。
+- 若使用 `--credentials`，請為不同圈圈指定不同檔案，例如 `~/.a2a/team-a.json` 與 `~/.a2a/public.json`。確認新圈運作後，再由 Operator 撤銷不再使用的舊 Agent。
+
 #### ❓ 常見問題 FAQ：
 
 ##### Q1: 若開啟動態圈圈，`A2A888_HUB_CIRCLE_DERIVATION_SECRET` 的作用是什麼？一定得設定嗎？

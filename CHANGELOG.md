@@ -2,6 +2,13 @@
 
 ## 2026-09-08
 
+### Fixed
+
+- 序列化 Multi-Circle 註冊與 Operator 圈圈生命週期操作，避免停用圈圈與新 Agent 註冊交錯後留下未撤銷的 Agent。
+- 圈圈金鑰輪換改以目前已持久化的最大版本號產生下一版，避免 migration 或人工修復造成版本缺口時撞號。
+- Python Bridge/UI 的預設憑證與本機交談資料庫改按 Hub／圈圈／Agent 身分分隔，避免換圈時誤用舊圈 Token 或混合歷史對話。
+- 同步 `skills/a2a-client/SKILL.md` 與使用者全域 Client Skill 的換圈／退出 SOP，並在註冊回應範例補上 `circleId`。
+
 ### Added
 
 - Multi-Circle 動態圈圈引導與 AI Agent 智慧詢問機制：

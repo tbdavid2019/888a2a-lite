@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/tbdavid2019/888a2a-lite/internal/circle"
@@ -45,6 +46,7 @@ type Service struct {
 	now            func() time.Time
 	broker         *hub.InboxEventBroker
 	circleResolver circle.Resolver
+	circleMu       sync.Mutex
 }
 
 type AgentPrincipal struct {
@@ -82,6 +84,12 @@ func (service *Service) Register(ctx context.Context, declaration hub.AgentDecla
 }
 
 func (service *Service) RegisterWithSharedKey(ctx context.Context, declaration hub.AgentDeclaration, sharedKey string) (hub.AgentIdentity, bool, error) {
+	// Registration and circle lifecycle changes must be serialized in this
+	// process. Otherwise a disable can race between ensureCircle and CreateAgent,
+	// leaving a newly registered agent in a disabled circle.
+	service.circleMu.Lock()
+	defer service.circleMu.Unlock()
+
 	if err := hub.ValidateDeclaration(declaration); err != nil {
 		return hub.AgentIdentity{}, false, fmt.Errorf("%w: %s", ErrValidation, err.Error())
 	}
@@ -575,6 +583,8 @@ func (service *Service) DisableCircle(ctx context.Context, token, circleID strin
 	if err := service.AuthenticateOperator(token); err != nil {
 		return 0, err
 	}
+	service.circleMu.Lock()
+	defer service.circleMu.Unlock()
 	if _, err := service.store.Circles().FindCircle(ctx, circleID); err != nil {
 		return 0, err
 	}
@@ -593,6 +603,8 @@ func (service *Service) RotateCircleKey(ctx context.Context, token, circleID, ne
 	if err := service.AuthenticateOperator(token); err != nil {
 		return hub.Circle{}, err
 	}
+	service.circleMu.Lock()
+	defer service.circleMu.Unlock()
 	if service.circleResolver.Mode() != circle.ModeMulti || strings.TrimSpace(newSharedKey) == "" {
 		return hub.Circle{}, fmt.Errorf("%w: circle key rotation requires multi mode and a new key", ErrValidation)
 	}
@@ -607,10 +619,7 @@ func (service *Service) RotateCircleKey(ctx context.Context, token, circleID, ne
 	if err != nil {
 		return hub.Circle{}, err
 	}
-	version := circleRecord.ActiveKeyVersion + 1
-	if version <= 1 && len(keys) > 0 {
-		version = len(keys) + 1
-	}
+	version := nextCircleKeyVersion(circleRecord.ActiveKeyVersion, keys)
 	now := service.now().UTC()
 	var graceUntil *time.Time
 	if grace > 0 {
@@ -632,6 +641,8 @@ func (service *Service) RevokeCircleKey(ctx context.Context, token, circleID str
 	if err := service.AuthenticateOperator(token); err != nil {
 		return err
 	}
+	service.circleMu.Lock()
+	defer service.circleMu.Unlock()
 	if version < 1 {
 		return fmt.Errorf("%w: key version must be positive", ErrValidation)
 	}
@@ -647,6 +658,16 @@ func (service *Service) RevokeCircleKey(ctx context.Context, token, circleID str
 	}
 	service.audit(ctx, hub.Event{Type: hub.EventCircleKeyRevoked, CircleID: circleID, Details: map[string]any{"circleId": circleID, "version": version}})
 	return nil
+}
+
+func nextCircleKeyVersion(activeVersion int, keys []hub.CircleKey) int {
+	maxVersion := activeVersion
+	for _, key := range keys {
+		if key.Version > maxVersion {
+			maxVersion = key.Version
+		}
+	}
+	return maxVersion + 1
 }
 
 func (service *Service) CancelTask(ctx context.Context, taskID, reason string) error {

@@ -16,6 +16,24 @@ SPEC.loader.exec_module(bridge)
 
 
 class DurableBridgeTests(unittest.TestCase):
+    def test_default_credentials_are_separated_by_hub_and_circle_key(self):
+        public_path = bridge.default_credential_path("https://hub-a", "Agent")
+        private_a = bridge.default_credential_path("https://hub-a", "Agent", "key-a")
+        private_b = bridge.default_credential_path("https://hub-a", "Agent", "key-b")
+        other_hub = bridge.default_credential_path("https://hub-b", "Agent", "key-a")
+
+        self.assertNotEqual(public_path, private_a)
+        self.assertNotEqual(private_a, private_b)
+        self.assertNotEqual(private_a, other_hub)
+        self.assertNotIn("key-a", private_a)
+        self.assertEqual(private_a, bridge.default_credential_path("https://hub-a", "Agent", " key-a "))
+
+    def test_default_chat_database_is_separated_by_agent_identity(self):
+        self.assertNotEqual(
+            bridge.default_chat_db_path("https://hub", "agent-public"),
+            bridge.default_chat_db_path("https://hub", "agent-private"),
+        )
+
     def test_closing_filter_only_matches_exact_statement(self):
         self.assertTrue(bridge.is_pure_closing_statement("辛苦了！"))
         self.assertFalse(bridge.is_pure_closing_statement("辛苦了，整理今天的錯誤紀錄"))
@@ -144,6 +162,10 @@ class DurableBridgeTests(unittest.TestCase):
             def read(self): return json.dumps({"identity": {"agentId": "a"}}).encode()
         with mock.patch.object(bridge.urllib.request, "urlopen", lambda *args, **kwargs: Duplicate()):
             with self.assertRaises(RuntimeError): bridge.HubClient("https://hub").register("N", "k")
+
+    def test_shared_key_is_not_sent_after_circle_registration(self):
+        client = bridge.HubClient("https://hub", agent_id="agent", token="token", shared_key="secret", circle_id="circle-a")
+        self.assertNotIn("X-hub-key", {key.lower() for key in client._headers()})
 
     def test_main_preserves_legacy_and_explicit_credentials(self):
         with tempfile.TemporaryDirectory() as directory:

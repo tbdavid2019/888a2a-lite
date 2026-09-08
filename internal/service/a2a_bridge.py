@@ -8,7 +8,7 @@ Features:
 - Multi-backend AI support (OpenClaw, Hermes, OpenAI/Ollama compatible API, custom cmd).
 - Durable local enqueue before receipt ACK; independent inference and retry workers.
 - Built-in Anti-Echo Storm Guard & [[A2A_NO_REPLY]] conversation termination.
-- Auto-Registration & Credential Persistence (~/.a2a/credentials_<name>.json).
+- Auto-Registration & Credential Persistence (~/.a2a/credentials_<name>[_scope].json).
 - Auto-Accept Group Invitations & Group broadcast spam suppression.
 - Resilient SSE Outbound Streaming with auto-reconnect & keepalive handling.
 - One-Click Service Installer for macOS (LaunchAgent) & Linux (systemd user unit).
@@ -129,6 +129,31 @@ def sanitize_slug(name, fallback="agent"):
     return ascii_slug
 
 
+def credential_scope(hub_url, shared_key):
+    """Return a non-secret scope for a Hub and registration circle key."""
+    normalized_key = (shared_key or "").strip() or "public"
+    scope_input = f"{hub_url.rstrip('/')}\x00{normalized_key}"
+    return hashlib.sha256(scope_input.encode("utf-8")).hexdigest()[:16]
+
+
+def default_credential_path(hub_url, agent_name, shared_key=None, ui=False):
+    """Choose a credential file that cannot silently cross Hub circles."""
+    directory = os.path.expanduser("~/.a2a")
+    if not (shared_key or "").strip():
+        # Preserve the original public-mode paths for existing installations.
+        filename = "user_credentials.json" if ui else f"credentials_{sanitize_slug(agent_name)}.json"
+    else:
+        prefix = "user_credentials" if ui else f"credentials_{sanitize_slug(agent_name)}"
+        filename = f"{prefix}_{credential_scope(hub_url, shared_key)}.json"
+    return os.path.join(directory, filename)
+
+
+def default_chat_db_path(hub_url, agent_id):
+    """Keep local conversation history isolated by the issued Agent identity."""
+    scope = credential_scope(hub_url, agent_id)
+    return os.path.expanduser(f"~/.a2a/chat_{scope}.db")
+
+
 def acquire_process_lock(queue_path):
     lock_path = os.path.abspath(os.path.expanduser(queue_path)) + ".lock"
     os.makedirs(os.path.dirname(lock_path), exist_ok=True)
@@ -177,11 +202,12 @@ def systemd_unit_quote(value, exec_arg=True):
 # ---------------------------------------------------------------------------
 
 class HubClient:
-    def __init__(self, hub_url, agent_id=None, token=None, shared_key=None):
+    def __init__(self, hub_url, agent_id=None, token=None, shared_key=None, circle_id=None):
         self.hub_url = hub_url.rstrip("/")
         self.agent_id = agent_id
         self.token = token
-        self.shared_key = shared_key
+        self.shared_key = (shared_key or "").strip() or None
+        self.circle_id = circle_id
 
     def _headers(self, auth=True):
         h = {"Content-Type": "application/json"}
@@ -189,7 +215,10 @@ class HubClient:
             h["Authorization"] = f"Bearer {self.token}"
         if auth and self.agent_id:
             h["X-Agent-ID"] = self.agent_id
-        if self.shared_key:
+        # Once registration returned a persisted circle identity, the shared
+        # key is bootstrap-only. Keep it for registration and for legacy
+        # credentials that predate circleId support.
+        if self.shared_key and (not auth or not self.circle_id):
             h["X-Hub-Key"] = self.shared_key
         return h
 
@@ -210,6 +239,7 @@ class HubClient:
                 ident = data.get("identity", {})
                 self.agent_id = ident.get("agentId")
                 self.token = ident.get("agentToken")
+                self.circle_id = ident.get("circleId")
                 if not self.agent_id or not self.token:
                     raise RuntimeError(
                         "Hub returned an existing identity without agentToken; "
@@ -2413,7 +2443,7 @@ def main():
     parser.add_argument("--agent-id", help="Explicit Agent ID (optional, auto-loaded/registered)")
     parser.add_argument("--token", help="Explicit Agent Token (optional, auto-loaded/registered)")
     parser.add_argument("--shared-key", default=os.getenv("A2A888_HUB_SHARED_KEY"),
-                        help="Hub Pre-Shared Key (for SEMI_OPEN mode)")
+                        help="Hub registration key (for SEMI_OPEN or MULTI_CIRCLE mode)")
     parser.add_argument("--credentials", help="Path to credentials JSON file")
     parser.add_argument("--queue-db", help="Durable local work queue SQLite path")
 
@@ -2490,13 +2520,13 @@ def main():
         sys.stdout = sys.stderr
 
     # Resolve or auto-register credentials
-    if args.ui:
-        if not args.credentials:
-            args.credentials = os.path.expanduser("~/.a2a/user_credentials.json")
+    if args.ui and not args.credentials:
+        args.credentials = default_credential_path(args.hub, args.name, args.shared_key, ui=True)
 
-    cred_file = args.credentials or os.path.expanduser(f"~/.a2a/credentials_{sanitize_slug(args.name)}.json")
+    cred_file = args.credentials or default_credential_path(args.hub, args.name, args.shared_key)
     agent_id = args.agent_id
     token = args.token
+    circle_id = None
     registration_key = None
     credential_data = {}
 
@@ -2510,6 +2540,7 @@ def main():
                 if not args.agent_id and not args.token:
                     agent_id = ident.get("agentId")
                     token = ident.get("agentToken")
+                circle_id = ident.get("circleId")
                 registration_key = data.get("registrationIdempotencyKey") or ident.get("registrationIdempotencyKey")
         except Exception as e:
             print(f"[!] Warning: Could not read {cred_file}: {e}", file=sys.stderr)
@@ -2522,7 +2553,7 @@ def main():
         bootstrap["registrationIdempotencyKey"] = registration_key
         save_credentials(cred_file, bootstrap)
 
-    hub_client = HubClient(args.hub, agent_id, token, args.shared_key)
+    hub_client = HubClient(args.hub, agent_id, token, args.shared_key, circle_id=circle_id)
 
     if not hub_client.agent_id or not hub_client.token:
         print(f"[*] No credentials found for '{args.name}'. Auto-registering with Hub...")
@@ -2548,7 +2579,7 @@ def main():
     # If Client Web UI mode requested, run local workstation server and exit
     if args.ui:
         try:
-            run_local_ui(hub_client, args.name, port=args.port)
+            run_local_ui(hub_client, args.name, port=args.port, chat_db_path=default_chat_db_path(args.hub, hub_client.agent_id))
         except KeyboardInterrupt:
             pass
         sys.exit(0)
