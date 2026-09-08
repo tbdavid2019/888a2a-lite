@@ -895,8 +895,8 @@ func TestHTTPServer_MultiCircleDynamicCircles(t *testing.T) {
 	repository := sqlite.NewRepository(database)
 
 	cfg := config.Config{
-		HubID: "public", RegistrationEnabled: true,
-		RegistrationTTL: 24 * time.Hour, PeerLease: 5 * time.Minute,
+		HubID: "public", ListenAddr: ":0", DatabasePath: filepath.Join(t.TempDir(), "unused.db"),
+		RegistrationEnabled: true, RegistrationTTL: 24 * time.Hour, PeerLease: 5 * time.Minute,
 		MaxRegisteredAgents: 20, MaxTasksPerMinute: 20, MaxConcurrentTasks: 4,
 		MaxPayloadBytes: 1 << 20, RegistrationPerMinute: 20,
 		OperatorToken: "operator-fixture", CircleMode: "multi",
