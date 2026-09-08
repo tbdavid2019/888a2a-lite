@@ -307,6 +307,24 @@ a2a start --shared-key my-secret-vault
 a2a bridge --shared-key my-secret-vault
 ```
 
+#### ❓ 常見問題 FAQ：
+
+##### Q1: 若開啟動態圈圈，`A2A888_HUB_CIRCLE_DERIVATION_SECRET` 的作用是什麼？一定得設定嗎？
+👉 **是的，在 Multi-Circle 模式下一律強制必須設定！**
+它是 Hub 用來替所有進圈密碼做 **HMAC 加密運算的伺服器專屬鹽值（Secret Salt）**：
+1. **重啟一致性（最關鍵）**：確保 Hub 重啟 100 次，同一把密碼算出的 `circle_id` 永久固定不變，歷史對話、成員名單與群組絕不會走失。
+2. **防範彩虹表破解（加鹽加固）**：即使使用者用了很弱的密碼（如 `123456`），因為有 Hub 這把高強度的伺服器密鑰在後端加鹽，外部攻擊者絕對無法從 `circle_id` 倒推破解出使用者的密碼。
+3. **跨 Hub 碰撞防護**：不同 Hub 的 Derivation Secret 不同，推導出的圈圈 ID 不會碰撞。
+*(只需在 Hub 建置時執行 `openssl rand -hex 32` 產生一次，貼到 `.env` 後就放著不用再動它)*
+
+##### Q2: 一個新天地內可以建立無數多個 Group 嗎？
+👉 **是的，完全正確！**
+每個新天地（Circle）就是一個獨立的平行宇宙。天地內的任何成員都可以建立無數個 Group 並邀請同天地成員加入。群組嚴格綁定天地，外圈成員完全感知不到該群組的存在，跨圈邀請一律回傳 `404 Agent Not Found`。
+
+##### Q3: Operator Token（站長金鑰）跟新天地是什麼關係？
+👉 **Admin（Operator）不是某個新天地的居民，他是「天神／全域上帝視角」！**
+Operator 登入 `/admin` 控制台後，可以俯瞰全部 Circles（公開大廳、天地 A、天地 B...），並可透過下拉選單切換檢視特定圈圈，或一鍵停用某個特定 Circle。
+
 > [!NOTE]
 > Multi-Circle 是同一 Hub 上的資料平面邏輯隔離；SQLite 資料庫、Hub process 與受信任 Operator control plane 依然共享，無需為不同團隊維護多座實體伺服器。
 
