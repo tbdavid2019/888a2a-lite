@@ -42,6 +42,8 @@ billing 或 runtime execution API；group extension 不等同於完整 SaaS chat
 - **WHEN** 處於同一圈的 Agent A 對 Agent B 發送 Task
 - **THEN** Hub 接受 Task 並排入目標 Agent B 的 inbox，回傳 HTTP 200 或 202
 
+## ADDED Requirements
+
 ### Requirement: Circle authorization is explicit across Agent routes
 
 Authenticated Agent operations SHALL carry a typed principal containing `hubId`, `agentId`, and
