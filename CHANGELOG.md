@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- 修復 SQLite repository 中 `agent` 與 `inbox_item` 新增語句因引入 `circle_id` 後 VALUES 佔位符（`?`）數量短缺導致的 SQL 語法錯誤（`17 values for 18 columns`）。
 - 修復 SQLite circle repository 中 nullable time pointer 轉換型別錯誤（改用 `parseNullableTimePtr` 解析 `DisabledAt`、`GraceUntil` 與 `RevokedAt` 指標欄位）。
 
 ## 2026-09-07

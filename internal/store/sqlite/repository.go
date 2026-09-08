@@ -101,7 +101,7 @@ INSERT INTO agent (
     provider_family, transport_id, capabilities_json, agent_card_json,
     automatic_execution, state, last_seen_at, expires_at, lease_expires_at,
     created_at, revoked_at, revoke_reason
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			agent.HubID, agent.AgentID, agent.CircleID, agent.RegistrationKeyHash, agent.TokenHash,
 			agent.DisplayName, agent.ProviderFamily, agent.TransportID, string(capabilities),
 			agent.AgentCardJSON, boolInt(agent.AutomaticExecution), string(agent.State),
@@ -490,7 +490,7 @@ INSERT INTO inbox_item (
     hub_id, circle_id, target_agent_id, requester_agent_id, task_id, context_id,
     idempotency_key, message, state, created_at, acknowledged_at, canceled_at, cancel_reason,
     group_id, group_message_id
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			item.HubID, item.CircleID, item.TargetAgentID, item.RequesterAgentID, item.TaskID, item.ContextID,
 			item.IdempotencyKey, item.Message, string(item.State), formatTime(item.CreatedAt),
 			nullTimePtr(item.AcknowledgedAt), nullTimePtr(item.CanceledAt), "", item.GroupID, item.GroupMessageID)
