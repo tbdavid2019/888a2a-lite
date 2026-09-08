@@ -85,7 +85,7 @@ CREATE TABLE agent (
 INSERT INTO agent (hub_id, agent_id, registration_key_hash, token_hash, display_name, provider_family, transport_id, capabilities_json, state, expires_at, created_at)
 VALUES ('public', 'legacy-agent', 'legacy-registration-hash', 'token-hash', 'legacy', 'test', 'http', '[]', 'ONLINE', '2030-01-01T00:00:00Z', '2026-01-01T00:00:00Z');`
 	if _, err := database.Exec(legacySchema); err != nil {
-		database.Close()
+		_ = database.Close()
 		t.Fatalf("create legacy schema: %v", err)
 	}
 	if err := database.Close(); err != nil {
