@@ -899,7 +899,7 @@ func TestHTTPServer_MultiCircleDynamicCircles(t *testing.T) {
 		MaxRegisteredAgents: 20, MaxTasksPerMinute: 20, MaxConcurrentTasks: 4,
 		MaxPayloadBytes: 1 << 20, RegistrationPerMinute: 20,
 		OperatorToken: "operator-fixture", CircleMode: "multi",
-		AllowDynamicCircles:     true,
+		AllowDynamicCircles:    true,
 		CircleDerivationSecret: "stable-hub-secret",
 	}
 	if err := cfg.Validate(); err != nil {
