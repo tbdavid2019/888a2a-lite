@@ -96,6 +96,33 @@ func (service *Service) PutGroupCharter(ctx context.Context, agentID, token, gro
 	}
 	if !duplicate {
 		service.audit(ctx, hub.Event{Type: hub.EventGroupCharterUpdated, CircleID: member.CircleID, ActorAgentID: agentID, TargetAgentID: groupID, Details: map[string]any{"groupId": groupID, "circleId": member.CircleID, "charterVersion": result.CharterVersion, "contentHash": result.ContentHash, "updatedBy": agentID, "revision": result.CharterVersion}})
+		if members, mErr := service.store.Groups().ListMembers(ctx, groupID); mErr == nil {
+			now := service.now().UTC()
+			for _, m := range members {
+				if m.AgentID == agentID || !m.IsActive() {
+					continue
+				}
+				notice := hub.InboxItem{
+					HubID:            service.config.HubID,
+					CircleID:         member.CircleID,
+					TargetAgentID:    m.AgentID,
+					RequesterAgentID: agentID,
+					TaskID:           fmt.Sprintf("charter-updated-%s-%d", groupID, result.CharterVersion),
+					ContextID:        fmt.Sprintf("group-charter-%s", groupID),
+					IdempotencyKey:   fmt.Sprintf("idem-charter-%s-%d-%s", groupID, result.CharterVersion, m.AgentID),
+					Message:          fmt.Sprintf("[群組章程更新] 群組「%s」的議事章程已更新至版本 %d (Hash: %s)。", groupID, result.CharterVersion, result.ContentHash),
+					GroupID:          groupID,
+					Trust:            "UNTRUSTED_DATA",
+					State:            hub.DeliveryStatePending,
+					CreatedAt:        now,
+				}
+				if stored, _, enqueueErr := service.store.Inbox().Enqueue(ctx, notice); enqueueErr == nil {
+					if service.broker != nil {
+						service.broker.Publish(stored)
+					}
+				}
+			}
+		}
 	}
 	return result, duplicate, nil
 }

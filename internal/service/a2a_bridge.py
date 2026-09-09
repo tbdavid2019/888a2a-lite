@@ -341,10 +341,21 @@ class HubClient:
             print(f"[!] Error accepting group {group_id}: {e}", file=sys.stderr)
             return None
 
-    def auto_accept_pending_invitations(self):
-        """Scan and accept all pending group invitations."""
+    def list_groups(self):
+        """List groups joined by the calling agent."""
+        url = f"{self.hub_url}/hub/v1/groups"
+        req = urllib.request.Request(url, headers=self._headers())
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                return data.get("groups", [])
+        except Exception:
+            return []
+
+    def auto_accept_pending_invitations(self, charter_cache=None):
+        """Scan and accept all pending group invitations, refreshing charter cache if joined."""
         invs = self.list_invitations()
-        accepted = 0
+        accepted = []
         for inv in invs:
             if inv.get("state") == "PENDING":
                 gid = inv.get("groupId")
@@ -353,7 +364,12 @@ class HubClient:
                 res = self.accept_invitation_by_group(gid)
                 if res:
                     print(f"[✓] Successfully joined group '{gid}'!")
-                    accepted += 1
+                    accepted.append(gid)
+                    if charter_cache:
+                        try:
+                            charter_cache.refresh(gid)
+                        except Exception:
+                            pass
         return accepted
 
     def list_agents(self):
@@ -990,7 +1006,8 @@ class CharterCache:
     def refresh(self, group_id, required=False):
         cached = self.load(group_id)
         try:
-            remote = self.hub_client.get_group_charter(group_id)
+            etag = f'"{cached["contentHash"]}"' if cached and cached.get("contentHash") else None
+            remote = self.hub_client.get_group_charter(group_id, etag=etag)
             if remote is None:
                 return cached
             if not isinstance(remote, dict):
@@ -1100,18 +1117,25 @@ def process_queued_task(hub_client, backend, queue, row, agent_name, charter_cac
         process_standard_queued_task(hub_client, backend, queue, row, agent_name, charter_cache=charter_cache)
         return
 
-    # 2. Check and auto-accept invitations if applicable
-    if any(k in msg.lower() for k in ("invite", "group", "群組", "邀請")):
-        hub_client.auto_accept_pending_invitations()
+    # 2. Charter update event handling
+    if is_group and charter_cache and ((task_id and task_id.startswith("charter-updated-")) or msg.startswith("[群組章程更新]")):
+        print(f"[*] [Group Charter] Received charter update notification for group '{group_id}'. Refreshing cache...")
+        charter_cache.refresh(group_id)
+        queue.finish(seq)
+        return
 
-    # 3. Anti-Echo Storm Guard (Pre-Filter)
+    # 3. Check and auto-accept invitations if applicable
+    if any(k in msg.lower() for k in ("invite", "group", "群組", "邀請")):
+        hub_client.auto_accept_pending_invitations(charter_cache=charter_cache)
+
+    # 4. Anti-Echo Storm Guard (Pre-Filter)
     if is_pure_closing_statement(msg):
         print(f"[*] [Anti-Echo Guard] Received closing/standby statement from {sender_id}.")
         print("    -> Suppressing reciprocal reply. Conversation naturally concluded.")
         queue.finish(seq)
         return
 
-    # 4. Group Broadcast Discipline:
+    # 5. Group Broadcast Discipline:
     # If it is a group broadcast and not addressed to this agent, do not auto-reply.
     if is_group:
         addressed = (agent_name in msg or hub_client.agent_id in msg or "全員" in msg or "all" in msg.lower())
@@ -1125,9 +1149,17 @@ def process_queued_task(hub_client, backend, queue, row, agent_name, charter_cac
         reply_text = saved_reply["message"]
         print(f"[*] Retrying persisted response for seq {seq}.")
     else:
+        context = {"groupId": group_id, "contextId": context_id}
+        if is_group and charter_cache:
+            snapshot = charter_cache.refresh(group_id, required=bool(item.get("charterRequired")))
+            context["governance"] = assemble_governance_prompt(msg, snapshot)
+            if item.get("charterRequired") and snapshot is None:
+                print(f"[!] Charter required but unverified for group '{group_id}'; skipping execution.", file=sys.stderr)
+                queue.finish(seq)
+                return
         print(f"[*] Invoking AI Backend ({backend.__class__.__name__}) for task reasoning...")
         t_start = time.time()
-        reply_text = backend.execute(msg, sender_id, {"groupId": group_id, "contextId": context_id})
+        reply_text = backend.execute(msg, sender_id, context)
         elapsed = time.time() - t_start
         if not reply_text:
             print(f"[!] AI Backend produced no response ({elapsed:.2f}s); retaining work.", file=sys.stderr)
@@ -1246,8 +1278,16 @@ def run_bridge_listener(hub_client, backend, agent_name, queue, charter_cache=No
     print(f" Local IP: {get_local_ip()}")
     print("=" * 65)
 
-    # Initial check for pending invitations
-    hub_client.auto_accept_pending_invitations()
+    # Initial check for pending invitations and group charters
+    hub_client.auto_accept_pending_invitations(charter_cache=charter_cache)
+    if charter_cache:
+        try:
+            for g in hub_client.list_groups():
+                gid = g.get("groupId")
+                if gid:
+                    charter_cache.refresh(gid)
+        except Exception:
+            pass
 
     backoff = 1
 

@@ -4,6 +4,13 @@
 
 ### Added
 
+- 補齊第四階段 4A 群組章程快取與即時推播（Group Charter Sync & Fan-out）：
+  - Hub 端 `GET /hub/v1/groups/{id}/charter` 實裝 `ETag` 標頭輸出（基於 `ContentHash`）與 `If-None-Match` 條件式請求比對，內容未變更時回傳 HTTP 304 Not Modified。
+  - Hub 端 `PutGroupCharter` 於更新成功後，主動透過既有 SSE 管道廣播 `charter-updated-<groupId>-<version>` 任務通知所有在線群組成員。
+  - Python Bridge 客戶端 `CharterCache.refresh` 支援 ETag 標頭，遇到 304 時直接複用既有快取快照，避免重複磁碟 I/O 與 mtime 異動。
+  - Python Bridge 於背景監聽佇列自動攔截章程更新通知並即時刷新快取；於啟動時自動為所有已加入之群組預熱章程快取。
+  - 補齊 Go 端與 Python 端單元測試，雙 Bridge 檔案（`examples/worker/a2a_bridge.py` 與 `internal/service/a2a_bridge.py`）維持 100% 同步。
+
 - 重構專案文檔體系（Documentation Hub）：
   - 徹底精簡首頁 `README.md` 與英文版 `README_en.md`，聚焦核心價值、全景架構圖與三分鐘極速起手式。
   - 於 `docs/` 建立雙語模組化專題文檔（繁體中文與 English）：

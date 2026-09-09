@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -90,5 +91,22 @@ func TestGroupCharterLifecycleCASAndScope(t *testing.T) {
 	card := doGroupA2ARequest(t, handler, http.MethodGet, "/a2a/v1/groups/"+group.GroupID+"/card", member.Token, "", nil)
 	if card.Code != http.StatusOK || !strings.Contains(card.Body.String(), `"hasCharter":true`) || !strings.Contains(card.Body.String(), `"charterVersion":3`) || strings.Contains(card.Body.String(), content) {
 		t.Fatalf("charter metadata card = %d/%s", card.Code, card.Body.String())
+	}
+	currentCharter := doJSON(t, handler, http.MethodGet, charterPath, member.ID, member.Token, nil)
+	if currentCharter.Code != http.StatusOK {
+		t.Fatalf("get current charter = %d/%s", currentCharter.Code, currentCharter.Body.String())
+	}
+	etag := currentCharter.Header().Get("ETag")
+	if etag == "" {
+		t.Fatalf("expected ETag header on charter response")
+	}
+	req304, _ := http.NewRequest(http.MethodGet, charterPath, nil)
+	req304.Header.Set("Authorization", "Bearer "+member.Token)
+	req304.Header.Set("X-Agent-ID", member.ID)
+	req304.Header.Set("If-None-Match", etag)
+	rec304 := httptest.NewRecorder()
+	handler.ServeHTTP(rec304, req304)
+	if rec304.Code != http.StatusNotModified {
+		t.Fatalf("expected HTTP 304 on If-None-Match match, got %d", rec304.Code)
 	}
 }

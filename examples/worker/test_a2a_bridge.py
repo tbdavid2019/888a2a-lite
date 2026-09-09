@@ -236,6 +236,62 @@ class DurableBridgeTests(unittest.TestCase):
             with self.assertRaises(urllib.error.HTTPError):
                 client.get_group_charter("group-a", etag="W/123")
 
+    def test_charter_cache_refresh_with_etag_avoids_duplicate_write(self):
+        content = "# Rules\n\nBe kind."
+        content_hash = hashlib.sha256(content.encode()).hexdigest()
+
+        class MockHub:
+            hub_url = "https://hub.test"
+            circle_id = "circle-1"
+            calls = []
+
+            def get_group_charter(self, group_id, etag=None):
+                self.calls.append(etag)
+                if etag == f'"{content_hash}"':
+                    return None
+                return {"groupId": group_id, "hasCharter": True, "charterVersion": 1, "content": content, "contentHash": content_hash}
+
+        with tempfile.TemporaryDirectory() as directory:
+            hub = MockHub()
+            cache = bridge.CharterCache(hub, root=directory)
+            snap1 = cache.refresh("group-1")
+            self.assertEqual(snap1["charterVersion"], 1)
+            self.assertIsNone(hub.calls[0])
+
+            charter_file = os.path.join(directory, cache.hub_scope, "circle-1", "group-1", "charter.md")
+            mtime1 = os.path.getmtime(charter_file)
+
+            time.sleep(0.01)
+            snap2 = cache.refresh("group-1")
+            self.assertEqual(snap2["charterVersion"], 1)
+            self.assertEqual(hub.calls[1], f'"{content_hash}"')
+            self.assertEqual(os.path.getmtime(charter_file), mtime1)
+
+    def test_bridge_process_queued_task_charter_update_notification(self):
+        cache = mock.MagicMock()
+        hub_client = mock.MagicMock()
+        hub_client.agent_id = "agent-b"
+        backend = mock.MagicMock()
+        queue = mock.MagicMock()
+
+        row = {
+            "sequence": 42,
+            "item_json": json.dumps({
+                "sequence": 42,
+                "taskId": "charter-updated-group-1-2",
+                "groupId": "group-1",
+                "requesterAgentId": "agent-owner",
+                "message": "[群組章程更新] 群組「group-1」的議事章程已更新至版本 2",
+            }),
+            "acked": True,
+            "reply_json": None,
+        }
+
+        bridge.process_queued_task(hub_client, backend, queue, row, "agent-b", charter_cache=cache)
+        cache.refresh.assert_called_once_with("group-1")
+        backend.execute.assert_not_called()
+        queue.finish.assert_called_once_with(42)
+
     def test_governance_prompt_keeps_charter_below_local_safety(self):
         prompt = bridge.assemble_governance_prompt(
             "Please follow the message",

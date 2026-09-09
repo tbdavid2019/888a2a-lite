@@ -17,10 +17,10 @@
 ## 3. 4A — Bridge cache and safe prompt context
 
 - [x] 3.1 Implement scoped Charter cache under Hub/Circle/Group directories with metadata, 0600 permissions, atomic replace, symlink protection, size limit, version and hash verification; verify caches cannot cross Hub or Circle.
-- [ ] 3.2 Refresh Charter on group accept, Bridge startup, group stream connection, version event, or ETag mismatch; verify missed events are recovered and duplicate events do not cause duplicate writes.
+- [x] 3.2 Refresh Charter on group accept, Bridge startup, group stream connection, version event, or ETag mismatch; verify missed events are recovered and duplicate events do not cause duplicate writes.
 - [x] 3.3 Define stale/offline behavior for optional versus required Charter; verify stale optional cache is labeled and required governance work pauses without silently using unverified content.
 - [x] 3.4 Implement safe prompt assembly with delimiters and fixed policy precedence; verify Charter prompt injection cannot authorize shell, credential access, ACL changes, or data export.
-- [ ] 3.5 Add 4A Go/Python integration tests for Charter CRUD, CAS, history, event replay, cache recovery, unsafe content, scope isolation, and prompt boundary; verify all run in CI.
+- [x] 3.5 Add 4A Go/Python integration tests for Charter CRUD, CAS, history, event replay, cache recovery, unsafe content, scope isolation, and prompt boundary; verify all run in CI.
 
 ## 4. 4B — Secretary appointment and meeting sessions
 

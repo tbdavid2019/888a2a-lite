@@ -983,6 +983,16 @@ func (server *HTTPServer) getGroupCharter(w http.ResponseWriter, r *http.Request
 		return
 	}
 	w.Header().Set("Cache-Control", "private, no-store")
+	if charter.ContentHash != "" {
+		etag := fmt.Sprintf(`"%s"`, charter.ContentHash)
+		w.Header().Set("ETag", etag)
+		if match := r.Header.Get("If-None-Match"); match != "" {
+			if match == etag || match == fmt.Sprintf(`W/"%s"`, charter.ContentHash) || match == charter.ContentHash {
+				w.WriteHeader(http.StatusNotModified)
+				return
+			}
+		}
+	}
 	writeJSON(w, http.StatusOK, charter)
 }
 
