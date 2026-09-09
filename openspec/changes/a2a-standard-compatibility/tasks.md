@@ -1,6 +1,6 @@
 ## 1. Contract and capability foundation
 
-- [ ] 1.0 固定官方 A2A 1.0 規範 tag/commit、schema checksum、官方 SDK exact version 與 source manifest；在 GitHub Actions 驗證 SDK 支援 HTTP+JSON/tenant，未通過不得宣告互通或啟用上線。
+- [x] 1.0 固定官方 A2A 1.0 規範 tag/commit、schema checksum、官方 SDK exact version 與 source manifest；在 GitHub Actions 驗證 SDK 支援 HTTP+JSON/tenant，未通過不得宣告互通或啟用上線。
 
 - [x] 1.1 Define the standard A2A HTTP+JSON version (1.0), `/a2a/v1` base URL and root route aliases, supported operations, text-only MVP boundary, OpenAPI 3.2 `securitySchemes` (Bearer token), and gateway `tenant` routing extension; verify the contract is documented independently from `/hub/v1`.
 - [x] 1.2 Add standard A2A data models for AgentCard, AgentInterface, Message, Part, Task, TaskStatus, SendMessageResponse, ListTasksResponse, StreamResponse, and `google.rpc.Status` / `google.rpc.ErrorInfo` error models; verify JSON field names match camelCase A2A 1.0 fixtures.
@@ -50,7 +50,7 @@
 - [x] 6.6 驗證 configuration.returnImmediately 的終態／中斷等待、HTTP 504、client 斷線與相同 messageId 恢復；不得以 200 WORKING 通過 blocking 測試。
 - [x] 6.7 驗證取消與 ACK 兩種交易勝負、SSE 到達但未 ACK 的取消、重複取消 CANCELED 成功、遲到回報及 Operator mailbox cancel 一致性；確認取消勝出時 executor 零執行。
 - [x] 6.8 驗證原 requester Task ACL、同圈非 requester 拒絕、tenant/context 不匹配、pagination scope、mixed unsupported Part、historyLength=0 與同 messageId 改內容拒絕。
-- [ ] 6.9 以未修改官方 SDK 跑完整 Card/Bearer/tenant/send/get/list/stream/multi-turn/cancel 流程；保存版本與結果，不以自製 client 或 serializer patch 替代。
+- [x] 6.9 以未修改官方 SDK 跑完整 Card/Bearer/tenant/send/get/list/stream/multi-turn/cancel 流程；保存版本與結果，不以自製 client 或 serializer patch 替代。
 
 - [x] 6.1 Apply existing Agent principal authentication, rate limits, payload limits, and no-remote-execution boundary to every standard route; verify malformed JSON, unsupported parts, invalid auth, and oversized input produce bounded `google.rpc.Status` errors.
 - [x] 6.2 Add public/private/dynamic Multi-Circle integration coverage for standard send, get, list, stream, subscribe, cancel, and reply; verify cross-circle operations return masked `TASK_NOT_FOUND` (404) and create no state.
@@ -63,4 +63,4 @@
 - [x] 7.1 Document the standard Gateway, Per-Agent Cards, `tenant` routing, `returnImmediately` behavior, supported text-only scope, authentication, task lifecycle, and explicit differences from `/hub/v1`; verify README and `llms.txt` do not claim unsupported A2A capabilities.
 - [x] 7.2 Document Multi-Circle behavior for standard routes and the fact that `X-Hub-Key` is registration-only; verify public/private examples use separate circle-scoped credentials.
 - [x] 7.3 Add deployment configuration, health/capability visibility, and rollback/disable instructions for the standard Gateway; verify existing Docker single-mode deployments remain deployable.
-- [ ] 7.4 Run GitHub Actions Go/Python tests and standard conformance fixtures, then run the required remote smoke test on `david@10.9.0.11`; verify both standard and legacy flows before enabling production rollout.
+- [x] 7.4 Run GitHub Actions Go/Python tests and standard conformance fixtures, then run the required remote smoke test on `david@10.9.0.11`; verify both standard and legacy flows before enabling production rollout.

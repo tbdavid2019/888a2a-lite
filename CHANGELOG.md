@@ -4,6 +4,14 @@
 
 ### Added
 
+- 完成 `a2a-standard-compatibility` 全量部署與 CI/CD 雙主機上線：
+  - 通過 GitHub Actions 四大檢核（Go checks、Python bridge checks、A2A source and SDK gate、Container build）。
+  - 自動構建並推送多架構 Docker 映像檔（`tbdavid2019/888a2a-lite:latest`，涵蓋 amd64 及 arm64）。
+  - 完成內網主機 `10.9.0.11` 與線上主機 `dns.glsoft.ai`（`https://a2a.david888.com`）無中斷更新並啟用標準網關（`A2A888_HUB_STANDARD_ENABLED=true`）。
+  - 在 `10.9.0.11` 上以未修改官方 SDK（`a2a-sdk==1.1.4`）實機跑通完整 Card／Bearer／tenant／send_message（SSE）／get_task／list_tasks／cancel_task 流程。
+  - 遠端煙霧測試（包含標準 A2A 網關端點、既有 `/hub/v1` 註冊與訊息、群組廣播、重啟持久化恢復、Token 撤銷與 ACL 隔離）100% 驗證通過。
+
+
 - 新立 `a2a-group-coordination-extension` OpenSpec 計畫（第二階段）：
   - 將既有 `/hub/v1/groups` 升級為標準 A2A Group Coordination Extension（`https://a2a.david888.com/extensions/groups/v1`）。
   - 提供虛擬群組 Agent 路由（`tenant: "group:<groupId>"`）與專屬標準 Agent Card（`/a2a/v1/groups/{groupId}/card`）。
