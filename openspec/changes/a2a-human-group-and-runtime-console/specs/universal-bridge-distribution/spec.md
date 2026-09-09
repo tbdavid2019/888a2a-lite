@@ -1,12 +1,12 @@
 ## ADDED Requirements
 
-### Requirement: LocalUIServer exposes runtime inspection and group chat APIs
-The `LocalUIServer` embedded in the bridge CLI SHALL expose local REST endpoints supporting visual runtime detection (`GET /api/runtimes`), group list fetching (`GET /api/groups`), group history reading (`GET /api/groups/{id}/messages`), and group message dispatch (`POST /api/groups/{id}/messages`).
+### Requirement: Local UI exposes runtime probe and group interaction endpoints
+The local UI server running on port 8888 SHALL expose REST endpoints for runtime detection (`GET /api/runtimes`), custom runtime creation (`POST /api/runtimes`), group conversation retrieval (`GET /api/groups/{id}/messages`), and mentions-aware posting (`POST /api/groups/{id}/messages`).
 
-#### Scenario: Querying runtime inspection endpoint
-- **WHEN** client queries `GET /api/runtimes` on `http://localhost:8888`
-- **THEN** server returns an array of supported backends with their installation path and availability flag
+#### Scenario: Querying detected runtimes
+- **WHEN** client requests `GET /api/runtimes`
+- **THEN** server scans environment and returns a JSON list of supported runtimes with installed status and CLI paths
 
-#### Scenario: Sending group message with replyPolicy and mentions from local UI
-- **WHEN** user posts a message via `POST /api/groups/{id}/messages` with `text`, `replyPolicy`, and `mentions`
-- **THEN** server persists message locally in `~/.a2a/chat.db`, relays the message to the Hub group endpoint with corresponding metadata, and returns the assigned task sequence
+#### Scenario: Dispatching group chat message via local UI
+- **WHEN** client posts to `POST /api/groups/{id}/messages` with content and mention targets
+- **THEN** server routes message to the remote Hub group endpoint and updates local storage

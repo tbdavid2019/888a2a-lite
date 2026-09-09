@@ -1,31 +1,23 @@
 ## Purpose
 
-Enables human users to participate in multi-agent group chats through an interactive web interface with @mention autocomplete, selective dispatch policies, and silence guarantees for unmentioned agents.
+Provides an interactive human-in-the-loop group chat workspace within the local Web UI, enabling humans to converse with multi-bot groups using @mentions and selective response policies.
 
 ## ADDED Requirements
 
-### Requirement: Human group workstation with @mention autocomplete
-The Local Web UI SHALL render a dedicated Groups section allowing human users to view group conversations, inspect member rosters, and participate by sending text messages. The input composer SHALL provide an @mention autocomplete dropdown populated from the active group roster.
+### Requirement: Human participation in multi-agent group chats
+The local Web UI SHALL provide a Group Chat interface allowing humans to read real-time group dialogue and inject messages into any group they have joined.
 
-#### Scenario: Typing @ triggers member autocomplete
-- **WHEN** user types `@` into the group chat input field
-- **THEN** composer renders an inline suggestion menu listing group member display names and agent IDs
+#### Scenario: Human posts message in group
+- **WHEN** human types a message and submits it in the active group chat view
+- **THEN** the local server dispatches the message to the Hub group endpoint and updates the local conversation view
 
-#### Scenario: Human message without mentions defaults to ACK_ONLY
-- **WHEN** user submits a group message without any `@` mentions
-- **THEN** client sets `replyPolicy` to `ACK_ONLY` and empty `mentions`, notifying all bot members without soliciting LLM replies
+### Requirement: @Mention parsing and selective reply policy injection
+The group chat composer SHALL provide auto-completion for active group members when the `@` character is typed. When submitted, the client SHALL automatically set `replyPolicy: MENTIONED_ONLY` and populate `mentions` with mentioned agent IDs. If no `@` mention is present, the message SHALL default to `replyPolicy: ACK_ONLY`.
 
-#### Scenario: Human message with @ mentions injects MENTIONED_ONLY
-- **WHEN** user submits a group message containing one or more `@<DisplayName>` tags
-- **THEN** client parses mentioned tags into corresponding target Agent IDs, sets `replyPolicy` to `MENTIONED_ONLY`, and populates `mentions` with the target IDs
+#### Scenario: Human mentions a specific bot
+- **WHEN** human sends `@OpenClaw please summarize this architecture`
+- **THEN** the message payload includes `mentions: ["agent_openclaw_id"]` and `replyPolicy: MENTIONED_ONLY`, prompting only the targeted agent to generate an LLM response while other members silently ACK
 
-### Requirement: Group member bots silence non-mentioned human input
-When a group message carries `replyPolicy: MENTIONED_ONLY`, group member bridges receiving the delivery SHALL immediately acknowledge with Instant ACK. If the receiving agent ID is not in `mentions`, the bridge SHALL complete the delivery without invoking the local LLM engine.
-
-#### Scenario: Bot receives message with MENTIONED_ONLY not matching own ID
-- **WHEN** bot agent receives a group delivery where `replyPolicy` is `MENTIONED_ONLY` and its own `agentId` is absent from `mentions`
-- **THEN** bridge sends Instant ACK (<50ms) to mark the task acknowledged, logs silent read, and terminates execution without LLM reasoning or outbound reply
-
-#### Scenario: Bot receives message with MENTIONED_ONLY matching own ID
-- **WHEN** bot agent receives a group delivery where `replyPolicy` is `MENTIONED_ONLY` and its own `agentId` is present in `mentions`
-- **THEN** bridge sends Instant ACK, forwards the message prompt to its local LLM brain, and delivers the generated reply back to the group context
+#### Scenario: Human sends general broadcast without mention
+- **WHEN** human sends a general remark without `@` mentions
+- **THEN** the payload includes `replyPolicy: ACK_ONLY`, causing all bots to sign an Instant ACK without generating duplicate conversational chatter

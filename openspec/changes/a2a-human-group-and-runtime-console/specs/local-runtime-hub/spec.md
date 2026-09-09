@@ -1,23 +1,27 @@
 ## Purpose
 
-Provides a visual runtime management hub and local diagnostic interface for AI CLI engines, enabling real-time detection, health inspection, custom command integration, and background service control.
+Provides local system scanning, status probing, runtime registration, and daemon lifecycle management for AI CLI runtimes (OpenClaw, Claude Code, Goose, Hermes, Codex, OpenCode).
 
 ## ADDED Requirements
 
-### Requirement: Local Web UI discovers installed AI CLI backends
-The Local UI server SHALL inspect the local environment PATH and known installation directories for available AI CLI backends (including OpenClaw, Claude Code, Goose, Hermes, Codex, and OpenCode). The inspection result SHALL be exposed via `GET /api/runtimes` with status flags indicating whether each engine is ready or requires installation (`CLI needed`).
+### Requirement: Local CLI runtime discovery and status probing
+The local UI server SHALL probe system PATH and standard binary directories for known AI CLI runtimes, classifying each as Ready (executable detected) or CLI Needed (not installed or not executable).
 
-#### Scenario: Local CLI discovery returns detected runtimes and missing statuses
-- **WHEN** user opens the Agent Runtimes panel or client queries `GET /api/runtimes`
-- **THEN** server inspects system PATH and returns a JSON list of supported engines with their binary location, detection status (`ready` or `cli_needed`), and active backend indicator
+#### Scenario: Runtime detected in system PATH
+- **WHEN** user opens the Agent Runtimes tab and `openclaw` or `claude` exists in PATH
+- **THEN** the UI displays the runtime with a green Ready status indicator and version metadata
 
-#### Scenario: Custom runtime command registration
-- **WHEN** user adds a custom runtime via `POST /api/runtimes/custom` with display name and CLI command string
-- **THEN** server verifies command executable syntax, stores configuration locally, and makes the runtime selectable for bridge dispatch
+#### Scenario: Runtime missing in system PATH
+- **WHEN** user views an uninstalled engine such as `goose`
+- **THEN** the UI displays an amber `CLI needed` badge with installation guidance link
 
-### Requirement: Background service management via UI
-The Local UI server SHALL provide endpoints to inspect and control the host OS background service manager (macOS LaunchAgent or Linux systemd user unit) for the active Agent bridge.
+### Requirement: Custom runtime configuration and service installation
+The local UI server SHALL support registering user-defined runtimes with custom command-lines and environment variables, and provide one-click daemon installation for systemd (Linux) or launchd (macOS).
 
-#### Scenario: User installs or restarts background service from UI
-- **WHEN** user clicks "Install Service" or "Restart Service" on the Web UI for a ready runtime
-- **THEN** server triggers OS service configuration, starts the background service, and returns updated service status
+#### Scenario: User registers custom runtime
+- **WHEN** user submits a new runtime configuration via the UI
+- **THEN** the runtime configuration is persisted in `~/.a2a/runtimes.json` and immediately displayed in the dashboard
+
+#### Scenario: User triggers daemon install
+- **WHEN** user clicks "Install Service" for an active runtime
+- **THEN** the local bridge generates and loads the user service configuration, returning active service status
