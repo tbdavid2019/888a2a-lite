@@ -968,12 +968,15 @@ def validate_outbound_url(url, host_allowlist=None, allow_insecure_for_test=Fals
     if not allow_insecure_for_test:
         if hostname in ("localhost", "127.0.0.1", "::1") or hostname.endswith(".internal") or hostname.endswith(".local"):
             raise ValueError(f"SSRF protection: destination '{hostname}' is forbidden")
+        is_ip = False
         try:
             ip = ipaddress.ip_address(hostname)
-            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
-                raise ValueError(f"SSRF protection: IP destination '{hostname}' is private/forbidden")
+            is_ip = True
         except ValueError:
             pass
+
+        if is_ip and (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved):
+            raise ValueError(f"SSRF protection: IP destination '{hostname}' is private/forbidden")
 
     allowlist_env = os.getenv("A2A_EXPORT_ALLOWLIST", "").strip()
     effective_allowlist = set()

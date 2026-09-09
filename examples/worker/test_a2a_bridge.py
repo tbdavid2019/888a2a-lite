@@ -2,6 +2,7 @@ import importlib.util
 import hashlib
 import json
 import os
+import stat
 import tempfile
 import threading
 import time
@@ -1400,7 +1401,7 @@ class DurableBridgeTests(unittest.TestCase):
                 self.assertEqual(row["attempts"], 2)
 
             # 5. Success job transitions to COMPLETED
-            job2 = store.enqueue_export("hub-1", "pub", "grp-1", "sess-1", "CUSTOM", "Payload 2", idempotency_key="job-custom-1")
+            job2 = store.enqueue_export("hub-1", "pub", "grp-1", "sess-1", "WEBHOOK", "Payload 2", idempotency_key="job-webhook-1")
             def success_handler(item):
                 return {"remote_id": "remote-abc-123"}
 
