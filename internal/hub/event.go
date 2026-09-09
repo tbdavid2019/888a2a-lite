@@ -49,6 +49,8 @@ const (
 	EventGroupSecretaryAppointed     = "group.secretary_appointed"
 	EventGroupSecretaryRenewed       = "group.secretary_renewed"
 	EventGroupSecretaryRevoked       = "group.secretary_revoked"
+	EventMeetingSessionTriggered     = "meeting.session_triggered"
+	EventMeetingSessionConcluded     = "meeting.session_concluded"
 	EventAgentDeleted                = "agent.deleted"
 	EventAgentsPruned                = "agents.pruned"
 	EventCircleDisabled              = "circle.disabled"

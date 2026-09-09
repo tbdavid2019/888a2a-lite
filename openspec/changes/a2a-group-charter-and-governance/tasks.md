@@ -1,8 +1,8 @@
 ## 1. Dependency and governance boundary
 
-- [ ] 1.1 Confirm Phases 1–3 and `a2a-group-coordination-extension` pass their CI/remote gates; record the fixed A2A protocol/SDK versions and Group Task/result/cancel behavior before enabling governance.
-- [ ] 1.2 Define governance precedence: provider/system safety > local policy > Human-approved Charter > untrusted group message; verify Charter cannot grant tools, credentials, membership, circle, operator or remote execution authority.
-- [ ] 1.3 Define 4A/4B/4C feature flags and rollout gates; verify 4B cannot activate without 4A Charter gate and 4C cannot activate without 4B approval/provenance gate.
+- [x] 1.1 Confirm Phases 1–3 and `a2a-group-coordination-extension` pass their CI/remote gates; record the fixed A2A protocol/SDK versions and Group Task/result/cancel behavior before enabling governance.
+- [x] 1.2 Define governance precedence: provider/system safety > local policy > Human-approved Charter > untrusted group message; verify Charter cannot grant tools, credentials, membership, circle, operator or remote execution authority.
+- [x] 1.3 Define 4A/4B/4C feature flags and rollout gates; verify 4B cannot activate without 4A Charter gate and 4C cannot activate without 4B approval/provenance gate.
 
 ## 2. 4A — Charter Core in the Hub
 
@@ -27,18 +27,18 @@
 - [x] 4.1 Add `group_secretary` persistence for group/circle/Agent, epoch, state, lease expiry, appointedBy, and updatedAt; verify only one active secretary lease exists per group/epoch.
 - [x] 4.2 Implement Owner/Admin secretary appointment, replacement, revoke, lease renewal, and failover with CAS/epoch; verify old secretary jobs and approvals are rejected after epoch changes.
 - [x] 4.3 Add `--role=secretary`, `--auto-minutes`, and charter cache options to the Bridge; verify flags do not grant role authority without Hub appointment and valid lease.
-- [ ] 4.4 Add `meeting_session` and idempotent synthesis job records with immutable start/cutoff revisions, trigger identity, Charter version, state, and job ID; verify repeated `/minutes`/`/wrapup` does not create duplicate jobs.
-- [ ] 4.5 Implement authorized `/minutes`, `/wrapup`, and `/summary` command handling; verify only Human/Owner or explicitly charter-authorized members can trigger synthesis and untrusted message text cannot invoke commands.
-- [ ] 4.6 Implement secretary full-stream observation with durable revision replay and bounded context windows; verify missed events, reconnect, and secretary failover do not mix sessions or duplicate turns.
+- [x] 4.4 Add `meeting_session` and idempotent synthesis job records with immutable start/cutoff revisions, trigger identity, Charter version, state, and job ID; verify repeated `/minutes`/`/wrapup` does not create duplicate jobs.
+- [x] 4.5 Implement authorized `/minutes`, `/wrapup`, and `/summary` command handling; verify only Human/Owner or explicitly charter-authorized members can trigger synthesis and untrusted message text cannot invoke commands.
+- [x] 4.6 Implement secretary full-stream observation with durable revision replay and bounded context windows; verify missed events, reconnect, and secretary failover do not mix sessions or duplicate turns.
 
 ## 5. 4B — Structured minutes, memory, and approval
 
-- [ ] 5.1 Define structured JSON schema and Markdown renderer for Decisions, Action Items, and Artifact References; verify malformed LLM output is rejected or held as draft without side effects.
-- [ ] 5.2 Persist source event/message IDs, revision range, session ID, Charter version, proposer, model/schema version, content hash, needsReview, and status for every extracted item; verify each item is traceable to source events.
-- [ ] 5.3 Add local `work.db` tables `group_minutes`, `group_decisions`, `group_action_items`, and migrations with hub/circle/group/session scope, WAL, 0600 permissions, retention, and writer locking; verify restart and multi-scope isolation.
-- [ ] 5.4 Implement Decision states `DRAFT/CONFIRMED/REJECTED` and Action states `DRAFT/APPROVED/DISPATCHED/COMPLETED/CANCELED`; verify synthesis never auto-confirms a decision or dispatches an action.
-- [ ] 5.5 Implement Human/Owner approval UI/API with Agent ID assignee resolution, timezone-aware deadlines, safe content validation, approval audit, and idempotency; verify unauthorized approval and unknown assignee are rejected.
-- [ ] 5.6 Implement `charter_amendment` proposal, diff, baseVersion CAS, Owner approval, apply/reject states, and audit; verify Secretary cannot directly mutate Charter and stale amendments return 409.
+- [x] 5.1 Define structured JSON schema and Markdown renderer for Decisions, Action Items, and Artifact References; verify malformed LLM output is rejected or held as draft without side effects.
+- [x] 5.2 Persist source event/message IDs, revision range, session ID, Charter version, proposer, model/schema version, content hash, needsReview, and status for every extracted item; verify each item is traceable to source events.
+- [x] 5.3 Add local `work.db` tables `group_minutes`, `group_decisions`, `group_action_items`, and migrations with hub/circle/group/session scope, WAL, 0600 permissions, retention, and writer locking; verify restart and multi-scope isolation.
+- [x] 5.4 Implement Decision states `DRAFT/CONFIRMED/REJECTED` and Action states `DRAFT/APPROVED/DISPATCHED/COMPLETED/CANCELED`; verify synthesis never auto-confirms a decision or dispatches an action.
+- [x] 5.5 Implement Human/Owner approval UI/API with Agent ID assignee resolution, timezone-aware deadlines, safe content validation, approval audit, and idempotency; verify unauthorized approval and unknown assignee are rejected.
+- [x] 5.6 Implement `charter_amendment` proposal, diff, baseVersion CAS, Owner approval, apply/reject states, and audit; verify Secretary cannot directly mutate Charter and stale amendments return 409.
 
 ## 6. 4C — Export outbox and external integrations
 

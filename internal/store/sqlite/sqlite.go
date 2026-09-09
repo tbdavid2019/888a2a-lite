@@ -120,6 +120,9 @@ func (database *DB) migrate(ctx context.Context) error {
 	if err := migrateGroupSecretary(ctx, database.db); err != nil {
 		return err
 	}
+	if err := migrateMeetingSession(ctx, database.db); err != nil {
+		return err
+	}
 	for _, column := range []struct{ table, name, ddl string }{
 		{table: "inbox_item", name: "protocol", ddl: "TEXT NOT NULL DEFAULT ''"},
 		{table: "inbox_item", name: "message_id", ddl: "TEXT NOT NULL DEFAULT ''"},
@@ -216,6 +219,45 @@ func migrateGroupSecretary(ctx context.Context, database *sql.DB) error {
 	for _, statement := range statements {
 		if _, err := database.ExecContext(ctx, statement); err != nil {
 			return fmt.Errorf("migrate group secretary schema: %w", err)
+		}
+	}
+	return nil
+}
+
+func migrateMeetingSession(ctx context.Context, database *sql.DB) error {
+	var applied int
+	if err := database.QueryRowContext(ctx, "SELECT COUNT(*) FROM schema_migrations WHERE version = 9").Scan(&applied); err != nil {
+		return err
+	}
+	if applied > 0 {
+		return nil
+	}
+	statements := []string{
+		`CREATE TABLE meeting_session (
+    hub_id TEXT NOT NULL,
+    circle_id TEXT NOT NULL,
+    group_id TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    start_revision INTEGER NOT NULL,
+    cutoff_revision INTEGER NOT NULL,
+    trigger_message_id TEXT NOT NULL,
+    triggered_by TEXT NOT NULL,
+    charter_version INTEGER NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('OPEN', 'SYNTHESIZING', 'CONCLUDED', 'CANCELLED')),
+    synthesis_job_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    concluded_at TEXT,
+    PRIMARY KEY (hub_id, session_id),
+    FOREIGN KEY (hub_id, group_id) REFERENCES agent_group (hub_id, group_id)
+)`,
+		`CREATE INDEX idx_meeting_session_group ON meeting_session (hub_id, circle_id, group_id, created_at DESC)`,
+		`CREATE UNIQUE INDEX idx_meeting_session_job ON meeting_session (hub_id, circle_id, synthesis_job_id) WHERE synthesis_job_id <> ''`,
+		`CREATE UNIQUE INDEX idx_meeting_session_trigger ON meeting_session (hub_id, circle_id, group_id, trigger_message_id) WHERE trigger_message_id <> ''`,
+		`INSERT INTO schema_migrations (version, applied_at) VALUES (9, CURRENT_TIMESTAMP)`,
+	}
+	for _, statement := range statements {
+		if _, err := database.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("migrate meeting session schema: %w", err)
 		}
 	}
 	return nil

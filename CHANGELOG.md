@@ -4,6 +4,24 @@
 
 ### Added
 
+- 實裝第四階段 4B 群組議事治理引擎與秘書結構化記憶（Group Meeting Sessions & Secretary Governance）：
+  - **Hub 會議會話與指令安全（Meeting Sessions & Commands）**：
+    - 新增 `MeetingSession` 資料模型與 SQLite Migration Version 9，建立 `meeting_session` 表結構與唯一索引（支援基於 `triggerMessageId` 與 `synthesisJobId` 之冪等性）。
+    - 嚴格落實指令鑑權邊界：群組訊息中的 `/minutes`、`/wrapup`、`/summary` 指令僅限 Human 使用者或群組 Owner/Admin 調用；未受信任之一般 Agent 發送相同文字僅作普通發言廣播，不觸發指令執行。
+    - 觸發會議總結時以 immutable cutoff revision 固定事件區間，避免後續發言污染會議上下文；自動向群組目前有效之在線秘書派發 `MEETING_SYNTHESIS` 治理任務。
+    - 提供完整 HTTP API 端點：`POST/GET /hub/v1/groups/{id}/sessions`、`GET /hub/v1/groups/{id}/sessions/{sessionId}` 與 `POST .../conclude`。
+  - **Bridge 秘書結構化結論提取與 Markdown 渲染器**：
+    - `parse_synthesis_result`：嚴格解析大腦 LLM 產出之 JSON，支援抽取摘要、決策清單（Decisions）、行動待辦（Action Items）與產物引用；對損毀或非 JSON 輸出提供安全容錯，自動標記為草稿，絕不崩潰或產生副作用。
+    - `render_minutes_markdown`：渲染符合台灣繁體中文規範之標準會議紀要 Markdown，清楚標明草稿狀態、章程版本與追溯訊息區間。
+  - **本機工作資料庫 `work.db` 與審批工作流**：
+    - 建立 `SecretaryWorkStore`，採用 SQLite WAL 模式、`0600` 權限與 hub/circle/group/session 隔離儲存（`group_minutes`, `group_decisions`, `group_action_items`, `charter_amendments`）。
+    - 決策與行動待辦初始狀態嚴格鎖定為 `DRAFT`；落實「未經 Human 或 Owner 批准前絕對不自動確認決策、亦絕不向外派發任務」之治理鐵律。
+    - 支援 `approve_decision`、`approve_action_item` 審核確認，以及 `dispatch_action_item` 任務派發；支援 `propose_charter_amendment` 提案與基於 `expectedVersion` CAS 之 Owner 套用機制。
+  - **測試覆蓋與雙 Bridge 同步**：
+    - 新增 `internal/service/meeting_session_test.go` 完整覆蓋指令鑑權、冪等性、秘書派發與結算流程。
+    - 在 `examples/worker/test_a2a_bridge.py` 增補結構化輸出解析、Markdown 渲染、`work.db` 權限與生命週期、審核指派與章程修正測試。
+    - 維持 `examples/worker/a2a_bridge.py` 與 `internal/service/a2a_bridge.py` 100% 同步。
+
 - 補齊第四階段 4A 群組章程快取與即時推播（Group Charter Sync & Fan-out）：
   - Hub 端 `GET /hub/v1/groups/{id}/charter` 實裝 `ETag` 標頭輸出（基於 `ContentHash`）與 `If-None-Match` 條件式請求比對，內容未變更時回傳 HTTP 304 Not Modified。
   - Hub 端 `PutGroupCharter` 於更新成功後，主動透過既有 SSE 管道廣播 `charter-updated-<groupId>-<version>` 任務通知所有在線群組成員。

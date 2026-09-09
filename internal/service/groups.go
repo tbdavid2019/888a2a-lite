@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -493,6 +494,20 @@ func (service *Service) SendGroupMessage(ctx context.Context, agentID, token, gr
 				})
 			}
 		}
+		if !duplicate {
+			text := strings.TrimSpace(input.Message)
+			cmd := strings.ToLower(text)
+			if cmd == "/minutes" || cmd == "/wrapup" || cmd == "/summary" || strings.HasPrefix(cmd, "/minutes ") || strings.HasPrefix(cmd, "/wrapup ") || strings.HasPrefix(cmd, "/summary ") {
+				agent, agentErr := service.store.Agents().FindAgent(ctx, agentID)
+				if agentErr == nil && isAuthorizedMeetingTrigger(member, agent) {
+					_, _ = service.TriggerMeetingSession(ctx, agentID, token, groupID, hub.TriggerMeetingSessionInput{
+						GroupID:          groupID,
+						Command:          text,
+						TriggerMessageID: fmt.Sprintf("%d", message.ID),
+					})
+				}
+			}
+		}
 	}
 	return message, duplicate, err
 }
@@ -562,4 +577,206 @@ func generateGroupID() (string, error) {
 		return "", fmt.Errorf("generate group id: %w", err)
 	}
 	return "group-" + hex.EncodeToString(bytes), nil
+}
+
+func isAuthorizedMeetingTrigger(member hub.GroupMember, agent hub.RegisteredAgent) bool {
+	if member.Role == hub.GroupRoleOwner || member.Role == hub.GroupRoleAdmin {
+		return true
+	}
+	for _, tag := range agent.Tags {
+		if strings.EqualFold(tag, "human") || strings.EqualFold(tag, "user") || strings.EqualFold(tag, "dispatcher") {
+			return true
+		}
+	}
+	if strings.HasPrefix(strings.ToLower(agent.AgentID), "human-") || strings.HasPrefix(strings.ToLower(agent.Name), "human") {
+		return true
+	}
+	return false
+}
+
+func (service *Service) TriggerMeetingSession(ctx context.Context, agentID, token, groupID string, input hub.TriggerMeetingSessionInput) (hub.MeetingSession, error) {
+	actor, err := service.requireActiveGroupMember(ctx, agentID, token, groupID)
+	if err != nil {
+		return hub.MeetingSession{}, err
+	}
+	agent, err := service.store.Agents().FindAgent(ctx, agentID)
+	if err != nil {
+		return hub.MeetingSession{}, err
+	}
+	if !isAuthorizedMeetingTrigger(actor, agent) {
+		return hub.MeetingSession{}, ErrForbidden
+	}
+
+	group, err := service.store.Groups().FindGroup(ctx, groupID)
+	if err != nil {
+		return hub.MeetingSession{}, err
+	}
+	if !group.IsActive() {
+		return hub.MeetingSession{}, ErrGroupArchived
+	}
+
+	sec, err := service.store.GroupSecretaries().GetGroupSecretary(ctx, service.config.HubID, actor.CircleID, groupID)
+	if err != nil || sec.State != hub.SecretaryActive || sec.LeaseExpiresAt.Before(service.now().UTC()) {
+		return hub.MeetingSession{}, fmt.Errorf("%w: group has no active secretary with valid lease", ErrValidation)
+	}
+
+	adminMsgs, errAdmin := service.store.Groups().ListGroupMessagesAdmin(ctx, 0, 1, groupID, "")
+	var cutoffRev int64 = 0
+	if errAdmin == nil && len(adminMsgs) > 0 {
+		cutoffRev = int64(adminMsgs[0].ID)
+	}
+
+	startRev := int64(1)
+	lastSession, errLast := service.store.MeetingSessions().FindLatestMeetingSession(ctx, service.config.HubID, actor.CircleID, groupID)
+	if errLast == nil && lastSession.CutoffRevision > 0 {
+		startRev = lastSession.CutoffRevision + 1
+	}
+
+	now := service.now().UTC()
+	sessionID, err := generateSessionID()
+	if err != nil {
+		return hub.MeetingSession{}, err
+	}
+	synthJobID := fmt.Sprintf("job-%s", sessionID)
+
+	session := hub.MeetingSession{
+		HubID:            service.config.HubID,
+		CircleID:         actor.CircleID,
+		GroupID:          groupID,
+		SessionID:        sessionID,
+		StartRevision:    startRev,
+		CutoffRevision:   cutoffRev,
+		TriggerMessageID: input.TriggerMessageID,
+		TriggeredBy:      agentID,
+		CharterVersion:   group.CharterVersion,
+		State:            hub.MeetingSessionSynthesizing,
+		SynthesisJobID:   synthJobID,
+		CreatedAt:        now,
+	}
+
+	createdSession, isNew, err := service.store.MeetingSessions().CreateMeetingSession(ctx, session)
+	if err != nil {
+		return hub.MeetingSession{}, err
+	}
+	if !isNew {
+		return createdSession, nil
+	}
+
+	payloadBytes, _ := json.Marshal(map[string]any{
+		"type":           "MEETING_SYNTHESIS",
+		"hubId":          createdSession.HubID,
+		"circleId":       createdSession.CircleID,
+		"groupId":        createdSession.GroupID,
+		"sessionId":      createdSession.SessionID,
+		"startRevision":  createdSession.StartRevision,
+		"cutoffRevision": createdSession.CutoffRevision,
+		"charterVersion": createdSession.CharterVersion,
+		"triggeredBy":    agentID,
+		"command":        input.Command,
+	})
+
+	inboxItem := hub.InboxItem{
+		HubID:            service.config.HubID,
+		CircleID:         actor.CircleID,
+		TargetAgentID:    sec.AgentID,
+		RequesterAgentID: agentID,
+		TaskID:           fmt.Sprintf("synthesis-%s", createdSession.SessionID),
+		ContextID:        fmt.Sprintf("group-%s", groupID),
+		Message:          string(payloadBytes),
+		GroupID:          groupID,
+		Trust:            "GOVERNANCE_COMMAND",
+		State:            hub.TaskStatePending,
+		CreatedAt:        now,
+	}
+	enqueuedItem, _, enqueueErr := service.store.Inbox().Enqueue(ctx, inboxItem)
+	if enqueueErr == nil && service.broker != nil {
+		service.broker.Publish(enqueuedItem)
+	}
+
+	service.audit(ctx, hub.Event{
+		Type:          hub.EventMeetingSessionTriggered,
+		CircleID:      actor.CircleID,
+		ActorAgentID:  agentID,
+		TargetAgentID: sec.AgentID,
+		Details: map[string]any{
+			"groupId":        groupID,
+			"sessionId":      createdSession.SessionID,
+			"startRevision":  createdSession.StartRevision,
+			"cutoffRevision": createdSession.CutoffRevision,
+			"charterVersion": createdSession.CharterVersion,
+		},
+	})
+
+	return createdSession, nil
+}
+
+func (service *Service) ConcludeMeetingSession(ctx context.Context, agentID, token, groupID, sessionID string, input hub.ConcludeMeetingSessionInput) (hub.MeetingSession, error) {
+	member, err := service.requireActiveGroupMember(ctx, agentID, token, groupID)
+	if err != nil {
+		return hub.MeetingSession{}, err
+	}
+	session, err := service.store.MeetingSessions().GetMeetingSession(ctx, service.config.HubID, member.CircleID, sessionID)
+	if err != nil {
+		return hub.MeetingSession{}, err
+	}
+	if session.GroupID != groupID {
+		return hub.MeetingSession{}, ErrForbidden
+	}
+	sec, _ := service.store.GroupSecretaries().GetGroupSecretary(ctx, service.config.HubID, member.CircleID, groupID)
+	if agentID != sec.AgentID && !member.CanManageMembers() {
+		return hub.MeetingSession{}, ErrForbidden
+	}
+
+	now := service.now().UTC()
+	err = service.store.MeetingSessions().UpdateMeetingSessionState(ctx, service.config.HubID, member.CircleID, sessionID, session.State, hub.MeetingSessionConcluded, &now)
+	if err != nil {
+		return hub.MeetingSession{}, err
+	}
+	session.State = hub.MeetingSessionConcluded
+	session.ConcludedAt = &now
+
+	service.audit(ctx, hub.Event{
+		Type:          hub.EventMeetingSessionConcluded,
+		CircleID:      member.CircleID,
+		ActorAgentID:  agentID,
+		TargetAgentID: groupID,
+		Details: map[string]any{
+			"groupId":   groupID,
+			"sessionId": sessionID,
+			"decisions": input.Decisions,
+			"actions":   input.Actions,
+		},
+	})
+	return session, nil
+}
+
+func (service *Service) GetMeetingSession(ctx context.Context, agentID, token, groupID, sessionID string) (hub.MeetingSession, error) {
+	member, err := service.requireActiveGroupMember(ctx, agentID, token, groupID)
+	if err != nil {
+		return hub.MeetingSession{}, err
+	}
+	session, err := service.store.MeetingSessions().GetMeetingSession(ctx, service.config.HubID, member.CircleID, sessionID)
+	if err != nil {
+		return hub.MeetingSession{}, err
+	}
+	if session.GroupID != groupID {
+		return hub.MeetingSession{}, ErrNotFound
+	}
+	return session, nil
+}
+
+func (service *Service) ListMeetingSessions(ctx context.Context, agentID, token, groupID string, limit int) ([]hub.MeetingSession, error) {
+	member, err := service.requireActiveGroupMember(ctx, agentID, token, groupID)
+	if err != nil {
+		return nil, err
+	}
+	return service.store.MeetingSessions().ListMeetingSessions(ctx, service.config.HubID, member.CircleID, groupID, limit)
+}
+
+func generateSessionID() (string, error) {
+	bytes := make([]byte, 8)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", fmt.Errorf("generate session id: %w", err)
+	}
+	return "sess-" + hex.EncodeToString(bytes), nil
 }

@@ -131,6 +131,15 @@ type GroupSecretaryStore interface {
 	RevokeGroupSecretary(context.Context, string, string, string, int64, time.Time) error
 }
 
+type MeetingSessionStore interface {
+	CreateMeetingSession(context.Context, hub.MeetingSession) (hub.MeetingSession, bool, error)
+	GetMeetingSession(context.Context, string, string, string) (hub.MeetingSession, error)
+	FindMeetingSessionByTrigger(context.Context, string, string, string, string) (hub.MeetingSession, error)
+	FindLatestMeetingSession(context.Context, string, string, string) (hub.MeetingSession, error)
+	UpdateMeetingSessionState(context.Context, string, string, string, hub.MeetingSessionState, hub.MeetingSessionState, *time.Time) error
+	ListMeetingSessions(context.Context, string, string, string, int) ([]hub.MeetingSession, error)
+}
+
 type TxStore interface {
 	Circles() CircleStore
 	Agents() AgentStore
@@ -141,6 +150,7 @@ type TxStore interface {
 	Groups() GroupStore
 	GroupCharters() GroupCharterStore
 	GroupSecretaries() GroupSecretaryStore
+	MeetingSessions() MeetingSessionStore
 	StandardTasks() StandardTaskStore
 }
 

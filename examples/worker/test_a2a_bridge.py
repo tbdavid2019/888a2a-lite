@@ -1205,6 +1205,97 @@ class DurableBridgeTests(unittest.TestCase):
         self.assertEqual(requests[0]["idempotencyKey"], "idem-out-fixed")
         self.assertEqual(requests[0]["idempotencyKey"], requests[1]["idempotencyKey"])
 
+    def test_parse_synthesis_result_normal_and_malformed(self):
+        valid_json = json.dumps({
+            "summary": "本次會議達成 2 項決議",
+            "decisions": [{"id": "dec-1", "title": "啟用新章程"}],
+            "actionItems": [{"id": "act-1", "title": "部署測試", "assignee": "agent-1"}],
+        })
+        res = bridge.parse_synthesis_result(valid_json)
+        self.assertFalse(res["malformed"])
+        self.assertEqual(res["summary"], "本次會議達成 2 項決議")
+        self.assertEqual(len(res["decisions"]), 1)
+
+        block_text = f"以下是總結：\n```json\n{valid_json}\n```\n感謝大家。"
+        res = bridge.parse_synthesis_result(block_text)
+        self.assertFalse(res["malformed"])
+        self.assertEqual(len(res["actionItems"]), 1)
+
+        corrupted = "這不是 JSON 格式的輸出 { bad json"
+        res = bridge.parse_synthesis_result(corrupted)
+        self.assertTrue(res["malformed"])
+        self.assertIn("這不是 JSON", res["summary"])
+
+    def test_render_minutes_markdown_contains_required_sections(self):
+        md = bridge.render_minutes_markdown(
+            "sess-101", 3, 1, 15,
+            "會議圓滿結束",
+            [{"id": "dec-1", "title": "確認版本", "proposer": "agent-a", "status": "DRAFT", "sourceMessageIds": [5, 6]}],
+            [{"id": "act-1", "title": "發布映像檔", "assignee": "agent-b", "deadline": "2026-09-10", "status": "DRAFT", "sourceMessageIds": [7]}]
+        )
+        self.assertIn("群組會議紀要（草稿）", md)
+        self.assertIn("sess-101", md)
+        self.assertIn("v3", md)
+        self.assertIn("#1 ~ #15", md)
+        self.assertIn("【草稿／待確認】 **確認版本**", md)
+        self.assertIn("【草稿／待批准】 **發布映像檔**", md)
+        self.assertIn("所有決議須經群組 Owner 或人類管理員確認", md)
+
+    def test_secretary_work_store_lifecycle_and_approval(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = os.path.join(tmpdir, "test_work.db")
+            store = bridge.SecretaryWorkStore(db_path)
+            if os.name != "nt":
+                mode = os.stat(db_path).st_mode & 0o777
+                self.assertEqual(mode, 0o600)
+
+            decisions = [{"id": "dec-1", "title": "決議A", "proposer": "agent-1", "sourceMessageIds": [1, 2], "revisionRange": [1, 10]}]
+            actions = [{"id": "act-1", "title": "待辦B", "assignee": "agent-2", "deadline": "2026-09-15", "sourceMessageIds": [3], "revisionRange": [1, 10]}]
+            store.save_minutes("hub-1", "pub", "grp-1", "sess-1", 1, 1, 10, "總結內容", "# Markdown", "mock-model", decisions, actions)
+
+            with store._get_conn() as conn:
+                d_row = conn.execute("SELECT * FROM group_decisions WHERE decision_id='dec-1'").fetchone()
+                self.assertEqual(d_row["status"], "DRAFT")
+                self.assertEqual(d_row["needs_review"], 1)
+
+                a_row = conn.execute("SELECT * FROM group_action_items WHERE action_id='act-1'").fetchone()
+                self.assertEqual(a_row["status"], "DRAFT")
+                self.assertEqual(a_row["needs_review"], 1)
+
+            mock_hub = mock.MagicMock()
+            with self.assertRaises(ValueError):
+                store.dispatch_action_item("hub-1", "pub", "grp-1", "sess-1", "act-1", mock_hub)
+
+            ok_d = store.approve_decision("hub-1", "pub", "grp-1", "sess-1", "dec-1", "agent-owner", confirm=True)
+            self.assertTrue(ok_d)
+            ok_a = store.approve_action_item("hub-1", "pub", "grp-1", "sess-1", "act-1", "agent-owner", approve=True)
+            self.assertTrue(ok_a)
+
+            mock_hub.send_task.return_value = {"taskId": "task-dispatch-1"}
+            res = store.dispatch_action_item("hub-1", "pub", "grp-1", "sess-1", "act-1", mock_hub)
+            self.assertEqual(res["taskId"], "task-dispatch-1")
+            mock_hub.send_task.assert_called_once()
+
+            with store._get_conn() as conn:
+                a_row = conn.execute("SELECT * FROM group_action_items WHERE action_id='act-1'").fetchone()
+                self.assertEqual(a_row["status"], "DISPATCHED")
+
+    def test_charter_amendment_lifecycle(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = bridge.SecretaryWorkStore(os.path.join(tmpdir, "work.db"))
+            store.propose_charter_amendment("hub-1", "pub", "grp-1", "amend-1", 1, "New Charter Content", "+ new line", "agent-sec")
+
+            mock_hub = mock.MagicMock()
+            mock_hub.put_group_charter.return_value = {"charterVersion": 2}
+            res = store.approve_charter_amendment("hub-1", "pub", "grp-1", "amend-1", "agent-owner", mock_hub)
+            self.assertEqual(res["charterVersion"], 2)
+            mock_hub.put_group_charter.assert_called_once_with("grp-1", "New Charter Content", expected_version=1)
+
+            with store._get_conn() as conn:
+                row = conn.execute("SELECT * FROM charter_amendments WHERE amendment_id='amend-1'").fetchone()
+                self.assertEqual(row["status"], "APPLIED")
+                self.assertEqual(row["applied_version"], 2)
+
 
 def json_item(row):
     import json

@@ -498,6 +498,57 @@ class HubClient:
         with urllib.request.urlopen(req, timeout=15) as resp:
             return json.loads(resp.read().decode("utf-8"))
 
+    def list_group_messages(self, group_id, after_id=0, limit=100):
+        url = f"{self.hub_url}/hub/v1/groups/{urllib.parse.quote(group_id, safe='')}/history?afterId={int(after_id)}&limit={int(limit)}"
+        req = urllib.request.Request(url, headers=self._headers())
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            return data.get("messages", [])
+
+    def put_group_charter(self, group_id, content, expected_version=None, idempotency_key=None):
+        url = f"{self.hub_url}/hub/v1/groups/{urllib.parse.quote(group_id, safe='')}/charter"
+        payload = {
+            "content": content,
+            "idempotencyKey": idempotency_key or f"charter-put-{int(time.time()*1000)}",
+        }
+        if expected_version is not None:
+            payload["expectedVersion"] = int(expected_version)
+        req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=self._headers())
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
+    def trigger_meeting_session(self, group_id, command="/minutes", trigger_message_id=None, idempotency_key=None):
+        url = f"{self.hub_url}/hub/v1/groups/{urllib.parse.quote(group_id, safe='')}/sessions"
+        payload = json.dumps({
+            "command": command,
+            "triggerMessageId": trigger_message_id or "",
+            "idempotencyKey": idempotency_key or "",
+        }).encode("utf-8")
+        req = urllib.request.Request(url, data=payload, headers=self._headers())
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
+    def conclude_meeting_session(self, group_id, session_id, summary="", decisions=0, actions=0):
+        url = f"{self.hub_url}/hub/v1/groups/{urllib.parse.quote(group_id, safe='')}/sessions/{urllib.parse.quote(session_id, safe='')}/conclude"
+        payload = json.dumps({
+            "summary": summary,
+            "decisions": decisions,
+            "actions": actions,
+        }).encode("utf-8")
+        req = urllib.request.Request(url, data=payload, headers=self._headers())
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
+    def renew_group_secretary(self, group_id, epoch, lease_seconds=3600):
+        url = f"{self.hub_url}/hub/v1/groups/{urllib.parse.quote(group_id, safe='')}/secretary/renew"
+        payload = json.dumps({
+            "epoch": epoch,
+            "leaseSeconds": lease_seconds,
+        }).encode("utf-8")
+        req = urllib.request.Request(url, data=payload, headers=self._headers())
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
 
 def valid_secretary_lease(appointment, agent_id, now=None):
     if not isinstance(appointment, dict) or appointment.get("state") != "ACTIVE" or appointment.get("agentId") != agent_id:
@@ -510,6 +561,433 @@ def valid_secretary_lease(appointment, agent_id, now=None):
         return expires > current
     except (TypeError, ValueError, OverflowError):
         return False
+
+
+class SecretaryWorkStore:
+    def __init__(self, db_path=None):
+        if db_path is None:
+            base_dir = os.path.expanduser("~/.a2a")
+            os.makedirs(base_dir, mode=0o700, exist_ok=True)
+            db_path = os.path.join(base_dir, "work.db")
+        self.db_path = os.path.abspath(db_path)
+        self._init_db()
+
+    def _get_conn(self):
+        conn = sqlite3.connect(self.db_path, timeout=10.0)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA foreign_keys=ON;")
+        return conn
+
+    def _init_db(self):
+        parent = os.path.dirname(self.db_path)
+        if parent:
+            os.makedirs(parent, mode=0o700, exist_ok=True)
+        if not os.path.exists(self.db_path):
+            with open(self.db_path, "w"):
+                pass
+            try:
+                os.chmod(self.db_path, 0o600)
+            except OSError:
+                pass
+        with self._get_conn() as conn:
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS group_minutes (
+                    hub_id TEXT NOT NULL,
+                    circle_id TEXT NOT NULL,
+                    group_id TEXT NOT NULL,
+                    session_id TEXT NOT NULL,
+                    charter_version INTEGER NOT NULL,
+                    start_revision INTEGER NOT NULL,
+                    cutoff_revision INTEGER NOT NULL,
+                    summary TEXT NOT NULL,
+                    rendered_markdown TEXT NOT NULL,
+                    model_version TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (hub_id, circle_id, group_id, session_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS group_decisions (
+                    hub_id TEXT NOT NULL,
+                    circle_id TEXT NOT NULL,
+                    group_id TEXT NOT NULL,
+                    session_id TEXT NOT NULL,
+                    decision_id TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    proposer TEXT NOT NULL,
+                    status TEXT NOT NULL CHECK (status IN ('DRAFT', 'CONFIRMED', 'REJECTED')),
+                    source_message_ids TEXT NOT NULL,
+                    revision_start INTEGER NOT NULL,
+                    revision_end INTEGER NOT NULL,
+                    content_hash TEXT NOT NULL,
+                    needs_review INTEGER NOT NULL DEFAULT 1,
+                    approved_by TEXT,
+                    approved_at TEXT,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (hub_id, circle_id, group_id, session_id, decision_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS group_action_items (
+                    hub_id TEXT NOT NULL,
+                    circle_id TEXT NOT NULL,
+                    group_id TEXT NOT NULL,
+                    session_id TEXT NOT NULL,
+                    action_id TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    assignee TEXT NOT NULL,
+                    deadline TEXT NOT NULL,
+                    status TEXT NOT NULL CHECK (status IN ('DRAFT', 'APPROVED', 'DISPATCHED', 'COMPLETED', 'CANCELED')),
+                    source_message_ids TEXT NOT NULL,
+                    revision_start INTEGER NOT NULL,
+                    revision_end INTEGER NOT NULL,
+                    content_hash TEXT NOT NULL,
+                    needs_review INTEGER NOT NULL DEFAULT 1,
+                    approved_by TEXT,
+                    approved_at TEXT,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (hub_id, circle_id, group_id, session_id, action_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS charter_amendments (
+                    hub_id TEXT NOT NULL,
+                    circle_id TEXT NOT NULL,
+                    group_id TEXT NOT NULL,
+                    amendment_id TEXT NOT NULL,
+                    base_version INTEGER NOT NULL,
+                    proposed_content TEXT NOT NULL,
+                    diff TEXT NOT NULL,
+                    proposer TEXT NOT NULL,
+                    status TEXT NOT NULL CHECK (status IN ('PROPOSED', 'APPLIED', 'REJECTED')),
+                    applied_version INTEGER,
+                    reviewed_by TEXT,
+                    reviewed_at TEXT,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (hub_id, circle_id, group_id, amendment_id)
+                );
+            """)
+
+    def save_minutes(self, hub_id, circle_id, group_id, session_id, charter_version, start_rev, cutoff_rev, summary, rendered_md, model_version, decisions, action_items):
+        now = datetime.now(timezone.utc).isoformat()
+        with self._get_conn() as conn:
+            conn.execute("""
+                INSERT OR REPLACE INTO group_minutes
+                (hub_id, circle_id, group_id, session_id, charter_version, start_revision, cutoff_revision, summary, rendered_markdown, model_version, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (hub_id, circle_id, group_id, session_id, charter_version, start_rev, cutoff_rev, summary, rendered_md, model_version, now))
+
+            for d in decisions:
+                did = d.get("id") or f"dec-{hashlib.sha256(str(d.get('title', '')).encode()).hexdigest()[:8]}"
+                src_ids = json.dumps(d.get("sourceMessageIds", []))
+                title = str(d.get("title", ""))
+                proposer = str(d.get("proposer", ""))
+                rev_range = d.get("revisionRange", [start_rev, cutoff_rev])
+                r_start = rev_range[0] if len(rev_range) > 0 else start_rev
+                r_end = rev_range[1] if len(rev_range) > 1 else cutoff_rev
+                content_hash = hashlib.sha256(f"{title}:{proposer}:{src_ids}".encode()).hexdigest()
+                conn.execute("""
+                    INSERT OR REPLACE INTO group_decisions
+                    (hub_id, circle_id, group_id, session_id, decision_id, title, proposer, status, source_message_ids, revision_start, revision_end, content_hash, needs_review, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, 1, ?)
+                """, (hub_id, circle_id, group_id, session_id, did, title, proposer, src_ids, r_start, r_end, content_hash, now))
+
+            for a in action_items:
+                aid = a.get("id") or f"act-{hashlib.sha256(str(a.get('title', '')).encode()).hexdigest()[:8]}"
+                src_ids = json.dumps(a.get("sourceMessageIds", []))
+                title = str(a.get("title", ""))
+                assignee = str(a.get("assignee", ""))
+                deadline = str(a.get("deadline", ""))
+                rev_range = a.get("revisionRange", [start_rev, cutoff_rev])
+                r_start = rev_range[0] if len(rev_range) > 0 else start_rev
+                r_end = rev_range[1] if len(rev_range) > 1 else cutoff_rev
+                content_hash = hashlib.sha256(f"{title}:{assignee}:{deadline}:{src_ids}".encode()).hexdigest()
+                conn.execute("""
+                    INSERT OR REPLACE INTO group_action_items
+                    (hub_id, circle_id, group_id, session_id, action_id, title, assignee, deadline, status, source_message_ids, revision_start, revision_end, content_hash, needs_review, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, 1, ?)
+                """, (hub_id, circle_id, group_id, session_id, aid, title, assignee, deadline, src_ids, r_start, r_end, content_hash, now))
+
+    def approve_decision(self, hub_id, circle_id, group_id, session_id, decision_id, actor_agent_id, confirm=True):
+        new_status = 'CONFIRMED' if confirm else 'REJECTED'
+        now = datetime.now(timezone.utc).isoformat()
+        with self._get_conn() as conn:
+            cur = conn.execute("""
+                UPDATE group_decisions
+                SET status = ?, needs_review = 0, approved_by = ?, approved_at = ?
+                WHERE hub_id = ? AND circle_id = ? AND group_id = ? AND session_id = ? AND decision_id = ?
+            """, (new_status, actor_agent_id, now, hub_id, circle_id, group_id, session_id, decision_id))
+            return cur.rowcount > 0
+
+    def approve_action_item(self, hub_id, circle_id, group_id, session_id, action_id, actor_agent_id, approve=True):
+        new_status = 'APPROVED' if approve else 'CANCELED'
+        now = datetime.now(timezone.utc).isoformat()
+        with self._get_conn() as conn:
+            cur = conn.execute("""
+                UPDATE group_action_items
+                SET status = ?, needs_review = 0, approved_by = ?, approved_at = ?
+                WHERE hub_id = ? AND circle_id = ? AND group_id = ? AND session_id = ? AND action_id = ?
+            """, (new_status, actor_agent_id, now, hub_id, circle_id, group_id, session_id, action_id))
+            return cur.rowcount > 0
+
+    def dispatch_action_item(self, hub_id, circle_id, group_id, session_id, action_id, hub_client):
+        with self._get_conn() as conn:
+            row = conn.execute("""
+                SELECT * FROM group_action_items
+                WHERE hub_id = ? AND circle_id = ? AND group_id = ? AND session_id = ? AND action_id = ?
+            """, (hub_id, circle_id, group_id, session_id, action_id)).fetchone()
+            if not row:
+                raise ValueError("Action item not found")
+            if row["status"] != "APPROVED":
+                raise ValueError(f"Cannot dispatch action item in status '{row['status']}'; must be APPROVED")
+            assignee = row["assignee"]
+            if not assignee or not assignee.startswith("agent-"):
+                raise ValueError(f"Invalid assignee Agent ID: {assignee}")
+
+            task_payload = {
+                "type": "ACTION_ITEM_DISPATCH",
+                "actionId": action_id,
+                "title": row["title"],
+                "deadline": row["deadline"],
+                "groupId": group_id,
+                "sessionId": session_id,
+            }
+            res = hub_client.send_task(assignee, json.dumps(task_payload))
+            conn.execute("""
+                UPDATE group_action_items SET status = 'DISPATCHED'
+                WHERE hub_id = ? AND circle_id = ? AND group_id = ? AND session_id = ? AND action_id = ?
+            """, (hub_id, circle_id, group_id, session_id, action_id))
+            return res
+
+    def propose_charter_amendment(self, hub_id, circle_id, group_id, amendment_id, base_version, proposed_content, diff, proposer):
+        now = datetime.now(timezone.utc).isoformat()
+        with self._get_conn() as conn:
+            conn.execute("""
+                INSERT OR REPLACE INTO charter_amendments
+                (hub_id, circle_id, group_id, amendment_id, base_version, proposed_content, diff, proposer, status, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PROPOSED', ?)
+            """, (hub_id, circle_id, group_id, amendment_id, base_version, proposed_content, diff, proposer, now))
+
+    def approve_charter_amendment(self, hub_id, circle_id, group_id, amendment_id, actor_agent_id, hub_client):
+        with self._get_conn() as conn:
+            row = conn.execute("""
+                SELECT * FROM charter_amendments
+                WHERE hub_id = ? AND circle_id = ? AND group_id = ? AND amendment_id = ?
+            """, (hub_id, circle_id, group_id, amendment_id)).fetchone()
+            if not row or row["status"] != "PROPOSED":
+                raise ValueError("Amendment not found or not in PROPOSED state")
+            base_version = row["base_version"]
+            res = hub_client.put_group_charter(group_id, row["proposed_content"], expected_version=base_version)
+            now = datetime.now(timezone.utc).isoformat()
+            applied_ver = res.get("charterVersion") if isinstance(res, dict) else base_version + 1
+            conn.execute("""
+                UPDATE charter_amendments
+                SET status = 'APPLIED', applied_version = ?, reviewed_by = ?, reviewed_at = ?
+                WHERE hub_id = ? AND circle_id = ? AND group_id = ? AND amendment_id = ?
+            """, (applied_ver, actor_agent_id, now, hub_id, circle_id, group_id, amendment_id))
+            return res
+
+
+def parse_synthesis_result(raw_text):
+    """Safely parse LLM synthesis result into structured dict. Never raises."""
+    default_res = {
+        "summary": raw_text[:500] if raw_text else "無法解析大腦輸出，已標記為草稿",
+        "decisions": [],
+        "actionItems": [],
+        "artifactReferences": [],
+        "malformed": False,
+    }
+    if not raw_text or not isinstance(raw_text, str):
+        default_res["malformed"] = True
+        return default_res
+
+    text = raw_text.strip()
+    json_str = None
+    if "```json" in text:
+        try:
+            json_str = text.split("```json", 1)[1].split("```", 1)[0].strip()
+        except Exception:
+            pass
+    elif "```" in text:
+        try:
+            json_str = text.split("```", 1)[1].split("```", 1)[0].strip()
+        except Exception:
+            pass
+    elif text.startswith("{") and text.endswith("}"):
+        json_str = text
+
+    if not json_str:
+        json_str = text
+
+    try:
+        data = json.loads(json_str)
+        if isinstance(data, dict):
+            return {
+                "summary": str(data.get("summary", "")),
+                "decisions": list(data.get("decisions", [])),
+                "actionItems": list(data.get("actionItems", [])),
+                "artifactReferences": list(data.get("artifactReferences", [])),
+                "malformed": False,
+            }
+    except Exception:
+        pass
+
+    default_res["malformed"] = True
+    return default_res
+
+
+def render_minutes_markdown(session_id, charter_version, start_rev, cutoff_rev, summary, decisions, action_items):
+    """Render structured meeting minutes into clean, standardized Traditional Chinese Markdown."""
+    lines = [
+        "# 📋 群組會議紀要（草稿）",
+        "",
+        f"- **會話編號**：`{session_id}`",
+        f"- **章程版本**：v{charter_version}",
+        f"- **訊息區間**：#{start_rev} ~ #{cutoff_rev}",
+        f"- **產生時間**：{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}",
+        "",
+        "---",
+        "",
+        "## 📝 議事總結",
+        "",
+        summary or "無摘要內容。",
+        "",
+        "## ⚖️ 議事決議（Decisions）",
+        "",
+    ]
+    if not decisions:
+        lines.append("*(本期會議無產出決議)*")
+    else:
+        for idx, d in enumerate(decisions, 1):
+            did = d.get("id", f"dec-{idx}")
+            title = d.get("title", "")
+            proposer = d.get("proposer", "未知")
+            status = d.get("status", "DRAFT")
+            status_label = "【草稿／待確認】" if status == "DRAFT" else f"【{status}】"
+            lines.append(f"{idx}. {status_label} **{title}** (`{did}`)")
+            lines.append(f"   - 提案者：`{proposer}`")
+            srcs = d.get("sourceMessageIds", [])
+            if srcs:
+                lines.append(f"   - 來源訊息：{', '.join(str(s) for s in srcs)}")
+
+    lines.extend([
+        "",
+        "## ✅ 行動待辦（Action Items）",
+        "",
+    ])
+    if not action_items:
+        lines.append("*(本期會議無產出行動項目)*")
+    else:
+        for idx, a in enumerate(action_items, 1):
+            aid = a.get("id", f"act-{idx}")
+            title = a.get("title", "")
+            assignee = a.get("assignee", "未指派")
+            deadline = a.get("deadline", "未設定")
+            status = a.get("status", "DRAFT")
+            status_label = "【草稿／待批准】" if status == "DRAFT" else f"【{status}】"
+            lines.append(f"{idx}. {status_label} **{title}** (`{aid}`)")
+            lines.append(f"   - 執行負責：`{assignee}`")
+            lines.append(f"   - 截止期限：`{deadline}`")
+            srcs = a.get("sourceMessageIds", [])
+            if srcs:
+                lines.append(f"   - 來源訊息：{', '.join(str(s) for s in srcs)}")
+
+    lines.extend([
+        "",
+        "---",
+        "> ⚠️ **治理規範提示**：本會議紀要目前處於 `DRAFT` 狀態。所有決議須經群組 Owner 或人類管理員確認；行動項目未核准前不得對外派發任務。",
+    ])
+    return "\n".join(lines)
+
+
+def process_secretary_synthesis_task(hub_client, backend, queue, seq, synth_req, charter_cache=None, work_store=None):
+    group_id = synth_req.get("groupId")
+    session_id = synth_req.get("sessionId")
+    start_rev = synth_req.get("startRevision", 1)
+    cutoff_rev = synth_req.get("cutoffRevision", 0)
+    charter_version = synth_req.get("charterVersion", 0)
+    hub_id = synth_req.get("hubId", getattr(hub_client, "hub_id", "public"))
+    circle_id = synth_req.get("circleId", "public")
+
+    print(f"[*] [Secretary] Processing meeting synthesis task for group '{group_id}' (Session: {session_id}, Rev: #{start_rev}~#{cutoff_rev})...")
+
+    messages = []
+    try:
+        all_msgs = hub_client.list_group_messages(group_id, after_id=max(0, start_rev - 1), limit=100)
+        for m in all_msgs:
+            mid = m.get("id", 0)
+            if mid <= cutoff_rev or cutoff_rev == 0:
+                messages.append(m)
+    except Exception as e:
+        print(f"[!] Failed to fetch group messages: {e}", file=sys.stderr)
+
+    snapshot = None
+    if charter_cache:
+        snapshot = charter_cache.refresh(group_id)
+
+    charter_text = snapshot.content if snapshot else "（無群組章程）"
+    msg_history_text = "\n".join(
+        f"- [Msg #{m.get('id')}] {m.get('senderAgentId', 'unknown')}: {m.get('message', '')}"
+        for m in messages
+    )
+    prompt = f"""你現在是群組 {group_id} 的自治秘書。請針對以下會議區間的訊息進行結構化議事總結。
+
+【群組章程參考 (v{charter_version})】
+{charter_text}
+
+【會議發言紀錄 (訊息 #{start_rev} ~ #{cutoff_rev})】
+{msg_history_text if msg_history_text else "（無任何新發言）"}
+
+請嚴格輸出合法 JSON 格式，勿包含其他多餘說明。JSON 格式如下：
+{{
+  "summary": "整體議事摘要與結論",
+  "decisions": [
+    {{
+      "id": "dec-1",
+      "title": "決議事項名稱",
+      "proposer": "提案者 Agent ID",
+      "sourceMessageIds": [1, 2],
+      "revisionRange": [{start_rev}, {cutoff_rev}]
+    }}
+  ],
+  "actionItems": [
+    {{
+      "id": "act-1",
+      "title": "行動項目名稱",
+      "assignee": "負責人 Agent ID",
+      "deadline": "2026-09-10T18:00:00+08:00",
+      "sourceMessageIds": [1, 2],
+      "revisionRange": [{start_rev}, {cutoff_rev}]
+    }}
+  ],
+  "artifactReferences": []
+}}
+"""
+    t_start = time.time()
+    raw_output = backend.execute(prompt, "system:meeting_session", {"groupId": group_id, "sessionId": session_id})
+    elapsed = time.time() - t_start
+    print(f"[✓] [Secretary] LLM reasoning completed in {elapsed:.2f}s.")
+
+    parsed = parse_synthesis_result(raw_output)
+    rendered_md = render_minutes_markdown(session_id, charter_version, start_rev, cutoff_rev, parsed["summary"], parsed["decisions"], parsed["actionItems"])
+
+    if work_store is None:
+        work_store = SecretaryWorkStore()
+    model_version = getattr(backend, "agent_name", backend.__class__.__name__)
+    work_store.save_minutes(hub_id, circle_id, group_id, session_id, charter_version, start_rev, cutoff_rev, parsed["summary"], rendered_md, model_version, parsed["decisions"], parsed["actionItems"])
+    print(f"[✓] [Secretary] Saved minutes to work.db (Decisions: {len(parsed['decisions'])}, Actions: {len(parsed['actionItems'])}).")
+
+    try:
+        hub_client.conclude_meeting_session(group_id, session_id, summary=parsed["summary"], decisions=len(parsed["decisions"]), actions=len(parsed["actionItems"]))
+        print(f"[✓] [Secretary] Concluded meeting session '{session_id}' on Hub.")
+    except Exception as e:
+        print(f"[!] Warning: failed to conclude session on Hub: {e}", file=sys.stderr)
+
+    try:
+        hub_client.send_group_message(group_id, rendered_md)
+        print(f"[✓] [Secretary] Dispatched draft minutes to group '{group_id}'.")
+    except Exception as e:
+        print(f"[!] Warning: failed to broadcast draft minutes to group: {e}", file=sys.stderr)
+
+    queue.finish(seq)
 
 
 # ---------------------------------------------------------------------------
@@ -1122,6 +1600,19 @@ def process_queued_task(hub_client, backend, queue, row, agent_name, charter_cac
         print(f"[*] [Group Charter] Received charter update notification for group '{group_id}'. Refreshing cache...")
         charter_cache.refresh(group_id)
         queue.finish(seq)
+        return
+
+    # 2.5 Secretary Meeting Synthesis task handling
+    synth_req = None
+    if isinstance(msg, str) and "MEETING_SYNTHESIS" in msg:
+        try:
+            synth_payload = json.loads(msg)
+            if isinstance(synth_payload, dict) and synth_payload.get("type") == "MEETING_SYNTHESIS":
+                synth_req = synth_payload
+        except Exception:
+            pass
+    if synth_req:
+        process_secretary_synthesis_task(hub_client, backend, queue, seq, synth_req, charter_cache=charter_cache)
         return
 
     # 3. Check and auto-accept invitations if applicable

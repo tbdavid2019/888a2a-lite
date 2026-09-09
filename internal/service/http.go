@@ -132,6 +132,10 @@ func (server *HTTPServer) Handler() http.Handler {
 	mux.HandleFunc("PUT /hub/v1/groups/{groupId}/secretary", server.appointGroupSecretary)
 	mux.HandleFunc("POST /hub/v1/groups/{groupId}/secretary/renew", server.renewGroupSecretary)
 	mux.HandleFunc("POST /hub/v1/groups/{groupId}/secretary/revoke", server.revokeGroupSecretary)
+	mux.HandleFunc("POST /hub/v1/groups/{groupId}/sessions", server.triggerMeetingSession)
+	mux.HandleFunc("GET /hub/v1/groups/{groupId}/sessions", server.listMeetingSessions)
+	mux.HandleFunc("GET /hub/v1/groups/{groupId}/sessions/{sessionId}", server.getMeetingSession)
+	mux.HandleFunc("POST /hub/v1/groups/{groupId}/sessions/{sessionId}/conclude", server.concludeMeetingSession)
 	mux.HandleFunc("POST /hub/v1/admin/registration", server.setRegistration)
 	mux.HandleFunc("GET /hub/v1/admin/agents", server.adminListAgents)
 	mux.HandleFunc("GET /hub/v1/admin/circles", server.adminListCircles)
@@ -1119,6 +1123,72 @@ func (server *HTTPServer) revokeGroupSecretary(w http.ResponseWriter, r *http.Re
 	}
 	w.Header().Set("Cache-Control", "private, no-store")
 	writeJSON(w, http.StatusOK, map[string]any{"groupId": r.PathValue("groupId"), "epoch": request.Epoch, "state": hub.SecretaryRevoked})
+}
+
+func (server *HTTPServer) triggerMeetingSession(w http.ResponseWriter, r *http.Request) {
+	agentID, token, ok := server.agentCredentials(w, r, "")
+	if !ok {
+		return
+	}
+	var request hub.TriggerMeetingSessionInput
+	if !decodeJSON(w, r, server.maxBodyBytes, &request) {
+		return
+	}
+	request.GroupID = r.PathValue("groupId")
+	session, err := server.service.TriggerMeetingSession(r.Context(), agentID, token, request.GroupID, request)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "private, no-store")
+	writeJSON(w, http.StatusAccepted, session)
+}
+
+func (server *HTTPServer) listMeetingSessions(w http.ResponseWriter, r *http.Request) {
+	agentID, token, ok := server.agentCredentials(w, r, "")
+	if !ok {
+		return
+	}
+	limit, _ := parseIntQuery(r, "limit", 20)
+	sessions, err := server.service.ListMeetingSessions(r.Context(), agentID, token, r.PathValue("groupId"), limit)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "private, no-store")
+	writeJSON(w, http.StatusOK, map[string]any{"sessions": sessions})
+}
+
+func (server *HTTPServer) getMeetingSession(w http.ResponseWriter, r *http.Request) {
+	agentID, token, ok := server.agentCredentials(w, r, "")
+	if !ok {
+		return
+	}
+	session, err := server.service.GetMeetingSession(r.Context(), agentID, token, r.PathValue("groupId"), r.PathValue("sessionId"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "private, no-store")
+	writeJSON(w, http.StatusOK, session)
+}
+
+func (server *HTTPServer) concludeMeetingSession(w http.ResponseWriter, r *http.Request) {
+	agentID, token, ok := server.agentCredentials(w, r, "")
+	if !ok {
+		return
+	}
+	var request hub.ConcludeMeetingSessionInput
+	if !decodeJSON(w, r, server.maxBodyBytes, &request) {
+		return
+	}
+	session, err := server.service.ConcludeMeetingSession(r.Context(), agentID, token, r.PathValue("groupId"), r.PathValue("sessionId"), request)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "private, no-store")
+	writeJSON(w, http.StatusOK, session)
 }
 
 func (server *HTTPServer) sendGroupMessage(w http.ResponseWriter, r *http.Request) {
