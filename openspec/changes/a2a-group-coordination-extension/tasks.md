@@ -2,7 +2,7 @@
 
 - [x] 1.1 Confirm `a2a-standard-compatibility` is complete and its fixed A2A specification revision, schema checksum, official SDK version, Bearer principal, result update endpoint and Task lifecycle fixtures pass in CI; record the evidence before enabling this change.
 - [x] 1.2 Define the Group Extension URI, version, `AgentExtension` object schema, `A2A-Extensions` opt-in rule, `group:` tenant syntax, metadata namespace, `replyPolicy`, `mentions` and unsupported-client behavior; verify contract fixtures reject missing or malformed extension declarations.
-- [ ] 1.3 Define Parent Task, Member Delivery, member outcome aggregation, execution deadline, retry budget, retention and terminal-state rules; verify the state matrix covers all-success, empty-result, failure, rejection, timeout, cancellation and no-recipient cases.
+- [x] 1.3 Define Parent Task, Member Delivery, member outcome aggregation, execution deadline, retry budget, retention and terminal-state rules; verify the state matrix covers all-success, empty-result, failure, rejection, timeout, cancellation and no-recipient cases.
 
 ## 2. Discovery and virtual Group Cards
 

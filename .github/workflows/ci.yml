@@ -31,6 +31,9 @@ jobs:
       A2A_OFFICIAL_BASE_URL: ${{ secrets.A2A_OFFICIAL_BASE_URL }}
       A2A_OFFICIAL_CARD_URL: ${{ secrets.A2A_OFFICIAL_CARD_URL }}
       A2A_OFFICIAL_TOKEN: ${{ secrets.A2A_OFFICIAL_TOKEN }}
+      A2A_GROUP_FIXTURE_URL: ${{ secrets.A2A_GROUP_FIXTURE_URL }}
+      A2A_GROUP_FIXTURE_TOKEN: ${{ secrets.A2A_GROUP_FIXTURE_TOKEN }}
+      A2A_GROUP_FIXTURE_GROUP_ID: ${{ secrets.A2A_GROUP_FIXTURE_GROUP_ID }}
     steps:
       - name: Check out source
         uses: actions/checkout@v4.2.2
@@ -49,6 +52,9 @@ jobs:
       - name: Run official SDK interoperability fixture when configured
         if: ${{ env.A2A_OFFICIAL_BASE_URL != '' && env.A2A_OFFICIAL_CARD_URL != '' && env.A2A_OFFICIAL_TOKEN != '' }}
         run: python3 scripts/a2a-official-sdk-fixture.py
+      - name: Run Group Extension fixture when configured
+        if: ${{ env.A2A_GROUP_FIXTURE_URL != '' && env.A2A_GROUP_FIXTURE_TOKEN != '' && env.A2A_GROUP_FIXTURE_GROUP_ID != '' }}
+        run: python3 scripts/a2a-group-extension-fixture.py
 
   go:
     name: Go checks

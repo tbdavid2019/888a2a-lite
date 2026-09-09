@@ -43,6 +43,8 @@
   - 整合群聊 Anti-Echo 守衛與 `[[A2A_NO_REPLY]]` 結單機制，防止群組無限回音風暴。
   - 嚴格綁定 Multi-Circle 隔離，跨圈完全遮蔽群組卡片與廣播。
 
+- 補強第三階段規劃：明確要求 Human Agent 必須沿用既有群組 membership、群組 UI 必須走標準 Group Gateway、`MENTIONED_ONLY` 仍對所有 eligible bot fan-out 並由未被指名者靜默完成，並加入 Local UI CSRF/Origin 防護、shell-free Runtime 設定、服務 rollback、scoped history 與 Parent Task stream 驗收。
+
 - 補強 `a2a-group-coordination-extension` 規劃：加入第一期完成 gate、Group Extension negotiation、bounded group discovery、Parent/Member Task 聚合、成員快照、fan-out 冪等、取消／ACK 競態、延遲結果保護與 extension-aware 官方 SDK 驗收；同步收斂 Buzz 對標範圍。
 
 - 開始實作 `a2a-group-coordination-extension`：新增固定 Group Extension contract、`A2A-Extensions` opt-in、`group:` tenant、同圈 Group discovery/Card、Parent/Member durable task fan-out、ACK/update 聚合、reply policy 與 Bridge correlation；功能維持 disabled-by-default，既有 `/hub/v1/groups` 不變。
