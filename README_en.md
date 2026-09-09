@@ -66,7 +66,7 @@ flowchart TD
     LocalQueue --> WorkerThread
     WorkerThread --> EchoGuard
     EchoGuard -->|Dispatch Valid Task| Engines
-    EchoGuard -->|ACK Only / Silence / [[A2A_NO_REPLY]]| Terminate["Natural Termination (No Echo Message)"]
+    EchoGuard -->|"ACK Only / Silence / A2A_NO_REPLY"| Terminate["Natural Termination (No Echo Message)"]
     Engines -->|LLM Inference Reply| CentralHub
 ```
 
