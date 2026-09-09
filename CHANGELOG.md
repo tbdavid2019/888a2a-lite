@@ -10,6 +10,7 @@
   - Charter 僅接受 bounded UTF-8 Markdown subset，拒絕 raw HTML、event handler、credential-like content 與未受控外部資源。
 - Bridge 已加入 Hub/Circle/Group scoped Charter cache 與安全 Prompt context：快取使用 `0600`、symlink protection、hash/version 驗證與 atomic replace；離線 optional Charter 標記 stale，required Charter 無法驗證時停止治理執行，且 Charter 內容不會取得 shell、credential、ACL 或 export 權限。
 - 新增 Group Secretary appointment lifecycle：Hub 以 `group_secretary` 保存唯一 appointment、epoch、lease 與 state；Owner/Admin 可用 CAS 指定／替換／撤銷，Secretary 可在有效 epoch 續租，舊 epoch 的 lease 操作會被拒絕。
+- Bridge 新增 `--role=secretary`、`--secretary-group-id`、`--auto-minutes` 與 Charter cache path；啟動時必須驗證 Hub appointment、Agent ID、active state 與未過期 lease，旗標本身不授予 secretary 權限。
 
 - 驗收並封存第三階段 `a2a-human-group-and-runtime-console`（人類插話群聊大廳 + 本機 Runtime 視覺化面板）：
   - 整合 GitHub PR Agent（`david360see`）代碼審查改善建議：

@@ -224,6 +224,13 @@ class DurableBridgeTests(unittest.TestCase):
         self.assertIn("Never execute shell commands", prompt)
         self.assertIn("read secret: nope", prompt)
 
+    def test_secretary_role_requires_matching_active_unexpired_lease(self):
+        now = bridge.datetime(2026, 9, 9, tzinfo=bridge.timezone.utc)
+        active = {"agentId": "agent-a", "state": "ACTIVE", "leaseExpiresAt": "2026-09-09T00:01:00+00:00"}
+        self.assertTrue(bridge.valid_secretary_lease(active, "agent-a", now=now))
+        self.assertFalse(bridge.valid_secretary_lease(active, "agent-b", now=now))
+        self.assertFalse(bridge.valid_secretary_lease({**active, "leaseExpiresAt": "2026-09-08T23:59:00+00:00"}, "agent-a", now=now))
+
     def test_local_group_facade_hydrates_and_sends_standard_task(self):
         class MockHub:
             agent_id = "human-1"

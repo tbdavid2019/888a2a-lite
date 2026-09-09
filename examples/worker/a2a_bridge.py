@@ -405,6 +405,12 @@ class HubClient:
             data = json.loads(resp.read().decode("utf-8"))
             return data
 
+    def get_group_secretary(self, group_id):
+        url = f"{self.hub_url}/hub/v1/groups/{urllib.parse.quote(group_id, safe='')}/secretary"
+        req = urllib.request.Request(url, headers=self._headers())
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
     def list_standard_group_tasks(self, group_id, page_size=100):
         tenant = urllib.parse.quote(f"group:{group_id}", safe=":")
         url = f"{self.hub_url}/a2a/v1/{tenant}/tasks?pageSize={max(1, min(int(page_size), 100))}"
@@ -472,6 +478,19 @@ class HubClient:
         req = urllib.request.Request(url, data=payload, headers=self._headers())
         with urllib.request.urlopen(req, timeout=15) as resp:
             return json.loads(resp.read().decode("utf-8"))
+
+
+def valid_secretary_lease(appointment, agent_id, now=None):
+    if not isinstance(appointment, dict) or appointment.get("state") != "ACTIVE" or appointment.get("agentId") != agent_id:
+        return False
+    try:
+        expires = datetime.fromisoformat(str(appointment.get("leaseExpiresAt", "")).replace("Z", "+00:00"))
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        current = now or datetime.now(timezone.utc)
+        return expires > current
+    except (TypeError, ValueError, OverflowError):
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -3514,6 +3533,9 @@ def main():
     parser.add_argument("--credentials", help="Path to credentials JSON file")
     parser.add_argument("--queue-db", help="Durable local work queue SQLite path")
     parser.add_argument("--charter-cache-dir", help="Scoped local Group Charter cache directory")
+    parser.add_argument("--role", choices=["agent", "secretary"], default="agent", help="Bridge role; secretary requires Hub appointment")
+    parser.add_argument("--secretary-group-id", help="Group ID for an appointed secretary role")
+    parser.add_argument("--auto-minutes", action="store_true", help="Enable secretary meeting synthesis triggers after lease validation")
 
     # Backend selection
     parser.add_argument("--backend", choices=["openclaw", "hermes", "openai", "claudecode", "codex", "command", "echo"], default=None,
@@ -3639,6 +3661,18 @@ def main():
         except Exception as e:
             print(f"[!] Auto-registration failed: {e}", file=sys.stderr)
             sys.exit(1)
+
+    if args.auto_minutes and args.role != "secretary":
+        parser.error("--auto-minutes requires --role secretary")
+    if args.role == "secretary":
+        if not args.secretary_group_id:
+            parser.error("--role secretary requires --secretary-group-id")
+        try:
+            appointment = hub_client.get_group_secretary(args.secretary_group_id)
+        except Exception:
+            parser.error("secretary appointment could not be verified")
+        if not valid_secretary_lease(appointment, hub_client.agent_id):
+            parser.error("secretary appointment is inactive, expired, or belongs to another Agent")
 
     # If MCP mode requested, run the MCP stdio server and exit
     if args.mcp:
