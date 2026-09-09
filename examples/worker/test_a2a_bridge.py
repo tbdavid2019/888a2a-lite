@@ -212,6 +212,48 @@ class DurableBridgeTests(unittest.TestCase):
             row = queue.next()
             self.assertEqual(json.loads(row["reply_json"]), reply)
 
+    def test_standard_task_reports_correlated_completion_without_reply_task(self):
+        class Hub:
+            agent_id = "executor"
+            def ack_task(self, sequence): return True
+            def submit_standard_update(self, task_id, update):
+                self.task_id = task_id
+                self.update = update
+                return {"task": {"id": task_id}}
+
+        class Backend:
+            def execute(self, *args): return "standard result"
+
+        with tempfile.TemporaryDirectory() as directory:
+            queue = bridge.DurableWorkQueue(os.path.join(directory, "queue.db"), scope="hub/executor")
+            queue.enqueue({"sequence": 9, "taskId": "a2a-task-9", "protocol": "A2A/1.0", "turnId": "turn-1", "taskRevision": 1, "requesterAgentId": "requester", "contextId": "context-1", "message": "do work"})
+            hub = Hub()
+            row = queue.next()
+            bridge.process_queued_task(hub, Backend(), queue, row, "Executor")
+            self.assertEqual(hub.task_id, "a2a-task-9")
+            self.assertEqual(hub.update["state"], "TASK_STATE_COMPLETED")
+            self.assertEqual(hub.update["expectedRevision"], 2)
+            self.assertIn("message", hub.update)
+            with queue._db() as db:
+                self.assertEqual(db.execute("SELECT state FROM work WHERE sequence=9").fetchone()[0], "done")
+
+    def test_standard_no_reply_reports_empty_completion(self):
+        class Hub:
+            agent_id = "executor"
+            def ack_task(self, sequence): return True
+            def submit_standard_update(self, task_id, update):
+                self.update = update
+                return {"task": {"id": task_id}}
+
+        with tempfile.TemporaryDirectory() as directory:
+            queue = bridge.DurableWorkQueue(os.path.join(directory, "queue.db"), scope="hub/executor")
+            queue.enqueue({"sequence": 10, "taskId": "a2a-task-10", "protocol": "A2A/1.0", "turnId": "turn-1", "taskRevision": 1, "requesterAgentId": "requester", "contextId": "context-1", "message": "收到"})
+            hub = Hub()
+            row = queue.next()
+            bridge.process_queued_task(hub, object(), queue, row, "Executor")
+            self.assertEqual(hub.update["state"], "TASK_STATE_COMPLETED")
+            self.assertNotIn("message", hub.update)
+
     def test_claudecode_backend_execution(self):
         backend = bridge.ClaudeCodeBackend(system_prompt="Test Prompt")
         with mock.patch("subprocess.run") as mock_run:

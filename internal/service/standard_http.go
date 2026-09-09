@@ -22,6 +22,7 @@ func (server *HTTPServer) standardGatewayCard(w http.ResponseWriter, r *http.Req
 }
 
 func (server *HTTPServer) standardAgentCard(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "private, no-store")
 	token, ok := bearerToken(r.Header.Get("Authorization"))
 	if !ok {
 		writeStandardError(w, &StandardError{HTTPStatus: http.StatusUnauthorized, Reason: "UNAUTHENTICATED", Message: "authentication failed"})
@@ -32,11 +33,11 @@ func (server *HTTPServer) standardAgentCard(w http.ResponseWriter, r *http.Reque
 		writeStandardServiceError(w, err)
 		return
 	}
-	w.Header().Set("Cache-Control", "private, no-store")
 	writeJSON(w, http.StatusOK, card)
 }
 
 func (server *HTTPServer) standardRequestChecks(w http.ResponseWriter, r *http.Request) bool {
+	w.Header().Set("A2A-Version", a2a.ProtocolVersion)
 	if err := a2a.ValidateContentType(r.Header.Get("Content-Type")); err != nil {
 		writeStandardError(w, &StandardError{HTTPStatus: http.StatusBadRequest, Reason: a2a.ReasonContentTypeNotSupported, Message: err.Error()})
 		return false
@@ -70,6 +71,10 @@ func (server *HTTPServer) standardSendMessage(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
+	if !server.taskLimiter.allow(requester.AgentID) {
+		writeStandardError(w, &StandardError{HTTPStatus: http.StatusTooManyRequests, Reason: "RESOURCE_EXHAUSTED", Message: "task rate limit exceeded"})
+		return
+	}
 	var request a2a.SendMessageRequest
 	if !decodeStandardJSON(w, r, server.maxBodyBytes, &request) {
 		return
@@ -87,7 +92,12 @@ func (server *HTTPServer) standardSendMessage(w http.ResponseWriter, r *http.Req
 		return
 	}
 	if request.Configuration == nil || !request.Configuration.ReturnImmediately {
+		if !server.standardWaitSlots.acquire(requester.AgentID) {
+			writeStandardError(w, &StandardError{HTTPStatus: http.StatusTooManyRequests, Reason: "RESOURCE_EXHAUSTED", Message: "too many standard waits for this Agent"})
+			return
+		}
 		task, err = server.service.WaitForStandardTask(r.Context(), requester, task.ID)
+		server.standardWaitSlots.release(requester.AgentID)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				return
@@ -112,12 +122,13 @@ func (server *HTTPServer) standardListTasks(w http.ResponseWriter, r *http.Reque
 		writeStandardError(w, &StandardError{HTTPStatus: http.StatusBadRequest, Reason: "INVALID_ARGUMENT", Message: "pageSize must be between 1 and 100"})
 		return
 	}
-	offset, err := decodeStandardPageToken(r.URL.Query().Get("pageToken"), requester, r.URL.Query().Get("contextId"), r.URL.Query().Get("status"))
+	tenant := strings.TrimSpace(r.PathValue("tenant"))
+	offset, err := decodeStandardPageToken(r.URL.Query().Get("pageToken"), requester, tenant, r.URL.Query().Get("contextId"), r.URL.Query().Get("status"))
 	if err != nil {
 		writeStandardServiceError(w, err)
 		return
 	}
-	filter := a2a.TaskFilter{ContextID: strings.TrimSpace(r.URL.Query().Get("contextId")), PageSize: pageSize, Offset: offset}
+	filter := a2a.TaskFilter{TargetAgentID: tenant, ContextID: strings.TrimSpace(r.URL.Query().Get("contextId")), PageSize: pageSize, Offset: offset}
 	if value := strings.TrimSpace(r.URL.Query().Get("status")); value != "" {
 		filter.State = a2a.TaskState(value)
 	}
@@ -134,7 +145,7 @@ func (server *HTTPServer) standardListTasks(w http.ResponseWriter, r *http.Reque
 	}
 	next := ""
 	if offset+len(items) < total {
-		next = encodeStandardPageToken(offset+len(items), requester, filter.ContextID, string(filter.State))
+		next = encodeStandardPageToken(offset+len(items), requester, filter.TargetAgentID, filter.ContextID, string(filter.State))
 	}
 	writeJSON(w, http.StatusOK, a2a.ListTasksResponse{Tasks: tasks, NextPageToken: next, PageSize: int32(pageSize), TotalSize: int32(total)})
 }
@@ -186,11 +197,19 @@ func (server *HTTPServer) standardStreamMessage(w http.ResponseWriter, r *http.R
 	if !ok {
 		return
 	}
+	if !server.taskLimiter.allow(requester.AgentID) {
+		writeStandardError(w, &StandardError{HTTPStatus: http.StatusTooManyRequests, Reason: "RESOURCE_EXHAUSTED", Message: "task rate limit exceeded"})
+		return
+	}
 	var request a2a.SendMessageRequest
 	if !decodeStandardJSON(w, r, server.maxBodyBytes, &request) {
 		return
 	}
 	if tenant := strings.TrimSpace(r.PathValue("tenant")); tenant != "" {
+		if request.Tenant != "" && request.Tenant != tenant {
+			writeStandardError(w, &StandardError{HTTPStatus: http.StatusBadRequest, Reason: "INVALID_ARGUMENT", Message: "tenant path and body do not match"})
+			return
+		}
 		request.Tenant = tenant
 	}
 	request.Configuration = &a2a.SendMessageConfiguration{ReturnImmediately: true}
@@ -199,6 +218,11 @@ func (server *HTTPServer) standardStreamMessage(w http.ResponseWriter, r *http.R
 		writeStandardServiceError(w, err)
 		return
 	}
+	if !server.standardStreamSlots.acquire(requester.AgentID) {
+		writeStandardError(w, &StandardError{HTTPStatus: http.StatusTooManyRequests, Reason: "RESOURCE_EXHAUSTED", Message: "too many standard streams for this Agent"})
+		return
+	}
+	defer server.standardStreamSlots.release(requester.AgentID)
 	server.streamStandardTask(w, r, requester, task)
 }
 
@@ -219,6 +243,11 @@ func (server *HTTPServer) standardSubscribeTask(w http.ResponseWriter, r *http.R
 		writeStandardError(w, &StandardError{HTTPStatus: http.StatusNotFound, Reason: "TASK_NOT_FOUND", Message: "task not found"})
 		return
 	}
+	if !server.standardStreamSlots.acquire(requester.AgentID) {
+		writeStandardError(w, &StandardError{HTTPStatus: http.StatusTooManyRequests, Reason: "RESOURCE_EXHAUSTED", Message: "too many standard streams for this Agent"})
+		return
+	}
+	defer server.standardStreamSlots.release(requester.AgentID)
 	server.streamStandardTask(w, r, requester, task)
 }
 
@@ -249,7 +278,7 @@ func (server *HTTPServer) streamStandardTask(w http.ResponseWriter, r *http.Requ
 		case <-r.Context().Done():
 			return
 		case <-keepalive.C:
-			if _, err := server.service.GetStandardTask(r.Context(), requester, task.ID); err != nil {
+			if !server.service.standardPrincipalActive(r.Context(), requester) {
 				return
 			}
 			if _, err := io.WriteString(w, ": keepalive\n\n"); err != nil {
@@ -257,17 +286,19 @@ func (server *HTTPServer) streamStandardTask(w http.ResponseWriter, r *http.Requ
 			}
 			flusher.Flush()
 		case <-ticker.C:
-			current, err := server.service.GetStandardTask(r.Context(), requester, task.ID)
+			if !server.service.standardPrincipalActive(r.Context(), requester) {
+				return
+			}
+			events, err := server.service.store.StandardTasks().ListTaskEvents(r.Context(), requester.HubID, requester.CircleID, requester.AgentID, task.ID, lastRevision)
 			if err != nil {
 				return
 			}
-			if current.Revision == lastRevision {
-				continue
-			}
-			lastRevision = current.Revision
-			event := a2a.StreamResponse{StatusUpdate: &a2a.TaskStatusUpdateEvent{TaskID: current.ID, ContextID: current.ContextID, Status: current.PublicTask(-1, true).Status}}
-			if !writeStreamResponse(w, flusher, event) || isTerminalTask(current.State) {
-				return
+			for _, durableEvent := range events {
+				lastRevision = durableEvent.Revision
+				event := a2a.StreamResponse{StatusUpdate: &a2a.TaskStatusUpdateEvent{TaskID: durableEvent.Task.ID, ContextID: durableEvent.Task.ContextID, Status: durableEvent.Task.Status}}
+				if !writeStreamResponse(w, flusher, event) || isTerminalTask(durableEvent.Task.Status.State) {
+					return
+				}
 			}
 		}
 	}
@@ -279,6 +310,10 @@ func (server *HTTPServer) standardTaskUpdate(w http.ResponseWriter, r *http.Requ
 	}
 	target, ok := server.standardAuth(w, r)
 	if !ok {
+		return
+	}
+	if !server.taskLimiter.allow(target.AgentID) {
+		writeStandardError(w, &StandardError{HTTPStatus: http.StatusTooManyRequests, Reason: "RESOURCE_EXHAUSTED", Message: "task rate limit exceeded"})
 		return
 	}
 	var request struct {
@@ -295,6 +330,16 @@ func (server *HTTPServer) standardTaskUpdate(w http.ResponseWriter, r *http.Requ
 	if strings.TrimSpace(request.UpdateID) == "" || strings.TrimSpace(request.TurnID) == "" || request.ExpectedRevision < 1 || request.State == "" {
 		writeStandardError(w, &StandardError{HTTPStatus: http.StatusBadRequest, Reason: "INVALID_ARGUMENT", Message: "updateId, turnId, expectedRevision, and state are required"})
 		return
+	}
+	if request.Message != nil {
+		if request.Message.Role != "ROLE_AGENT" {
+			writeStandardError(w, &StandardError{HTTPStatus: http.StatusBadRequest, Reason: "INVALID_ARGUMENT", Message: "update.message.role must be ROLE_AGENT"})
+			return
+		}
+		if _, err := a2a.TextFromParts(request.Message.Parts); err != nil {
+			writeStandardError(w, &StandardError{HTTPStatus: http.StatusBadRequest, Reason: a2a.ReasonContentTypeNotSupported, Message: err.Error()})
+			return
+		}
 	}
 	task, duplicate, err := server.service.ApplyStandardUpdate(r.Context(), a2a.TaskUpdate{HubID: target.HubID, TaskID: r.PathValue("taskId"), TargetAgentID: target.AgentID, UpdateID: request.UpdateID, TurnID: request.TurnID, ExpectedRevision: request.ExpectedRevision, State: request.State, Message: request.Message, Artifacts: request.Artifacts})
 	if err != nil {
@@ -315,6 +360,11 @@ func writeStreamResponse(w io.Writer, flusher http.Flusher, response a2a.StreamR
 	if err != nil {
 		return false
 	}
+	if responseWriter, ok := w.(http.ResponseWriter); ok {
+		controller := http.NewResponseController(responseWriter)
+		_ = controller.SetWriteDeadline(time.Now().Add(10 * time.Second))
+		defer func() { _ = controller.SetWriteDeadline(time.Time{}) }()
+	}
 	if _, err := io.WriteString(w, "data: "+string(encoded)+"\n\n"); err != nil {
 		return false
 	}
@@ -327,6 +377,11 @@ func decodeStandardJSON(w http.ResponseWriter, r *http.Request, maxBytes int64, 
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
+		var maxBytesError *http.MaxBytesError
+		if errors.As(err, &maxBytesError) {
+			writeStandardError(w, &StandardError{HTTPStatus: http.StatusRequestEntityTooLarge, Reason: "RESOURCE_EXHAUSTED", Message: "request body exceeds the configured limit"})
+			return false
+		}
 		writeStandardError(w, &StandardError{HTTPStatus: http.StatusBadRequest, Reason: "INVALID_ARGUMENT", Message: "request body is invalid"})
 		return false
 	}
@@ -368,16 +423,16 @@ func parseHistoryLength(value string) int {
 }
 
 type standardPageToken struct {
-	Offset                              int `json:"offset"`
-	AgentID, CircleID, ContextID, State string
+	Offset                                      int `json:"offset"`
+	AgentID, CircleID, Tenant, ContextID, State string
 }
 
-func encodeStandardPageToken(offset int, agent hub.RegisteredAgent, contextID, state string) string {
-	encoded, _ := json.Marshal(standardPageToken{Offset: offset, AgentID: agent.AgentID, CircleID: agent.CircleID, ContextID: contextID, State: state})
+func encodeStandardPageToken(offset int, agent hub.RegisteredAgent, tenant, contextID, state string) string {
+	encoded, _ := json.Marshal(standardPageToken{Offset: offset, AgentID: agent.AgentID, CircleID: agent.CircleID, Tenant: tenant, ContextID: contextID, State: state})
 	return base64.RawURLEncoding.EncodeToString(encoded)
 }
 
-func decodeStandardPageToken(value string, agent hub.RegisteredAgent, contextID, state string) (int, error) {
+func decodeStandardPageToken(value string, agent hub.RegisteredAgent, tenant, contextID, state string) (int, error) {
 	if value == "" {
 		return 0, nil
 	}
@@ -386,7 +441,7 @@ func decodeStandardPageToken(value string, agent hub.RegisteredAgent, contextID,
 		return 0, standardError(400, "INVALID_ARGUMENT", "pageToken is invalid")
 	}
 	var token standardPageToken
-	if err := json.Unmarshal(decoded, &token); err != nil || token.AgentID != agent.AgentID || token.CircleID != agent.CircleID || token.ContextID != contextID || token.State != state || token.Offset < 0 {
+	if err := json.Unmarshal(decoded, &token); err != nil || token.AgentID != agent.AgentID || token.CircleID != agent.CircleID || token.Tenant != tenant || token.ContextID != contextID || token.State != state || token.Offset < 0 {
 		return 0, standardError(400, "INVALID_ARGUMENT", "pageToken is invalid for this scope")
 	}
 	return token.Offset, nil

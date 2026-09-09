@@ -55,6 +55,24 @@ func supportsStandardExecution(agent hub.RegisteredAgent) bool {
 	return false
 }
 
+func (service *Service) standardPrincipalActive(ctx context.Context, principal hub.RegisteredAgent) bool {
+	agent, err := service.store.Agents().FindAgent(ctx, principal.AgentID)
+	if err != nil || agent.HubID != principal.HubID || agent.CircleID != principal.CircleID {
+		return false
+	}
+	state := agent.StateAt(service.now().UTC())
+	if state == hub.AgentStateExpired || state == hub.AgentStateRevoked {
+		return false
+	}
+	if service.circleResolver.Mode() == "multi" {
+		circleRecord, circleErr := service.store.Circles().FindCircle(ctx, principal.CircleID)
+		if circleErr != nil || circleRecord.State == hub.CircleStateDisabled {
+			return false
+		}
+	}
+	return true
+}
+
 func (service *Service) StandardGatewayCard(baseURL string) a2a.AgentCard {
 	return service.standardCard(baseURL, "888a2a-lite A2A Gateway", "A2A HTTP+JSON Gateway for registered Agents", "")
 }
@@ -166,16 +184,22 @@ func (service *Service) CreateStandardTask(ctx context.Context, requester hub.Re
 		resumed.ExecutionDeadline = now.Add(5 * time.Minute)
 		resumed.RetryBudget = 3
 		resumed.UpdatedAt = now
-		item := hub.InboxItem{HubID: requester.HubID, CircleID: requester.CircleID, TargetAgentID: targetID, RequesterAgentID: requester.AgentID, TaskID: existing.ID, ContextID: existing.ContextID, IdempotencyKey: "a2a:" + request.Message.MessageID, Message: text, State: hub.DeliveryStatePending, CreatedAt: now}
+		item := hub.InboxItem{HubID: requester.HubID, CircleID: requester.CircleID, TargetAgentID: targetID, RequesterAgentID: requester.AgentID, TaskID: existing.ID, ContextID: existing.ContextID, IdempotencyKey: "a2a:" + request.Message.MessageID, Message: text, State: hub.DeliveryStatePending, CreatedAt: now, Protocol: "A2A/1.0", MessageID: request.Message.MessageID, TurnID: turnID, TaskRevision: resumed.Revision}
 		resumed, duplicate, err := service.store.StandardTasks().ResumeTaskWithDelivery(ctx, resumed, existing.Revision, item)
 		if err != nil {
-			if errors.Is(err, store.ErrConflict) { return a2a.TaskRecord{}, false, standardError(409, "INVALID_ARGUMENT", "task changed while a new turn was being created") }
-			if errors.Is(err, store.ErrInvalidState) { return a2a.TaskRecord{}, false, standardError(409, "UNSUPPORTED_OPERATION", "task cannot accept a new turn") }
+			if errors.Is(err, store.ErrConflict) {
+				return a2a.TaskRecord{}, false, standardError(409, "INVALID_ARGUMENT", "task changed while a new turn was being created")
+			}
+			if errors.Is(err, store.ErrInvalidState) {
+				return a2a.TaskRecord{}, false, standardError(409, "UNSUPPORTED_OPERATION", "task cannot accept a new turn")
+			}
 			return a2a.TaskRecord{}, false, err
 		}
 		if !duplicate && service.broker != nil {
 			stored, _, enqueueErr := service.store.Inbox().FindByIdempotencyKey(ctx, hub.IdempotencyKey{HubID: requester.HubID, TargetAgentID: targetID, RequesterAgentID: requester.AgentID, Key: item.IdempotencyKey})
-			if enqueueErr == nil { service.broker.Publish(stored) }
+			if enqueueErr == nil {
+				service.broker.Publish(stored)
+			}
 		}
 		return resumed, duplicate, nil
 	}
@@ -186,7 +210,7 @@ func (service *Service) CreateStandardTask(ctx context.Context, requester hub.Re
 	turnID := fmt.Sprintf("a2a-turn-%d", service.now().UnixNano())
 	now := service.now().UTC()
 	task := a2a.TaskRecord{HubID: requester.HubID, ID: taskID, CircleID: requester.CircleID, RequesterAgentID: requester.AgentID, TargetAgentID: targetID, ContextID: contextID, MessageID: request.Message.MessageID, TurnID: turnID, Revision: 1, State: a2a.TaskStateSubmitted, Message: request.Message, History: []a2a.Message{request.Message}, ContentDigest: digest, ExecutionDeadline: now.Add(5 * time.Minute), RetryBudget: 3, CreatedAt: now, UpdatedAt: now}
-	item := hub.InboxItem{HubID: requester.HubID, CircleID: requester.CircleID, TargetAgentID: targetID, RequesterAgentID: requester.AgentID, TaskID: taskID, ContextID: contextID, IdempotencyKey: "a2a:" + request.Message.MessageID, Message: text, State: hub.DeliveryStatePending, CreatedAt: now}
+	item := hub.InboxItem{HubID: requester.HubID, CircleID: requester.CircleID, TargetAgentID: targetID, RequesterAgentID: requester.AgentID, TaskID: taskID, ContextID: contextID, IdempotencyKey: "a2a:" + request.Message.MessageID, Message: text, State: hub.DeliveryStatePending, CreatedAt: now, Protocol: "A2A/1.0", MessageID: request.Message.MessageID, TurnID: turnID, TaskRevision: 1}
 	created, duplicate, err := service.store.StandardTasks().CreateTaskWithDelivery(ctx, task, item)
 	if err != nil {
 		if errors.Is(err, store.ErrConflict) {
@@ -204,7 +228,11 @@ func (service *Service) CreateStandardTask(ctx context.Context, requester hub.Re
 }
 
 func (service *Service) WaitForStandardTask(ctx context.Context, requester hub.RegisteredAgent, taskID string) (a2a.TaskRecord, error) {
-	deadline := time.NewTimer(standardWaitTimeout)
+	waitTimeout := service.config.StandardWaitTimeout
+	if waitTimeout <= 0 {
+		waitTimeout = standardWaitTimeout
+	}
+	deadline := time.NewTimer(waitTimeout)
 	defer deadline.Stop()
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()

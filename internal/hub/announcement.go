@@ -78,6 +78,15 @@ type SystemCardExtension struct {
 	Required bool   `json:"required"`
 }
 
+type StandardA2AStatus struct {
+	Enabled         bool   `json:"enabled"`
+	BaseURL         string `json:"baseUrl"`
+	Protocol        string `json:"protocol"`
+	ProtocolVersion string `json:"protocolVersion"`
+	SourceManifest  string `json:"sourceManifest"`
+	GateStatus      string `json:"gateStatus"`
+}
+
 type HubSystemCard struct {
 	HubID                string                `json:"hubId"`
 	SelfURL              string                `json:"selfUrl"`
@@ -94,6 +103,7 @@ type HubSystemCard struct {
 	GroupBaseURL         string                `json:"groupBaseUrl,omitempty"`
 	Limits               map[string]int64      `json:"limits"`
 	Extensions           []SystemCardExtension `json:"extensions"`
+	StandardA2A          StandardA2AStatus     `json:"standardA2a"`
 	UpdatedAt            time.Time             `json:"updatedAt"`
 }
 

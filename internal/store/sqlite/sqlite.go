@@ -107,6 +107,16 @@ func (database *DB) migrate(ctx context.Context) error {
 	if err := migrateStandardA2A(ctx, database.db); err != nil {
 		return err
 	}
+	for _, column := range []struct{ table, name, ddl string }{
+		{table: "inbox_item", name: "protocol", ddl: "TEXT NOT NULL DEFAULT ''"},
+		{table: "inbox_item", name: "message_id", ddl: "TEXT NOT NULL DEFAULT ''"},
+		{table: "inbox_item", name: "turn_id", ddl: "TEXT NOT NULL DEFAULT ''"},
+		{table: "inbox_item", name: "task_revision", ddl: "INTEGER NOT NULL DEFAULT 0"},
+	} {
+		if err := ensureColumn(ctx, database.db, column.table, column.name, column.ddl); err != nil {
+			return err
+		}
+	}
 	if _, err := database.db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_inbox_group_message
 ON inbox_item (hub_id, group_id, group_message_id, target_agent_id, state)`); err != nil {
 		return err
@@ -383,6 +393,10 @@ CREATE TABLE IF NOT EXISTS inbox_item (
     cancel_reason TEXT NOT NULL DEFAULT '',
     group_id TEXT NOT NULL DEFAULT '',
     group_message_id INTEGER NOT NULL DEFAULT 0,
+    protocol TEXT NOT NULL DEFAULT '',
+    message_id TEXT NOT NULL DEFAULT '',
+    turn_id TEXT NOT NULL DEFAULT '',
+    task_revision INTEGER NOT NULL DEFAULT 0,
     UNIQUE (hub_id, target_agent_id, requester_agent_id, idempotency_key),
     FOREIGN KEY (hub_id, target_agent_id) REFERENCES agent (hub_id, agent_id),
     FOREIGN KEY (hub_id, requester_agent_id) REFERENCES agent (hub_id, agent_id)

@@ -723,6 +723,14 @@ func (service *Service) BuildSystemCard(baseURL string) hub.HubSystemCard {
 			{URI: hub.AnnouncementExtensionURI, Required: false},
 			{URI: hub.GroupExtensionURI, Required: false},
 		},
+		StandardA2A: hub.StandardA2AStatus{
+			Enabled:         service.config.StandardGatewayEnabled,
+			BaseURL:         baseURL + "/a2a/v1",
+			Protocol:        "HTTP+JSON",
+			ProtocolVersion: "1.0",
+			SourceManifest:  baseURL + "/llms.txt#a2a-1.0-source-manifest",
+			GateStatus:      "pending-ci",
+		},
 		UpdatedAt: service.now().UTC(),
 	}
 }

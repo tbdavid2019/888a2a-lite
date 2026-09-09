@@ -40,6 +40,8 @@ type HTTPServer struct {
 	baseURL             string
 	registrationLimiter *requestLimiter
 	taskLimiter         *requestLimiter
+	standardWaitSlots   *keyedConcurrencyLimiter
+	standardStreamSlots *keyedConcurrencyLimiter
 }
 
 func NewHTTPServer(service *Service) *HTTPServer {
@@ -49,6 +51,8 @@ func NewHTTPServer(service *Service) *HTTPServer {
 		baseURL:             service.config.PublicBaseURL,
 		registrationLimiter: newRequestLimiter(service.config.RegistrationPerMinute, time.Minute),
 		taskLimiter:         newRequestLimiter(service.config.MaxTasksPerMinute, time.Minute),
+		standardWaitSlots:   newKeyedConcurrencyLimiter(service.config.MaxConcurrentTasks),
+		standardStreamSlots: newKeyedConcurrencyLimiter(service.config.MaxConcurrentTasks),
 	}
 }
 
@@ -71,28 +75,40 @@ func (server *HTTPServer) Handler() http.Handler {
 	mux.HandleFunc("POST /hub/v1/admin/announcements/{announcementId}/publish", server.adminPublishDraft)
 	mux.HandleFunc("POST /hub/v1/admin/announcements/{announcementId}/revision", server.adminCreateRevision)
 	mux.HandleFunc("GET /hub/v1/admin/events", server.listEvents)
-	mux.HandleFunc("GET /.well-known/agent-card.json", server.standardGatewayCard)
-	mux.HandleFunc("GET /a2a/v1/agents/{agentId}/card", server.standardAgentCard)
-	mux.HandleFunc("GET /a2a/v1/agents/{agentId}/.well-known/agent-card.json", server.standardAgentCard)
-	mux.HandleFunc("POST /a2a/v1/message:send", server.standardSendMessage)
-	mux.HandleFunc("POST /message:send", server.standardSendMessage)
-	mux.HandleFunc("POST /a2a/v1/{tenant}/message:send", server.standardSendMessage)
-	mux.HandleFunc("POST /{tenant}/message:send", server.standardSendMessage)
-	mux.HandleFunc("POST /a2a/v1/message:stream", server.standardStreamMessage)
-	mux.HandleFunc("POST /message:stream", server.standardStreamMessage)
-	mux.HandleFunc("POST /a2a/v1/{tenant}/message:stream", server.standardStreamMessage)
-	mux.HandleFunc("POST /{tenant}/message:stream", server.standardStreamMessage)
-	mux.HandleFunc("GET /a2a/v1/tasks", server.standardListTasks)
-	mux.HandleFunc("GET /tasks", server.standardListTasks)
-	mux.HandleFunc("GET /a2a/v1/tasks/{id}", server.standardGetTask)
-	mux.HandleFunc("GET /tasks/{id}", server.standardGetTask)
-	mux.HandleFunc("POST /a2a/v1/tasks/{id}:cancel", server.standardCancelTask)
-	mux.HandleFunc("POST /tasks/{id}:cancel", server.standardCancelTask)
-	mux.HandleFunc("GET /a2a/v1/tasks/{id}:subscribe", server.standardSubscribeTask)
-	mux.HandleFunc("POST /a2a/v1/tasks/{id}:subscribe", server.standardSubscribeTask)
-	mux.HandleFunc("GET /tasks/{id}:subscribe", server.standardSubscribeTask)
-	mux.HandleFunc("POST /tasks/{id}:subscribe", server.standardSubscribeTask)
-	mux.HandleFunc("POST /hub/v1/a2a/tasks/{taskId}/updates", server.standardTaskUpdate)
+	if server.service.config.StandardGatewayEnabled {
+		mux.HandleFunc("GET /.well-known/agent-card.json", server.standardGatewayCard)
+		mux.HandleFunc("GET /a2a/v1/agents/{agentId}/card", server.standardAgentCard)
+		mux.HandleFunc("GET /a2a/v1/agents/{agentId}/.well-known/agent-card.json", server.standardAgentCard)
+		mux.HandleFunc("POST /a2a/v1/message:send", server.standardSendMessage)
+		mux.HandleFunc("POST /message:send", server.standardSendMessage)
+		mux.HandleFunc("POST /a2a/v1/{tenant}/message:send", server.standardSendMessage)
+		mux.HandleFunc("POST /{tenant}/message:send", server.standardSendMessage)
+		mux.HandleFunc("POST /a2a/v1/message:stream", server.standardStreamMessage)
+		mux.HandleFunc("POST /message:stream", server.standardStreamMessage)
+		mux.HandleFunc("POST /a2a/v1/{tenant}/message:stream", server.standardStreamMessage)
+		mux.HandleFunc("POST /{tenant}/message:stream", server.standardStreamMessage)
+		mux.HandleFunc("GET /a2a/v1/tasks", server.standardListTasks)
+		mux.HandleFunc("GET /tasks", server.standardListTasks)
+		mux.HandleFunc("GET /a2a/v1/{tenant}/tasks", server.standardListTasks)
+		mux.HandleFunc("GET /{tenant}/tasks", server.standardListTasks)
+		mux.HandleFunc("GET /a2a/v1/tasks/{id}", server.standardGetTask)
+		mux.HandleFunc("GET /tasks/{id}", server.standardGetTask)
+		mux.HandleFunc("GET /a2a/v1/{tenant}/tasks/{id}", server.standardGetTask)
+		mux.HandleFunc("GET /{tenant}/tasks/{id}", server.standardGetTask)
+		mux.HandleFunc("POST /a2a/v1/tasks/{id}:cancel", server.standardCancelTask)
+		mux.HandleFunc("POST /tasks/{id}:cancel", server.standardCancelTask)
+		mux.HandleFunc("POST /a2a/v1/{tenant}/tasks/{id}:cancel", server.standardCancelTask)
+		mux.HandleFunc("POST /{tenant}/tasks/{id}:cancel", server.standardCancelTask)
+		mux.HandleFunc("GET /a2a/v1/tasks/{id}:subscribe", server.standardSubscribeTask)
+		mux.HandleFunc("POST /a2a/v1/tasks/{id}:subscribe", server.standardSubscribeTask)
+		mux.HandleFunc("GET /tasks/{id}:subscribe", server.standardSubscribeTask)
+		mux.HandleFunc("POST /tasks/{id}:subscribe", server.standardSubscribeTask)
+		mux.HandleFunc("GET /a2a/v1/{tenant}/tasks/{id}:subscribe", server.standardSubscribeTask)
+		mux.HandleFunc("POST /a2a/v1/{tenant}/tasks/{id}:subscribe", server.standardSubscribeTask)
+		mux.HandleFunc("GET /{tenant}/tasks/{id}:subscribe", server.standardSubscribeTask)
+		mux.HandleFunc("POST /{tenant}/tasks/{id}:subscribe", server.standardSubscribeTask)
+		mux.HandleFunc("POST /hub/v1/a2a/tasks/{taskId}/updates", server.standardTaskUpdate)
+	}
 	mux.HandleFunc("GET /hub/v1/status", server.status)
 	mux.HandleFunc("POST /hub/v1/agents/register", server.register)
 	mux.HandleFunc("GET /hub/v1/agents", server.listAgents)
@@ -1414,6 +1430,39 @@ type requestLimiter struct {
 	max      int
 	window   time.Duration
 	requests map[string][]time.Time
+}
+
+type keyedConcurrencyLimiter struct {
+	mu     sync.Mutex
+	max    int
+	active map[string]int
+}
+
+func newKeyedConcurrencyLimiter(max int) *keyedConcurrencyLimiter {
+	if max < 1 {
+		max = 1
+	}
+	return &keyedConcurrencyLimiter{max: max, active: make(map[string]int)}
+}
+
+func (limiter *keyedConcurrencyLimiter) acquire(key string) bool {
+	limiter.mu.Lock()
+	defer limiter.mu.Unlock()
+	if limiter.active[key] >= limiter.max {
+		return false
+	}
+	limiter.active[key]++
+	return true
+}
+
+func (limiter *keyedConcurrencyLimiter) release(key string) {
+	limiter.mu.Lock()
+	defer limiter.mu.Unlock()
+	if limiter.active[key] <= 1 {
+		delete(limiter.active, key)
+		return
+	}
+	limiter.active[key]--
 }
 
 func newRequestLimiter(max int, window time.Duration) *requestLimiter {

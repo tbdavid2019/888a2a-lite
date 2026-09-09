@@ -59,6 +59,7 @@ type StandardTaskStore interface {
 	FindTask(context.Context, string, string, string, string) (a2a.TaskRecord, error)
 	FindTaskByMessage(context.Context, string, string, string, string, string) (a2a.TaskRecord, error)
 	ListTasks(context.Context, a2a.TaskFilter) ([]a2a.TaskRecord, int, error)
+	ListTaskEvents(context.Context, string, string, string, string, int64) ([]a2a.TaskEvent, error)
 	ApplyUpdate(context.Context, a2a.TaskUpdate) (a2a.TaskRecord, bool, error)
 	CancelStandardTask(context.Context, string, string, string, string, time.Time) (a2a.TaskRecord, error)
 }

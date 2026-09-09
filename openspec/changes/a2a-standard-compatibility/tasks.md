@@ -30,37 +30,37 @@
 
 - [ ] 4.0 使用 durable revision/event 驅動 snapshot 與補發，限制並行等待及慢讀者；CI 驗證 snapshot/subscribe 競態、撤銷後停止推送、keepalive 檢查及不持有 DB transaction 等待網路。
 
-- [ ] 4.1 Implement `POST /a2a/v1/message:stream` (and root alias) using standard SSE `StreamResponse` envelopes (OneOf task, message, statusUpdate, artifactUpdate); verify immediate initial response and `rc.SetWriteDeadline(time.Time{})` with 15s keepalive comments.
-- [ ] 4.2 Map mailbox ACK, correlated reply, failure, and cancellation to standard TaskStatusUpdateEvent or TaskArtifactUpdateEvent; verify every emitted event references the same task and context IDs.
-- [ ] 4.3 Close standard streams after terminal state and support `POST /a2a/v1/tasks/{id}:subscribe` from durable state; verify missed updates can be reconstructed without duplicating mailbox deliveries.
-- [ ] 4.4 Keep `/hub/v1/agents/{agentId}/inbox/stream` on its existing InboxItem event format; verify legacy SSE client fixtures continue to parse the original `event: task` stream.
+- [x] 4.1 Implement `POST /a2a/v1/message:stream` (and root alias) using standard SSE `StreamResponse` envelopes (OneOf task, message, statusUpdate, artifactUpdate); verify immediate initial response and `rc.SetWriteDeadline(time.Time{})` with 15s keepalive comments.
+- [x] 4.2 Map mailbox ACK, correlated reply, failure, and cancellation to standard TaskStatusUpdateEvent or TaskArtifactUpdateEvent; verify every emitted event references the same task and context IDs.
+- [x] 4.3 Close standard streams after terminal state and support `POST /a2a/v1/tasks/{id}:subscribe` from durable state; verify missed updates can be reconstructed without duplicating mailbox deliveries.
+- [x] 4.4 Keep `/hub/v1/agents/{agentId}/inbox/stream` on its existing InboxItem event format; verify legacy SSE client fixtures continue to parse the original `event: task` stream.
 
 ## 5. Adapter and client integration
 
-- [ ] 5.0 實作 versioned executor capability 與 updates 端點（updateId/turnId/expectedRevision/state/message/artifacts）；CI 驗證舊 executor 不接 standard Task、非 target 偽造回報被拒、同 update 防重及過期 turn 被拒。
-- [ ] 5.4 Bridge 結果使用持久 outbox，NO_REPLY 回報空 COMPLETED、拒絕 REJECTED、重試耗盡 FAILED；CI 驗證回報前後 crash 均可恢復且無禮貌回信風暴，同步 embedded 與分發腳本。
+- [x] 5.0 實作 versioned executor capability 與 updates 端點（updateId/turnId/expectedRevision/state/message/artifacts）；CI 驗證舊 executor 不接 standard Task、非 target 偽造回報被拒、同 update 防重及過期 turn 被拒。
+- [x] 5.4 Bridge 結果使用持久 outbox，NO_REPLY 回報空 COMPLETED、拒絕 REJECTED、重試耗盡 FAILED；CI 驗證回報前後 crash 均可恢復且無禮貌回信風暴，同步 embedded 與分發腳本。
 - [x] 5.5 實作 interrupted Task 多輪恢復與 context/tenant/requester 一致性；CI 驗證同 task 新 turn、並行輸入 CAS、一致 Message 重試與終態禁止重啟。
 
-- [ ] 5.1 Extend the Hub/client correlation payload so the universal Bridge can acknowledge standard delivery and return a reply linked to the originating standard task; verify old `/hub/v1` clients can omit the optional correlation fields.
-- [ ] 5.2 Update the Python Bridge and local UI to preserve standard task/message correlation across durable queue, retry, restart, and reply delivery; verify Instant ACK and Anti-Echo guard remain active for standard tasks.
-- [ ] 5.3 Add a standard HTTP+JSON client fixture using only the published Agent Card and Agent Token; verify it can discover, send text with blocking wait or non-blocking, subscribe, cancel, and receive a correlated reply.
+- [x] 5.1 Extend the Hub/client correlation payload so the universal Bridge can acknowledge standard delivery and return a reply linked to the originating standard task; verify old `/hub/v1` clients can omit the optional correlation fields.
+- [x] 5.2 Update the Python Bridge and local UI to preserve standard task/message correlation across durable queue, retry, restart, and reply delivery; verify Instant ACK and Anti-Echo guard remain active for standard tasks.
+- [x] 5.3 Add a standard HTTP+JSON client fixture using only the published Agent Card and Agent Token; verify it can discover, send text with blocking wait or non-blocking, subscribe, cancel, and receive a correlated reply.
 
 ## 6. Isolation, security, and compatibility tests
 
-- [ ] 6.6 驗證 configuration.returnImmediately 的終態／中斷等待、HTTP 504、client 斷線與相同 messageId 恢復；不得以 200 WORKING 通過 blocking 測試。
-- [ ] 6.7 驗證取消與 ACK 兩種交易勝負、SSE 到達但未 ACK 的取消、重複取消 CANCELED 成功、遲到回報及 Operator mailbox cancel 一致性；確認取消勝出時 executor 零執行。
-- [ ] 6.8 驗證原 requester Task ACL、同圈非 requester 拒絕、tenant/context 不匹配、pagination scope、mixed unsupported Part、historyLength=0 與同 messageId 改內容拒絕。
+- [x] 6.6 驗證 configuration.returnImmediately 的終態／中斷等待、HTTP 504、client 斷線與相同 messageId 恢復；不得以 200 WORKING 通過 blocking 測試。
+- [x] 6.7 驗證取消與 ACK 兩種交易勝負、SSE 到達但未 ACK 的取消、重複取消 CANCELED 成功、遲到回報及 Operator mailbox cancel 一致性；確認取消勝出時 executor 零執行。
+- [x] 6.8 驗證原 requester Task ACL、同圈非 requester 拒絕、tenant/context 不匹配、pagination scope、mixed unsupported Part、historyLength=0 與同 messageId 改內容拒絕。
 - [ ] 6.9 以未修改官方 SDK 跑完整 Card/Bearer/tenant/send/get/list/stream/multi-turn/cancel 流程；保存版本與結果，不以自製 client 或 serializer patch 替代。
 
-- [ ] 6.1 Apply existing Agent principal authentication, rate limits, payload limits, and no-remote-execution boundary to every standard route; verify malformed JSON, unsupported parts, invalid auth, and oversized input produce bounded `google.rpc.Status` errors.
+- [x] 6.1 Apply existing Agent principal authentication, rate limits, payload limits, and no-remote-execution boundary to every standard route; verify malformed JSON, unsupported parts, invalid auth, and oversized input produce bounded `google.rpc.Status` errors.
 - [ ] 6.2 Add public/private/dynamic Multi-Circle integration coverage for standard send, get, list, stream, subscribe, cancel, and reply; verify cross-circle operations return masked `TASK_NOT_FOUND` (404) and create no state.
-- [ ] 6.3 Add standard/custom coexistence regression tests; verify the same Agent identity and mailbox are visible through both contracts without changing legacy response or ACK semantics.
-- [ ] 6.4 Add restart, duplicate, redelivery, terminal-transition, and stream-reconnect tests for standard tasks; verify CI test names and assertions cover each lifecycle invariant.
-- [ ] 6.5 Add standard Agent Card, `returnImmediately` sync/async, `SendMessageResponse` envelope, and `google.rpc.Status` conformance fixtures; verify the fixture suite runs in GitHub Actions.
+- [x] 6.3 Add standard/custom coexistence regression tests; verify the same Agent identity and mailbox are visible through both contracts without changing legacy response or ACK semantics.
+- [x] 6.4 Add restart, duplicate, redelivery, terminal-transition, and stream-reconnect tests for standard tasks; verify CI test names and assertions cover each lifecycle invariant.
+- [x] 6.5 Add standard Agent Card, `returnImmediately` sync/async, `SendMessageResponse` envelope, and `google.rpc.Status` conformance fixtures; verify the fixture suite runs in GitHub Actions.
 
 ## 7. Documentation and rollout
 
-- [ ] 7.1 Document the standard Gateway, Per-Agent Cards, `tenant` routing, `returnImmediately` behavior, supported text-only scope, authentication, task lifecycle, and explicit differences from `/hub/v1`; verify README and `llms.txt` do not claim unsupported A2A capabilities.
-- [ ] 7.2 Document Multi-Circle behavior for standard routes and the fact that `X-Hub-Key` is registration-only; verify public/private examples use separate circle-scoped credentials.
-- [ ] 7.3 Add deployment configuration, health/capability visibility, and rollback/disable instructions for the standard Gateway; verify existing Docker single-mode deployments remain deployable.
+- [x] 7.1 Document the standard Gateway, Per-Agent Cards, `tenant` routing, `returnImmediately` behavior, supported text-only scope, authentication, task lifecycle, and explicit differences from `/hub/v1`; verify README and `llms.txt` do not claim unsupported A2A capabilities.
+- [x] 7.2 Document Multi-Circle behavior for standard routes and the fact that `X-Hub-Key` is registration-only; verify public/private examples use separate circle-scoped credentials.
+- [x] 7.3 Add deployment configuration, health/capability visibility, and rollback/disable instructions for the standard Gateway; verify existing Docker single-mode deployments remain deployable.
 - [ ] 7.4 Run GitHub Actions Go/Python tests and standard conformance fixtures, then run the required remote smoke test on `david@10.9.0.11`; verify both standard and legacy flows before enabling production rollout.

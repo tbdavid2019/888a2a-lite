@@ -24,6 +24,7 @@ const (
 	DefaultMaxGroupFanout        = 32
 	DefaultMaxGroupHistoryPage   = 100
 	DefaultRegistrationPerMinute = 10
+	DefaultStandardWaitTimeout   = 30 * time.Second
 )
 
 type Config struct {
@@ -42,6 +43,8 @@ type Config struct {
 	MaxGroupFanout         int
 	MaxGroupHistoryPage    int
 	RegistrationPerMinute  int
+	StandardWaitTimeout    time.Duration
+	StandardGatewayEnabled bool
 	OperatorToken          string
 	SharedKey              string
 	CircleMode             string
@@ -67,6 +70,8 @@ func Load() (Config, error) {
 		MaxGroupFanout:         DefaultMaxGroupFanout,
 		MaxGroupHistoryPage:    DefaultMaxGroupHistoryPage,
 		RegistrationPerMinute:  DefaultRegistrationPerMinute,
+		StandardWaitTimeout:    DefaultStandardWaitTimeout,
+		StandardGatewayEnabled: envBool("A2A888_HUB_STANDARD_ENABLED", false),
 		OperatorToken:          os.Getenv("A2A888_HUB_OPERATOR_TOKEN"),
 		SharedKey:              strings.TrimSpace(valueOr("A2A888_HUB_SHARED_KEY", os.Getenv("A2A888_HUB_ACCESS_KEY"))),
 		CircleMode:             strings.ToLower(valueOr("A2A888_HUB_CIRCLE_MODE", circle.ModeSingle)),
@@ -94,6 +99,9 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	if config.RegistrationPerMinute, err = envInt("A2A888_HUB_REGISTRATION_PER_MINUTE", config.RegistrationPerMinute); err != nil {
+		return Config{}, err
+	}
+	if config.StandardWaitTimeout, err = envDurationSeconds("A2A888_HUB_STANDARD_WAIT_TIMEOUT_SECONDS", config.StandardWaitTimeout); err != nil {
 		return Config{}, err
 	}
 	if config.MaxGroupMembers, err = envInt("A2A888_HUB_MAX_GROUP_MEMBERS", config.MaxGroupMembers); err != nil {
@@ -130,6 +138,9 @@ func (config Config) Validate() error {
 	}
 	if config.MaxPayloadBytes <= 0 || config.MaxPayloadBytes > 16<<20 {
 		return fmt.Errorf("max payload bytes must be between 1 and 16777216")
+	}
+	if config.StandardWaitTimeout < 0 || config.StandardWaitTimeout > 10*time.Minute {
+		return fmt.Errorf("standard wait timeout must be between 1 second and 10 minutes")
 	}
 	if mode != circle.ModeSingle && mode != circle.ModeMulti {
 		return fmt.Errorf("circle mode must be %q or %q", circle.ModeSingle, circle.ModeMulti)

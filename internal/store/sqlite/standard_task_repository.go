@@ -124,25 +124,54 @@ func (repository *Repository) ResumeTaskWithDelivery(ctx context.Context, task a
 		if existing.State != a2a.TaskStateInputRequired && existing.State != a2a.TaskStateAuthRequired {
 			return store.ErrInvalidState
 		}
-		if task.CreatedAt.IsZero() { task.CreatedAt = existing.CreatedAt }
-		if task.UpdatedAt.IsZero() { task.UpdatedAt = time.Now().UTC() }
-		if len(task.History) == 0 { task.History = append(append([]a2a.Message(nil), existing.History...), task.Message) }
-		messageJSON, err := json.Marshal(task.Message); if err != nil { return err }
-		historyJSON, err := json.Marshal(task.History); if err != nil { return err }
+		if task.CreatedAt.IsZero() {
+			task.CreatedAt = existing.CreatedAt
+		}
+		if task.UpdatedAt.IsZero() {
+			task.UpdatedAt = time.Now().UTC()
+		}
+		if len(task.History) == 0 {
+			task.History = append(append([]a2a.Message(nil), existing.History...), task.Message)
+		}
+		messageJSON, err := json.Marshal(task.Message)
+		if err != nil {
+			return err
+		}
+		historyJSON, err := json.Marshal(task.History)
+		if err != nil {
+			return err
+		}
 		resultJSON := ""
-		artifactsJSON, err := json.Marshal(task.Artifacts); if err != nil { return err }
+		artifactsJSON, err := json.Marshal(task.Artifacts)
+		if err != nil {
+			return err
+		}
 		updateResult, err := tx.executor().ExecContext(ctx, `UPDATE a2a_task SET message_id = ?, turn_id = ?, revision = ?, state = ?, message_json = ?, history_json = ?, result_message_json = ?, artifacts_json = ?, mailbox_sequence = 0, content_digest = ?, execution_deadline = ?, retry_budget = ?, updated_at = ? WHERE hub_id = ? AND task_id = ? AND revision = ?`, task.MessageID, task.TurnID, expectedRevision+1, string(a2a.TaskStateSubmitted), string(messageJSON), string(historyJSON), resultJSON, string(artifactsJSON), task.ContentDigest, nullTime(task.ExecutionDeadline), task.RetryBudget, formatTime(task.UpdatedAt), task.HubID, task.ID, expectedRevision)
-		if err != nil { return err }
-		if affected, _ := updateResult.RowsAffected(); affected != 1 { return store.ErrConflict }
+		if err != nil {
+			return err
+		}
+		if affected, _ := updateResult.RowsAffected(); affected != 1 {
+			return store.ErrConflict
+		}
 		item.TaskID, item.ContextID, item.TargetAgentID, item.RequesterAgentID, item.HubID, item.CircleID = task.ID, task.ContextID, task.TargetAgentID, task.RequesterAgentID, task.HubID, task.CircleID
 		stored, itemDuplicate, err := tx.Enqueue(ctx, item)
-		if err != nil { return err }
-		if itemDuplicate { duplicate = true; result = existing; return nil }
+		if err != nil {
+			return err
+		}
+		if itemDuplicate {
+			duplicate = true
+			result = existing
+			return nil
+		}
 		task.Revision = expectedRevision + 1
 		task.State = a2a.TaskStateSubmitted
 		task.MailboxSequence = stored.Sequence
-		if _, err := tx.executor().ExecContext(ctx, "UPDATE a2a_task SET mailbox_sequence = ? WHERE hub_id = ? AND task_id = ?", stored.Sequence, task.HubID, task.ID); err != nil { return err }
-		if err := tx.appendTaskEvent(ctx, task, "turn-created"); err != nil { return err }
+		if _, err := tx.executor().ExecContext(ctx, "UPDATE a2a_task SET mailbox_sequence = ? WHERE hub_id = ? AND task_id = ?", stored.Sequence, task.HubID, task.ID); err != nil {
+			return err
+		}
+		if err := tx.appendTaskEvent(ctx, task, "turn-created"); err != nil {
+			return err
+		}
 		result = task
 		return nil
 	})
@@ -219,6 +248,10 @@ func (repository *Repository) ListTasks(ctx context.Context, filter a2a.TaskFilt
 		where = append(where, "context_id = ?")
 		args = append(args, filter.ContextID)
 	}
+	if filter.TargetAgentID != "" {
+		where = append(where, "target_agent_id = ?")
+		args = append(args, filter.TargetAgentID)
+	}
 	if filter.State != "" && filter.State != a2a.TaskStateUnspecified {
 		where = append(where, "state = ?")
 		args = append(args, string(filter.State))
@@ -253,6 +286,35 @@ func (repository *Repository) ListTasks(ctx context.Context, filter a2a.TaskFilt
 		items = append(items, item)
 	}
 	return items, total, nil
+}
+
+func (repository *Repository) ListTaskEvents(ctx context.Context, hubID, circleID, requesterID, taskID string, afterRevision int64) ([]a2a.TaskEvent, error) {
+	rows, err := repository.executor().QueryContext(ctx, `SELECT revision, event_type, payload_json, created_at FROM a2a_task_event WHERE hub_id = ? AND circle_id = ? AND task_id = ? AND revision > ? AND EXISTS (SELECT 1 FROM a2a_task WHERE hub_id = a2a_task_event.hub_id AND task_id = a2a_task_event.task_id AND circle_id = ? AND requester_agent_id = ?) ORDER BY revision`, hubID, circleID, taskID, afterRevision, circleID, requesterID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	events := make([]a2a.TaskEvent, 0)
+	for rows.Next() {
+		var event a2a.TaskEvent
+		var payload, created string
+		if err := rows.Scan(&event.Revision, &event.EventType, &payload, &created); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(payload), &event.Task); err != nil {
+			return nil, err
+		}
+		var parseErr error
+		event.CreatedAt, parseErr = time.Parse(time.RFC3339Nano, created)
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		events = append(events, event)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return events, nil
 }
 
 func (repository *Repository) ApplyUpdate(ctx context.Context, update a2a.TaskUpdate) (a2a.TaskRecord, bool, error) {
@@ -320,8 +382,34 @@ func (repository *Repository) ApplyUpdate(ctx context.Context, update a2a.TaskUp
 	return result, duplicate, err
 }
 
+func (repository *Repository) markStandardDeliveryAcknowledged(ctx context.Context, targetAgentID, taskID string, acknowledgedAt time.Time) error {
+	task, err := repository.findTaskForUpdate(ctx, "", taskID, targetAgentID)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if task.State != a2a.TaskStateSubmitted {
+		return nil
+	}
+	task.State = a2a.TaskStateWorking
+	task.Revision++
+	task.UpdatedAt = acknowledgedAt
+	if err := repository.saveTask(ctx, task); err != nil {
+		return err
+	}
+	return repository.appendTaskEvent(ctx, task, "delivery-acknowledged")
+}
+
 func (repository *Repository) findTaskForUpdate(ctx context.Context, hubID, taskID, targetID string) (a2a.TaskRecord, error) {
-	return repository.findTask(ctx, "SELECT "+standardTaskColumns+" FROM a2a_task WHERE hub_id = ? AND task_id = ? AND target_agent_id = ?", hubID, taskID, targetID)
+	query := "SELECT " + standardTaskColumns + " FROM a2a_task WHERE task_id = ? AND target_agent_id = ?"
+	args := []any{taskID, targetID}
+	if hubID != "" {
+		query = "SELECT " + standardTaskColumns + " FROM a2a_task WHERE hub_id = ? AND task_id = ? AND target_agent_id = ?"
+		args = []any{hubID, taskID, targetID}
+	}
+	return repository.findTask(ctx, query, args...)
 }
 
 func (repository *Repository) saveTask(ctx context.Context, task a2a.TaskRecord) error {

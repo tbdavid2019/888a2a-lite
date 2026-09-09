@@ -265,6 +265,9 @@ class HubClient:
             with urllib.request.urlopen(req, timeout=5) as resp:
                 return json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")
+            if e.code == 409 and "TASK_CANCELED" in body:
+                return {"state": "CANCELED"}
             print(f"[!] ACK failed for seq {sequence}: HTTP {e.code}", file=sys.stderr)
             return None
         except Exception as e:
@@ -292,6 +295,25 @@ class HubClient:
             return None
         except Exception as e:
             print(f"[!] Network error sending task: {e}", file=sys.stderr)
+            return None
+
+    def submit_standard_update(self, task_id, update):
+        """Persist an executor result against the originating A2A task."""
+        url = f"{self.hub_url}/hub/v1/a2a/tasks/{urllib.parse.quote(task_id, safe='')}/updates"
+        payload = json.dumps(update, ensure_ascii=False).encode("utf-8")
+        headers = self._headers()
+        headers["Content-Type"] = "application/a2a+json"
+        headers.pop("X-Agent-ID", None)
+        headers.pop("X-Hub-Key", None)
+        req = urllib.request.Request(url, data=payload, headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            print(f"[!] Error updating standard task {task_id}: HTTP {e.code}", file=sys.stderr)
+            return None
+        except Exception as e:
+            print(f"[!] Network error updating standard task {task_id}: {e}", file=sys.stderr)
             return None
 
     def list_invitations(self):
@@ -797,8 +819,11 @@ def process_incoming_task(hub_client, backend, queue, item, agent_name):
 
     queue.enqueue(item)
     print(f"[*] Persisted seq {seq}; acknowledging immediately...")
-    if hub_client.ack_task(seq):
+    ack_result = hub_client.ack_task(seq)
+    if ack_result:
         queue.set_acked(seq)
+        if ack_result.get("state") == "CANCELED":
+            queue.finish(seq)
         print(f"[✓] ACK confirmed for seq {seq}.")
     else:
         print(f"[!] ACK not confirmed for seq {seq}; durable retry remains queued.", file=sys.stderr)
@@ -815,11 +840,19 @@ def process_queued_task(hub_client, backend, queue, row, agent_name):
     is_group = bool(group_id)
 
     if not row["acked"]:
-        if hub_client.ack_task(seq):
+        ack_result = hub_client.ack_task(seq)
+        if ack_result:
             queue.set_acked(seq)
+            if ack_result.get("state") == "CANCELED":
+                queue.finish(seq)
+                return
         else:
             queue.retry(seq)
             return
+
+    if item.get("protocol") == "A2A/1.0":
+        process_standard_queued_task(hub_client, backend, queue, row, agent_name)
+        return
 
     # 2. Check and auto-accept invitations if applicable
     if any(k in msg.lower() for k in ("invite", "group", "群組", "邀請")):
@@ -872,6 +905,46 @@ def process_queued_task(hub_client, backend, queue, row, agent_name):
     res = hub_client.send_task(reply["target"], reply["message"], context_id=reply["context_id"], task_id=reply["task_id"])
     if res:
         print(f"[✓] Response delivered to {sender_id} (status={res.get('state')}).")
+        queue.finish(seq)
+    else:
+        queue.retry(seq)
+
+
+def process_standard_queued_task(hub_client, backend, queue, row, agent_name):
+    """Report a standard task outcome without creating an unlinked reply task."""
+    item = json.loads(row["item_json"])
+    seq = item.get("sequence")
+    task_id = item.get("taskId")
+    turn_id = item.get("turnId")
+    saved_reply = json.loads(row["reply_json"]) if row.get("reply_json") else None
+    if saved_reply and saved_reply.get("standard_update"):
+        update = saved_reply["standard_update"]
+    else:
+        update_id = f"update-{task_id}-{turn_id}-completed"
+        expected_revision = int(item.get("taskRevision") or 1) + 1
+        if is_pure_closing_statement(item.get("message", "")):
+            update = {"updateId": update_id, "turnId": turn_id, "expectedRevision": expected_revision, "state": "TASK_STATE_COMPLETED", "artifacts": []}
+        else:
+            reply_text = backend.execute(item.get("message", ""), item.get("requesterAgentId", ""), {"contextId": item.get("contextId")})
+            if not reply_text:
+                if int(row.get("attempts", 0)) >= 3:
+                    update = {"updateId": f"update-{task_id}-{turn_id}-failed", "turnId": turn_id, "expectedRevision": expected_revision, "state": "TASK_STATE_FAILED", "artifacts": []}
+                else:
+                    queue.retry(seq)
+                    return
+            elif "[[A2A_NO_REPLY]]" in reply_text:
+                update = {"updateId": update_id, "turnId": turn_id, "expectedRevision": expected_revision, "state": "TASK_STATE_COMPLETED", "artifacts": []}
+            elif "[[A2A_REJECTED]]" in reply_text:
+                update = {"updateId": f"update-{task_id}-{turn_id}-rejected", "turnId": turn_id, "expectedRevision": expected_revision, "state": "TASK_STATE_REJECTED", "artifacts": []}
+            elif "[[A2A_INPUT_REQUIRED]]" in reply_text:
+                update = {"updateId": f"update-{task_id}-{turn_id}-input", "turnId": turn_id, "expectedRevision": expected_revision, "state": "TASK_STATE_INPUT_REQUIRED", "artifacts": []}
+            elif "[[A2A_AUTH_REQUIRED]]" in reply_text:
+                update = {"updateId": f"update-{task_id}-{turn_id}-auth", "turnId": turn_id, "expectedRevision": expected_revision, "state": "TASK_STATE_AUTH_REQUIRED", "artifacts": []}
+            else:
+                update = {"updateId": update_id, "turnId": turn_id, "expectedRevision": expected_revision, "state": "TASK_STATE_COMPLETED", "message": {"messageId": f"reply-{task_id}-{turn_id}", "contextId": item.get("contextId", ""), "taskId": task_id, "role": "ROLE_AGENT", "parts": [{"text": reply_text.strip()}]}, "artifacts": []}
+        queue.save_reply(seq, {"standard_update": update})
+
+    if hub_client.submit_standard_update(task_id, update):
         queue.finish(seq)
     else:
         queue.retry(seq)
@@ -2453,6 +2526,7 @@ def main():
     parser.add_argument("--backend-agent", default="default", help="Agent profile for OpenClaw (default: default)")
     parser.add_argument("--backend-cmd", help="Command string or template for command backend")
     parser.add_argument("--system-prompt", default="", help="Persona or system prompt instructions")
+    parser.add_argument("--standard-executor", action="store_true", help="Advertise the versioned A2A standard executor capability")
 
     # OpenAI / Ollama compatible settings
     parser.add_argument("--api-base", default="http://localhost:11434/v1", help="API Base for OpenAI backend")
@@ -2558,7 +2632,10 @@ def main():
     if not hub_client.agent_id or not hub_client.token:
         print(f"[*] No credentials found for '{args.name}'. Auto-registering with Hub...")
         try:
-            reg_data = hub_client.register(args.name, registration_key, provider_family=args.backend)
+            capabilities = ["text/plain"]
+            if args.standard_executor:
+                capabilities.append("a2a-executor/v1")
+            reg_data = hub_client.register(args.name, registration_key, provider_family=args.backend, capabilities=capabilities)
             reg_data["registrationIdempotencyKey"] = registration_key
             print(f"[✓] Registration successful! Agent ID: {hub_client.agent_id}")
             os.makedirs(os.path.dirname(os.path.abspath(cred_file)), exist_ok=True)

@@ -31,6 +31,15 @@ output modes, Bearer authentication, streaming, and the versioned executor
 capability only for Agents that explicitly register it. Push notifications and
 extended cards are not advertised.
 
+## Multi-Circle and rollout
+
+Standard requests inherit the authenticated Agent's circle. The `tenant` value
+is checked against that circle and is never an authorization credential.
+Unknown, revoked, disabled, and cross-circle Agents and Tasks are masked as
+`TASK_NOT_FOUND` with `404`. `X-Hub-Key` is used only for registration or key
+rotation; it is not required or accepted as an ordinary standard request
+credential.
+
 `returnImmediately` is the JSON spelling used by this Gateway and by the
 locked A2A 1.0.0 ProtoJSON field. When true, sending returns after durable
 submission. When false or omitted, the Gateway waits for a terminal or
@@ -41,3 +50,8 @@ their existing `X-Agent-ID`, InboxItem, ACK, SSE `event: task`, and group
 semantics. The A2A source and SDK verification gate is recorded in
 [`compatibility/a2a-1.0.0-source-manifest.json`](../compatibility/a2a-1.0.0-source-manifest.json);
 CI must pass before any interoperability or production-enable claim.
+
+The Gateway is disabled by default. Enable it with
+`A2A888_HUB_STANDARD_ENABLED=true` only after CI passes. To roll back, set it
+to `false` and restart the Hub; this removes standard routes while preserving
+the durable task tables and the legacy `/hub/v1` service.

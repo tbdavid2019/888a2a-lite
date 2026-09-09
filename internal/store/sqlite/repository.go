@@ -503,11 +503,12 @@ func (repository *Repository) Enqueue(ctx context.Context, item hub.InboxItem) (
 INSERT INTO inbox_item (
     hub_id, circle_id, target_agent_id, requester_agent_id, task_id, context_id,
     idempotency_key, message, state, created_at, acknowledged_at, canceled_at, cancel_reason,
-    group_id, group_message_id
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    group_id, group_message_id, protocol, message_id, turn_id, task_revision
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			item.HubID, item.CircleID, item.TargetAgentID, item.RequesterAgentID, item.TaskID, item.ContextID,
 			item.IdempotencyKey, item.Message, string(item.State), formatTime(item.CreatedAt),
-			nullTimePtr(item.AcknowledgedAt), nullTimePtr(item.CanceledAt), "", item.GroupID, item.GroupMessageID)
+			nullTimePtr(item.AcknowledgedAt), nullTimePtr(item.CanceledAt), "", item.GroupID, item.GroupMessageID,
+			item.Protocol, item.MessageID, item.TurnID, item.TaskRevision)
 		if insertErr != nil {
 			return insertErr
 		}
@@ -526,7 +527,7 @@ func (repository *Repository) FindByIdempotencyKey(ctx context.Context, key hub.
 	item, err := repository.findInbox(ctx, `
 	SELECT sequence, hub_id, circle_id, target_agent_id, requester_agent_id, task_id, context_id,
        idempotency_key, message, state, created_at, acknowledged_at, canceled_at,
-       group_id, group_message_id
+       group_id, group_message_id, protocol, message_id, turn_id, task_revision
 FROM inbox_item
 WHERE hub_id = ? AND target_agent_id = ? AND requester_agent_id = ? AND idempotency_key = ?`,
 		key.HubID, key.TargetAgentID, key.RequesterAgentID, key.Key)
@@ -540,7 +541,7 @@ func (repository *Repository) Poll(ctx context.Context, targetAgentID string, af
 	rows, err := repository.executor().QueryContext(ctx, `
 	SELECT sequence, hub_id, circle_id, target_agent_id, requester_agent_id, task_id, context_id,
        idempotency_key, message, state, created_at, acknowledged_at, canceled_at,
-       group_id, group_message_id
+       group_id, group_message_id, protocol, message_id, turn_id, task_revision
 FROM inbox_item
 WHERE target_agent_id = ? AND sequence > ? AND state = 'PENDING'
 ORDER BY sequence LIMIT ?`, targetAgentID, afterSequence, limit)
@@ -578,37 +579,39 @@ func (repository *Repository) findInbox(ctx context.Context, query string, args 
 }
 
 func (repository *Repository) Acknowledge(ctx context.Context, targetAgentID string, sequence uint64, acknowledgedAt time.Time) error {
-	var state string
-	err := repository.executor().QueryRowContext(ctx,
-		"SELECT state FROM inbox_item WHERE target_agent_id = ? AND sequence = ?", targetAgentID, sequence).Scan(&state)
-	if errors.Is(err, sql.ErrNoRows) {
-		return ErrNotFound
-	}
-	if err != nil {
-		return err
-	}
-	if state == string(hub.DeliveryStateAcknowledged) {
-		return nil
-	}
-	if state == string(hub.DeliveryStateCanceled) {
-		return ErrCanceled
-	}
-	result, err := repository.executor().ExecContext(ctx, `
+	return repository.withTransaction(ctx, func(tx *Repository) error {
+		var state, taskID string
+		err := tx.executor().QueryRowContext(ctx,
+			"SELECT state, task_id FROM inbox_item WHERE target_agent_id = ? AND sequence = ?", targetAgentID, sequence).Scan(&state, &taskID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if state == string(hub.DeliveryStateAcknowledged) {
+			return nil
+		}
+		if state == string(hub.DeliveryStateCanceled) {
+			return ErrCanceled
+		}
+		result, err := tx.executor().ExecContext(ctx, `
 UPDATE inbox_item SET state = 'ACKNOWLEDGED', acknowledged_at = ?
 WHERE target_agent_id = ? AND sequence = ? AND state = 'PENDING'`,
-		formatTime(acknowledgedAt), targetAgentID, sequence)
-	if err != nil {
-		return err
-	}
-	if affected, _ := result.RowsAffected(); affected != 1 {
-		return ErrNotFound
-	}
-	if _, err := repository.executor().ExecContext(ctx, `
+			formatTime(acknowledgedAt), targetAgentID, sequence)
+		if err != nil {
+			return err
+		}
+		if affected, _ := result.RowsAffected(); affected != 1 {
+			return ErrNotFound
+		}
+		if _, err := tx.executor().ExecContext(ctx, `
 UPDATE group_delivery SET state = 'ACKNOWLEDGED', acknowledged_at = ?
 WHERE sequence = ? AND state = 'PENDING'`, formatTime(acknowledgedAt), sequence); err != nil {
-		return err
-	}
-	return nil
+			return err
+		}
+		return tx.markStandardDeliveryAcknowledged(ctx, targetAgentID, taskID, acknowledgedAt)
+	})
 }
 
 func (repository *Repository) AcknowledgeTask(ctx context.Context, targetAgentID, taskID string, acknowledgedAt time.Time) error {
@@ -658,7 +661,7 @@ func (repository *Repository) ListDirectMessagesAdminInCircle(ctx context.Contex
 	query := `
 SELECT sequence, hub_id, circle_id, target_agent_id, requester_agent_id, task_id, context_id,
        idempotency_key, message, state, created_at, acknowledged_at, canceled_at,
-       group_id, group_message_id
+       group_id, group_message_id, protocol, message_id, turn_id, task_revision
 FROM inbox_item
 WHERE group_id = ''
   AND (? = 0 OR sequence < ?)
@@ -923,7 +926,8 @@ func scanInbox(row scanner) (hub.InboxItem, error) {
 	err := row.Scan(
 		&item.Sequence, &item.HubID, &item.CircleID, &item.TargetAgentID, &item.RequesterAgentID,
 		&item.TaskID, &item.ContextID, &item.IdempotencyKey, &item.Message, &state,
-		&created, &acknowledged, &canceled, &item.GroupID, &item.GroupMessageID)
+		&created, &acknowledged, &canceled, &item.GroupID, &item.GroupMessageID,
+		&item.Protocol, &item.MessageID, &item.TurnID, &item.TaskRevision)
 	if errors.Is(err, sql.ErrNoRows) {
 		return hub.InboxItem{}, ErrNotFound
 	}

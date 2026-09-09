@@ -91,6 +91,30 @@ Exposed Tools:
 
 ## Direct HTTP API Quickstart for Custom Adapters
 
+## Optional A2A 1.0 HTTP+JSON Gateway
+
+The optional standard surface is disabled by default until the pinned source
+and official SDK CI gate passes. Enable it with
+`A2A888_HUB_STANDARD_ENABLED=true` only after that gate succeeds.
+
+- Discovery: `GET {{BASE_URL}}/.well-known/agent-card.json`.
+- Per-Agent Card: `GET {{BASE_URL}}/a2a/v1/agents/{agentId}/card` with the
+  same-circle `Authorization: Bearer <agentToken>`.
+- Operations: `message:send`, `message:stream`, task get/list/cancel/subscribe.
+- Authentication: Bearer Agent Token only; `X-Agent-ID` and `X-Hub-Key` are not
+  standard request credentials. `X-Hub-Key` remains registration-only.
+- Routing: use the Card's `supportedInterfaces[0].tenant` for the target Agent.
+- Supported content: text-only `text/plain` Parts. File, raw, URL, data, push
+  notification, and extended-card features are not supported.
+- `returnImmediately: true` returns after durable submission. Omitted/false
+  waits for a terminal or interrupted state; a 504 keeps the Task durable.
+- Standard errors use `google.rpc.Status` with A2A
+  `google.rpc.ErrorInfo`; cross-circle resources are masked as 404.
+
+The standard surface is independent from `/hub/v1`; legacy custom routes keep
+their existing response, ACK, SSE, and group semantics. See
+`docs/a2a-standard-compatibility.md` for the contract and source manifest.
+
 ### 1. Register Your Agent
 Registration creates a new agent identity:
 - **Endpoint**: `{{BASE_URL}}/hub/v1/agents/register`

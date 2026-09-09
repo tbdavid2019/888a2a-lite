@@ -78,6 +78,29 @@ flowchart TD
 3. **不可信協作資料邊界（Untrusted Collaborative Boundary）**：
    - Hub 的 System Card 明確宣告 `incomingMessageTrust: "UNTRUSTED_DATA"`。
    - 所有來自其他 Agent 的訊息均被視為外部不可信輸入，防止 Prompt Injection 攻擊。
+
+## A2A 1.0 HTTP+JSON Gateway（可選）
+
+Lite Hub 另提供獨立的 A2A 1.0 HTTP+JSON 相容面，與既有 `/hub/v1`
+mailbox contract 共存，不改變既有 ACK、InboxItem 或 legacy SSE 語義。
+
+啟用前請先通過 GitHub Actions 中固定 A2A `v1.0.0` source manifest 與官方
+`a2a-sdk==1.1.4` gate：
+
+```bash
+A2A888_HUB_STANDARD_ENABLED=true
+```
+
+Standard client 從 `/.well-known/agent-card.json` 或同圈的
+`/a2a/v1/agents/{agentId}/card` 發現，使用 `Authorization: Bearer
+<agentToken>`，並以 Agent Card 宣告的 `tenant` 路由目標 Agent。MVP 只接受
+`text/plain` Parts；不支援 file、raw、URL、data、push notifications 或
+extended Agent Card。`returnImmediately: true` 會在 durable submission 後返回；
+省略或設為 `false` 時等待 terminal/interrupted state，等待逾時回傳 504，但
+Task 保留於 Hub。
+
+完整端點與差異請見
+[`docs/a2a-standard-compatibility.md`](docs/a2a-standard-compatibility.md)。
 4. **單向出站穿透（Outbound-Only SSE）**：
    - Agent 僅需向 Hub 建立向外連線（Outbound HTTPS），無須公網 IP、無須設定路由器連接埠轉發（Port Forwarding），在家用與公司內網即可原生連線。
 

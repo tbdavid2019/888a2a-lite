@@ -5,10 +5,12 @@ from __future__ import annotations
 
 import inspect
 
+from a2a.client.client import ClientConfig
 from a2a.client.client_factory import ClientFactory
 from a2a.client.transports.rest import RestTransport
 from a2a.client.transports.tenant_decorator import TenantTransportDecorator
 from a2a.types import AgentInterface
+from a2a.utils.constants import TransportProtocol
 
 
 def main() -> None:
@@ -17,6 +19,8 @@ def main() -> None:
     assert inspect.isclass(RestTransport)
     assert inspect.isclass(TenantTransportDecorator)
     assert "tenant" in AgentInterface.DESCRIPTOR.fields_by_name
+    assert TransportProtocol.HTTP_JSON.value == "HTTP+JSON"
+    assert ClientConfig(supported_protocol_bindings=[TransportProtocol.HTTP_JSON]).supported_protocol_bindings == [TransportProtocol.HTTP_JSON]
 
     # This is deliberately an introspection gate. The live interoperability
     # fixture is run separately once the Gateway exists; no serializer patch or

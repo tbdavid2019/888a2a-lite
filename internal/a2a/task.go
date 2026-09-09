@@ -31,6 +31,7 @@ type TaskFilter struct {
 	HubID            string
 	CircleID         string
 	RequesterAgentID string
+	TargetAgentID    string
 	ContextID        string
 	State            TaskState
 	PageSize         int
@@ -47,6 +48,13 @@ type TaskUpdate struct {
 	State            TaskState
 	Message          *Message
 	Artifacts        []Artifact
+}
+
+type TaskEvent struct {
+	Revision  int64
+	EventType string
+	Task      Task
+	CreatedAt time.Time
 }
 
 func (record TaskRecord) PublicTask(historyLength int, includeArtifacts bool) Task {

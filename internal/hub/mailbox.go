@@ -21,6 +21,10 @@ type TaskDelivery struct {
 	Message        string `json:"message"`
 	TaskID         string `json:"taskId"`
 	MaxOutputBytes int64  `json:"maxOutputBytes,omitempty"`
+	Protocol       string `json:"protocol,omitempty"`
+	MessageID      string `json:"messageId,omitempty"`
+	TurnID         string `json:"turnId,omitempty"`
+	TaskRevision   int64  `json:"taskRevision,omitempty"`
 }
 
 type IdempotencyKey struct {
@@ -51,6 +55,10 @@ type InboxItem struct {
 	CreatedAt        time.Time     `json:"createdAt"`
 	AcknowledgedAt   *time.Time    `json:"acknowledgedAt,omitempty"`
 	CanceledAt       *time.Time    `json:"canceledAt,omitempty"`
+	Protocol         string        `json:"protocol,omitempty"`
+	MessageID        string        `json:"messageId,omitempty"`
+	TurnID           string        `json:"turnId,omitempty"`
+	TaskRevision     int64         `json:"taskRevision,omitempty"`
 }
 
 type AcknowledgeRecord struct {
