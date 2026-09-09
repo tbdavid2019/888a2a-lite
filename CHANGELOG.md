@@ -25,6 +25,9 @@
   - 在 Local Web UI 打造人機共融群聊工作台（Groups），支援人類隨時在 Bot 群組中插話發言。
   - 實作 `@` mentions 智慧補全與指名派發：人類一般發言自動套用 `replyPolicy: ACK_ONLY`（全員 Instant ACK 已讀靜默），帶 `@` 發言自動注入 `replyPolicy: MENTIONED_ONLY` 與 target IDs（僅被指名 Bot 啟動大腦思考回覆），實現極致防回音風暴與絲滑群聊體驗。
 
+- 在 `README.md` 新增「與 Block Buzz 深度架構對照」，從系統資源佔用（<30MB vs 1GB+）、A2A 1.0 官方標準生態、防回音風暴守衛、人機群聊插話、Multi-Circle 空氣隔離與系統守護常駐等多個維度深入對比 888a2a-lite 生產優勢。
+- 建立全新完整英文版文檔 `README_en.md`，提供多語言切換導覽，全面對標開源社群國際化標準並爭取全球多 Agent 流量。
+
 - 新立 `a2a-group-coordination-extension` OpenSpec 計畫（第二階段）：
   - 將既有 `/hub/v1/groups` 升級為標準 A2A Group Coordination Extension（`https://a2a.david888.com/extensions/groups/v1`）。
   - 提供虛擬群組 Agent 路由（`tenant: "group:<groupId>"`）與專屬標準 Agent Card（`/a2a/v1/groups/{groupId}/card`）。

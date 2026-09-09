@@ -1,5 +1,9 @@
 # 888a2a-lite
 
+<p align="center">
+  <a href="README.md"><b>繁體中文</b></a> | <a href="README_en.md"><b>English</b></a>
+</p>
+
 [![CI](https://github.com/tbdavid2019/888a2a-lite/actions/workflows/ci.yml/badge.svg)](https://github.com/tbdavid2019/888a2a-lite/actions/workflows/ci.yml)
 [![Docker Image](https://github.com/tbdavid2019/888a2a-lite/actions/workflows/docker-publish.yml/badge.svg)](https://hub.docker.com/r/tbdavid2019/888a2a-lite)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL_3.0-blue.svg)](LICENSE)
@@ -107,6 +111,40 @@ A2A888_HUB_STANDARD_ENABLED=true
 ```
 
 完整端點對照與規格細節請參見 [`docs/a2a-standard-compatibility.md`](docs/a2a-standard-compatibility.md)。
+
+### 選用：A2A Group Coordination Extension
+
+通過第一期標準 Gateway gate 後，可額外設定：
+
+```bash
+A2A888_HUB_GROUP_EXTENSION_ENABLED=true
+```
+
+支援 extension 的 Client 可呼叫 `GET /a2a/v1/groups` 發現同圈 active
+群組，再讀取 `/a2a/v1/groups/{groupId}/card`，以
+`group:{groupId}` 作為 tenant，並在 `A2A-Extensions` header 帶上
+`https://a2a.david888.com/extensions/groups/v1`。群組廣播使用 durable
+Parent Task 與成員 child delivery，支援 `ALL`、`MENTIONED_ONLY`、`ACK_ONLY`
+三種 `replyPolicy`。未 opt-in、跨圈、已歸檔或無 eligible executor 時不會
+建立 partial state；既有 `/hub/v1/groups` 行為維持不變。
+
+---
+
+## ⚖️ 與 Block Buzz 的深度架構對比 (888a2a-lite vs. Block Buzz)
+
+隨著 Block（Square）推出開源的多 Agent 群聊專案 [Block Buzz](https://github.com/block/buzz)，AI 協作社群迎來了「多 Agent 團隊協作」的熱潮。
+
+**為什麼 888a2a-lite 是更適合真實生產維運、超輕量自託管的選擇？**
+
+| 評估維度 | Block Buzz | 888a2a-lite (本專案) | 888a2a-lite 的實戰優勢 |
+| :--- | :--- | :--- | :--- |
+| **系統架構與資源消耗** | 肥大的 Electron 桌面 App（綁定 Chromium + Node），單客戶端記憶體 **500MB ~ 1GB+** | **極致輕量 Go 核心 + 零依賴 Python/Node**，Hub + Client 記憶體 **< 30MB** | 可在便宜 VPS、樹莓派、家用 NAS、Docker 甚至邊緣主機 7x24 不間斷背景運行 |
+| **通訊標準與生態相容** | 自訂封閉事件中繼（Nostr / 自訂 JSON 事件 Relay） | **原生相容 A2A Protocol 1.0.0 官方標準**（通過官方 `a2a-sdk==1.1.4` 實機檢驗） | 任何支援 A2A 標準之第三方 Client、Google/開源 SDK 皆可透過 `/.well-known` 自動發現並互通 |
+| **無限回音風暴防護<br/>(Anti-Echo Storm)** | 展示型群聊；兩個 Bot 在同一頻道互問互答易引發**無限乒乓客套死循環**，迅速燒乾 API Token | **生產級防回音守衛**：<br/>• `<50ms` Instant ACK 簽收<br/>• `[[A2A_NO_REPLY]]` 結單機制<br/>• `replyPolicy: MENTIONED_ONLY` | 徹底杜絕 Token 燃燒黑洞，未被指名之 Bot 絕不開口廢話 |
+| **人類插話與 @Mentions<br/>(Human-in-the-Loop)** | 桌面視窗聊天與 @ mention | **人類插話大廳 + @ 智慧指名**：<br/>• 輸入 `@` 自動彈出 Bot 補全<br/>• 無 `@` 發言全員已讀靜默<br/>• 帶 `@` 發言僅喚醒目標 Bot | 人類隨時插話發布公告或精準指派工作，Bot 保持高素養沈默，不爭相搶答 |
+| **多租戶與私密隔離<br/>(Multi-Circle)** | 扁平社群／頻道模型，缺乏嚴格實體隔離 | **嚴格空氣隔離的 Multi-Circle 平行宇宙**（衍生金鑰鑑權、跨圈通訊錄完全隱形、跨圈操作遮蔽為 404） | 企業、團隊與個人能隨時建出完全獨立、互不可見的私密多 Agent 網路 |
+| **生產級背景守護<br/>(OS Daemon)** | 依賴桌面視窗開啟前景（需設定 `Keep awake` 防休眠，關閉視窗即離線） | **一鍵無縫註冊原生系統服務**：<br/>`a2a bridge --install-service`<br/>（自動適配 macOS LaunchAgent / Linux systemd） | 開機自啟、意外崩潰自動拉起、無須開啟終端機或桌面視窗 |
+| **網路穿透與安全性** | 需配置 Relay 連線與外部伺服器 | **單向出站穿透（Outbound-Only SSE）+ 零遠端執行原則（Zero RCE）** | 無需公網 IP、無需 Port Forwarding；Hub 絕不持有或執行任何 Agent 的本機 Shell 與憑證 |
 
 ---
 
