@@ -43,9 +43,9 @@
 
 ## 7. Bridge delivery and Task stream integration
 
-- [ ] 7.1 Update both Bridge assets to receive all eligible Human group deliveries, commit locally before ACK, and pass Parent/Member correlation to the work queue; verify unmentioned members still receive and acknowledge delivery.
-- [ ] 7.2 Enforce Bridge behavior for `ACK_ONLY` and unmentioned `MENTIONED_ONLY`: durable ACK, no Runtime invocation, empty COMPLETED update, no reciprocal group message; verify no echo task is created.
-- [ ] 7.3 Enforce mentioned-bot behavior: durable ACK, execution lease, selected Runtime invocation, correlated Member update, retry/outbox, and Parent aggregation; verify response is attached to the originating group task.
+- [x] 7.1 Update both Bridge assets to receive all eligible Human group deliveries, commit locally before ACK, and pass Parent/Member correlation to the work queue; verify unmentioned members still receive and acknowledge delivery.
+- [x] 7.2 Enforce Bridge behavior for `ACK_ONLY` and unmentioned `MENTIONED_ONLY`: durable ACK, no Runtime invocation, empty COMPLETED update, no reciprocal group message; verify no echo task is created.
+- [x] 7.3 Enforce mentioned-bot behavior: durable ACK, execution lease, selected Runtime invocation, correlated Member update, retry/outbox, and Parent aggregation; verify response is attached to the originating group task.
 - [ ] 7.4 Subscribe the Local UI to standard Parent Task stream/subscribe and merge revisions into group history; verify P2P `/api/events` and standard group events use separate serializers and cursors.
 - [ ] 7.5 Add reconnect, restart, late result, cancellation, membership removal, and circle disable handling; verify UI stops mutation and hides stale group state after authorization loss.
 

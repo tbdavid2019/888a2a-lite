@@ -12,6 +12,7 @@
   - Local UI 以既有 Human Agent principal 讀取同圈 standard Group discovery、roster 與 standard Task history，並以獨立 SQLite `local_groups`／`group_messages` scope 持久化，與 P2P history 分離。
   - 新增 Groups 導覽、群組 timeline、safe roster mention autocomplete；無 mention 使用 `ACK_ONLY`，有 mention 僅送出綁定 Agent ID 的 `MENTIONED_ONLY` metadata。
   - `/api/groups/{groupId}/messages` 僅透過 standard Group Gateway、`group:<groupId>` tenant、extension metadata、`returnImmediately` 與 idempotency 發送，並保存 pending／Parent Task／結果狀態。
+- Bridge standard group delivery 已補上 Human group policy 驗收：未被 mention 的成員 durable ACK 後送出空的 `TASK_STATE_COMPLETED`，被 mention 的成員才執行選定 Runtime，並以原 member Task ID 回報 correlated update；兩份 Bridge asset 保持一致。
 
 - 完成 `a2a-standard-compatibility` 全量部署與 CI/CD 雙主機上線：
   - 通過 GitHub Actions 四大檢核（Go checks、Python bridge checks、A2A source and SDK gate、Container build）。

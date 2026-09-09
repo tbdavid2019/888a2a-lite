@@ -472,6 +472,49 @@ class DurableBridgeTests(unittest.TestCase):
             self.assertEqual(hub.update["state"], "TASK_STATE_COMPLETED")
             self.assertNotIn("message", hub.update)
 
+    def test_standard_group_policy_silences_unmentioned_executor(self):
+        class Hub:
+            agent_id = "executor"
+            def ack_task(self, sequence): return True
+            def submit_standard_update(self, task_id, update):
+                self.update = update
+                return {"task": {"id": task_id}}
+
+        class Backend:
+            def execute(self, *args):
+                raise AssertionError("unmentioned group member must not invoke Runtime")
+
+        with tempfile.TemporaryDirectory() as directory:
+            queue = bridge.DurableWorkQueue(os.path.join(directory, "queue.db"), scope="hub/executor")
+            queue.enqueue({"sequence": 11, "taskId": "member-task", "parentTaskId": "parent-task", "memberTaskId": "member-task", "protocol": "A2A/1.0", "turnId": "turn-1", "taskRevision": 1, "requesterAgentId": "human", "contextId": "group-context", "groupId": "group-1", "replyPolicy": "MENTIONED_ONLY", "mentions": ["other-agent"], "message": "hello"})
+            hub = Hub()
+            bridge.process_queued_task(hub, Backend(), queue, queue.next(), "Executor")
+            self.assertEqual(hub.update["state"], "TASK_STATE_COMPLETED")
+            self.assertNotIn("message", hub.update)
+
+    def test_standard_group_policy_runs_mentioned_executor_with_correlation(self):
+        class Hub:
+            agent_id = "executor"
+            def ack_task(self, sequence): return True
+            def submit_standard_update(self, task_id, update):
+                self.task_id = task_id
+                self.update = update
+                return {"task": {"id": task_id}}
+
+        class Backend:
+            def execute(self, message, sender, context):
+                self.context = context
+                return "result from executor"
+
+        with tempfile.TemporaryDirectory() as directory:
+            queue = bridge.DurableWorkQueue(os.path.join(directory, "queue.db"), scope="hub/executor")
+            queue.enqueue({"sequence": 12, "taskId": "member-task", "parentTaskId": "parent-task", "memberTaskId": "member-task", "protocol": "A2A/1.0", "turnId": "turn-1", "taskRevision": 1, "requesterAgentId": "human", "contextId": "group-context", "groupId": "group-1", "replyPolicy": "MENTIONED_ONLY", "mentions": ["executor"], "message": "hello"})
+            hub = Hub()
+            bridge.process_queued_task(hub, Backend(), queue, queue.next(), "Executor")
+            self.assertEqual(hub.task_id, "member-task")
+            self.assertEqual(hub.update["state"], "TASK_STATE_COMPLETED")
+            self.assertEqual(hub.update["message"]["taskId"], "member-task")
+
     def test_claudecode_backend_execution(self):
         backend = bridge.ClaudeCodeBackend(system_prompt="Test Prompt")
         with mock.patch("subprocess.run") as mock_run:
