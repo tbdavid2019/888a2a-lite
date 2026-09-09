@@ -4,6 +4,23 @@
 
 ### Added
 
+- 實裝第四階段 4C 匯出發布箱與外部整合（Export Outbox & External Integrations）：
+  - **發布箱模式與重試退避（Export Outbox Pattern）**：
+    - 在本地 `work.db` 中建立 `export_outbox` 表結構與索引，支援以 `idempotency_key` 確保同一會議紀要匯出任務不重複產生外部副作用。
+    - 實裝 `enqueue_export` 與 `process_export_outbox`，具備指數退避重試機制（5s, 10s, 20s...）與死信隊列（`DEAD_LETTER`）隔離。
+  - **敏感資料自動脫敏過濾（Secret Redaction）**：
+    - 實裝 `redact_secrets` 正則脫敏引擎，在任何紀要匯出前自動遮蔽 Bearer Tokens、GitHub Tokens (`ghp_...`)、OpenAI Keys (`sk-...`)、通用 API Keys/密碼以及 RSA/OpenSSH 私鑰區塊。
+  - **本地 Markdown 原子匯出（Atomic Scoped Exporter）**：
+    - 實裝 `export_minutes_markdown`，將已脫敏之紀要寫入 `~/.a2a/exports/<hub>/<circle>/<group>/<session>.md`，強制 `0600` 權限並透過隨機臨時檔名原子替換，防止寫入中途遭讀取。
+  - **外部網路安全防護與 SSRF 阻斷（SSRF & Allowlist Boundary）**：
+    - 實裝 `validate_outbound_url`，強制 HTTPS 協議，嚴格阻斷 `localhost`、`127.0.0.1`、`::1`、`.internal`、`.local` 以及私人內網 IP 網段連線；支援環境變數 `A2A_EXPORT_ALLOWLIST` 白名單過濾。
+  - **外部適配器（Webhook / Wiki / GitHub）**：
+    - 實裝 `export_to_webhook`（支援 `X-Hub-Signature-256` HMAC-SHA256 簽名與 64KB 回應長度邊界）、`export_to_wiki` 與 `export_to_github`。
+    - 在秘書生成紀要後自動觸發 Outbox 排隊與執行。
+  - **全套測試覆蓋與雙 Bridge 同步**：
+    - 在 `examples/worker/test_a2a_bridge.py` 新增脫敏、SSRF 防禦、Markdown 原子寫入、Outbox 冪等與死信轉換、Webhook HMAC 簽名測試。
+    - `examples/worker/a2a_bridge.py` 與 `internal/service/a2a_bridge.py` 維持 100% 位元組層級同步。
+
 - 實裝第四階段 4B 群組議事治理引擎與秘書結構化記憶（Group Meeting Sessions & Secretary Governance）：
   - **Hub 會議會話與指令安全（Meeting Sessions & Commands）**：
     - 新增 `MeetingSession` 資料模型與 SQLite Migration Version 9，建立 `meeting_session` 表結構與唯一索引（支援基於 `triggerMessageId` 與 `synthesisJobId` 之冪等性）。

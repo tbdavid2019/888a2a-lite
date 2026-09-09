@@ -95,3 +95,92 @@ To eliminate split-brain duplicates when synthesizing meeting summaries, groups 
 3. **Lease Yielding & Failover**:
    - Clean shutdown yields the lease (`POST /hub/v1/groups/{groupId}/secretary/release`).
    - If a secretary crashes, the lease expires. The owner can appoint a replacement with an incremented Epoch; operations from previous epochs are rejected.
+
+---
+
+## 5. Meeting Sessions & Command Boundary
+
+### Parliamentary Command Boundary
+Group members may enter session control commands such as `/minutes`, `/wrapup`, or `/summary`:
+- **Strict Authorization Boundary**: Only **Human operators** or group **Owner/Admin** can trigger meeting synthesis and session conclusion.
+- **Untrusted Peer Isolation**: If an untrusted AI peer emits `/minutes` in its conversational reply, the Hub treats it solely as an ordinary chat broadcast and **never** initiates synthesis or assigns tasks.
+
+### Session Lifecycle & Immutable Cutoff Revisions
+1. When meeting synthesis is triggered, the Hub registers a `MeetingSession` record where `cutoffRevision` locks to the highest message sequence ID at that moment.
+2. The cutoff revision is an **immutable boundary**, ensuring that any subsequent chatter does not contaminate or mutate the scope of the current minutes.
+3. The Hub dispatches a `MEETING_SYNTHESIS` task to the active secretary lease holder (carrying `groupId`, `sessionId`, `startRevision`, `cutoffRevision`, `charterVersion`).
+4. Session HTTP Endpoints:
+   - `POST /hub/v1/groups/{groupId}/sessions/start`: Open a meeting session.
+   - `POST /hub/v1/groups/{groupId}/sessions/{sessionId}/conclude`: Conclude session and report decision/action counts.
+   - `GET /hub/v1/groups/{groupId}/sessions`: List past meeting sessions.
+
+---
+
+## 6. Structured Minutes & Local Secretary Memory (work.db)
+
+Upon receiving a synthesis task, the secretary invokes its local cognitive core and commits records to a local SQLite WAL database:
+```
+~/.a2a/work.db
+```
+- Permissions are strictly set to `0600`.
+- All tables enforce four-level namespace scoping: `hub_id`, `circle_id`, `group_id`, `session_id`.
+
+### Core Table Schemas
+1. **`group_minutes`**: Stores full minutes text, formatted Markdown output, model metadata, revision bounds, and summary.
+2. **`group_decisions`**: Stores extracted decisions; state machine: `DRAFT -> CONFIRMED / REJECTED`.
+3. **`group_action_items`**: Stores actionable tasks; state machine: `DRAFT -> APPROVED -> DISPATCHED -> COMPLETED / CANCELED`.
+4. **`charter_amendments`**: Proposed modifications to the group charter; state machine: `PROPOSED -> APPLIED / REJECTED`.
+
+### Draft-by-Default Governance
+> [!IMPORTANT]
+> **Zero Automatic Dispatch**: Decisions and action items extracted by LLMs are **strictly DRAFT by default**.
+> Without explicit confirmation from a Human operator or group Owner, the secretary **must never** automatically dispatch actions as live Hub tasks.
+
+- **Human Approval**: The operator calls `approve_decision(...)` or `approve_action_item(...)` to transition items to `CONFIRMED` or `APPROVED`.
+- **Task Dispatching**: Only `APPROVED` action items can be dispatched via `dispatch_action_item(...)`, routing standard Hub tasks to target assignees.
+
+---
+
+## 7. Export Outbox & External Integrations
+
+Concluded meeting minutes can be securely exported to external destinations using the Outbox Pattern:
+
+### Secret Redaction Filter
+Before exporting, content is processed by `redact_secrets` regex filters:
+- Redacts Bearer JWT tokens (`Bearer [REDACTED_TOKEN]`).
+- Redacts GitHub tokens (`ghp_...`), OpenAI keys (`sk-...`), and arbitrary API keys/passwords.
+- Redacts RSA and OpenSSH private key blocks.
+
+### Local Markdown Atomic Export
+- Destination: `~/.a2a/exports/<hubScope>/<circleScope>/<groupScope>/<sessionId>.md`
+- Security: File mode `0600`; written to a randomized temporary file and atomically renamed to prevent partial writes.
+
+### Export Outbox & Retry Engine
+- **Exponential Backoff**: Transient network failures trigger retries backed off at 5s, 10s, 20s...
+- **Dead-Letter Queue**: Jobs exceeding maximum retry attempts (default: 5) transition to `DEAD_LETTER`.
+- **Idempotency**: Each job retains a unique `idempotency_key` and content hash to prevent duplicate deliveries.
+
+### Outbound Network Security & SSRF Protection
+- **Enforce HTTPS**: Plaintext HTTP requests are rejected.
+- **SSRF Mitigation**: Prohibits requests to `localhost`, `127.0.0.1`, `::1`, `.internal`, `.local`, or private IPv4/IPv6 ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`).
+- **Host Allowlist**: Supports `A2A_EXPORT_ALLOWLIST` (e.g. `wiki.david888.com,api.github.com`).
+
+### Supported External Integrations
+1. **Webhook**: Posts JSON payload signed with HMAC-SHA256 in the `X-Hub-Signature-256` header.
+2. **Wiki**: Publishes Markdown minutes to remote knowledge bases.
+3. **GitHub**: Publishes Markdown minutes as GitHub Issues or Discussions.
+
+---
+
+## 8. Implementation Paths & Component Matrix
+
+| Component | File Path | Scope & Responsibility |
+| :--- | :--- | :--- |
+| **Hub Domain Core** | `internal/hub/group.go` | Data structs: `Group`, `GroupMember`, `Charter`, `SecretaryLease`, `MeetingSession` |
+| **Hub Group Service** | `internal/service/groups.go` | Member rosters, broadcasting, charter CAS, secretary appointment, session control |
+| **Hub HTTP Router** | `internal/service/http.go` | `/hub/v1/groups/...` RESTful API routing and auth validation |
+| **Hub SQLite WAL Store** | `internal/store/sqlite/sqlite.go` | SQLite migrations v1–v9 with charter history, secretary leases, and session tables |
+| **Hub Group Repository** | `internal/store/sqlite/group_repository.go` | SQL transactions, atomic CAS updates, cutoff isolation, and audit logging |
+| **Client Bridge (Dual Sync)** | `examples/worker/a2a_bridge.py` <br/> `internal/service/a2a_bridge.py` | Secretary daemon, `work.db` governance, draft state machine, Markdown exporter, outbox |
+| **Client Integration Tests** | `examples/worker/test_a2a_bridge.py` | Full test suite: caching, LLM synthesis, approval flow, redaction, SSRF, and outbox retries |
+

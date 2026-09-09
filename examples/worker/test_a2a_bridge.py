@@ -1296,6 +1296,145 @@ class DurableBridgeTests(unittest.TestCase):
                 self.assertEqual(row["status"], "APPLIED")
                 self.assertEqual(row["applied_version"], 2)
 
+    def test_redact_secrets(self):
+        text = (
+            "Here is the token: Bearer my-secret-jwt-token-1234567890\n"
+            "GitHub token: ghp_123456789012345678901234567890\n"
+            "OpenAI key: sk-abcdefghijklmnopqrstuvwxyz12345\n"
+            "api_key: 'abcdefgh12345678'\n"
+            "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEAz9v0\n-----END RSA PRIVATE KEY-----\n"
+            "Normal text preserved."
+        )
+        redacted = bridge.redact_secrets(text)
+        self.assertNotIn("my-secret-jwt-token-1234567890", redacted)
+        self.assertIn("Bearer [REDACTED_TOKEN]", redacted)
+        self.assertNotIn("ghp_123456789012345678901234567890", redacted)
+        self.assertIn("[REDACTED_GITHUB_TOKEN]", redacted)
+        self.assertNotIn("sk-abcdefghijklmnopqrstuvwxyz12345", redacted)
+        self.assertIn("[REDACTED_API_KEY]", redacted)
+        self.assertNotIn("MIIEowIBAAKCAQEAz9v0", redacted)
+        self.assertIn("[REDACTED_PRIVATE_KEY]", redacted)
+        self.assertIn("api_key: [REDACTED]", redacted)
+        self.assertIn("Normal text preserved.", redacted)
+
+    def test_validate_outbound_url_ssrf_and_allowlist(self):
+        # 1. Non-HTTPS blocked
+        with self.assertRaises(ValueError) as ctx:
+            bridge.validate_outbound_url("http://webhook.example.com/api")
+        self.assertIn("only HTTPS is allowed", str(ctx.exception))
+
+        # 2. Localhost and Loopback blocked
+        with self.assertRaises(ValueError) as ctx:
+            bridge.validate_outbound_url("https://localhost/api")
+        self.assertIn("SSRF protection", str(ctx.exception))
+
+        with self.assertRaises(ValueError) as ctx:
+            bridge.validate_outbound_url("https://127.0.0.1/api")
+        self.assertIn("SSRF protection", str(ctx.exception))
+
+        # 3. Private IP blocked
+        with self.assertRaises(ValueError) as ctx:
+            bridge.validate_outbound_url("https://10.0.0.5/api")
+        self.assertIn("SSRF protection", str(ctx.exception))
+
+        with self.assertRaises(ValueError) as ctx:
+            bridge.validate_outbound_url("https://192.168.1.1/api")
+        self.assertIn("SSRF protection", str(ctx.exception))
+
+        # 4. Host allowlist enforcement
+        with self.assertRaises(ValueError) as ctx:
+            bridge.validate_outbound_url("https://malicious.example.com/api", host_allowlist=["wiki.david888.com"])
+        self.assertIn("not permitted by export allowlist", str(ctx.exception))
+
+        self.assertTrue(bridge.validate_outbound_url("https://wiki.david888.com/api", host_allowlist=["wiki.david888.com"]))
+
+    def test_export_minutes_markdown_atomic_and_permissions(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            raw_content = "# Meeting Minutes\nBearer secret-token-1234567890\nDecision reached."
+            target_path = bridge.export_minutes_markdown("hub-1", "circle-1", "group-1", "sess-1", raw_content, base_dir=tmpdir)
+            self.assertTrue(os.path.exists(target_path))
+            self.assertTrue(target_path.endswith(os.path.join("hub-1", "circle-1", "group-1", "sess-1.md")))
+
+            mode = stat.S_IMODE(os.stat(target_path).st_mode)
+            self.assertEqual(mode, 0o600)
+
+            with open(target_path, "r", encoding="utf-8") as f:
+                saved = f.read()
+            self.assertIn("Decision reached.", saved)
+            self.assertNotIn("secret-token-1234567890", saved)
+            self.assertIn("[REDACTED_TOKEN]", saved)
+
+    def test_export_outbox_lifecycle_and_retry_dead_letter(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = bridge.SecretaryWorkStore(os.path.join(tmpdir, "work.db"))
+
+            # 1. Enqueue job
+            job = store.enqueue_export("hub-1", "pub", "grp-1", "sess-1", "MARKDOWN", "# Content", max_attempts=2)
+            self.assertEqual(job["state"], "PENDING")
+            self.assertEqual(job["attempts"], 0)
+
+            # 2. Idempotent re-enqueue returns existing row
+            job_dup = store.enqueue_export("hub-1", "pub", "grp-1", "sess-1", "MARKDOWN", "# Content", max_attempts=2)
+            self.assertEqual(job["job_id"], job_dup["job_id"])
+
+            # 3. Failing export handler causes retry and increment
+            def fail_handler(item):
+                raise RuntimeError("Connection timed out")
+
+            results = store.process_export_outbox(export_handler=fail_handler)
+            self.assertEqual(len(results), 1)
+            self.assertEqual(results[0]["status"], "PENDING")
+
+            # Update next_retry_at to past so it can be retried immediately
+            with store._get_conn() as conn:
+                conn.execute("UPDATE export_outbox SET next_retry_at = '2000-01-01T00:00:00Z'")
+
+            # 4. Second failure reaches max_attempts (2) -> transitions to DEAD_LETTER
+            results = store.process_export_outbox(export_handler=fail_handler)
+            self.assertEqual(len(results), 1)
+            self.assertEqual(results[0]["status"], "DEAD_LETTER")
+
+            with store._get_conn() as conn:
+                row = conn.execute("SELECT * FROM export_outbox WHERE job_id = ?", (job["job_id"],)).fetchone()
+                self.assertEqual(row["state"], "DEAD_LETTER")
+                self.assertEqual(row["attempts"], 2)
+
+            # 5. Success job transitions to COMPLETED
+            job2 = store.enqueue_export("hub-1", "pub", "grp-1", "sess-1", "CUSTOM", "Payload 2", idempotency_key="job-custom-1")
+            def success_handler(item):
+                return {"remote_id": "remote-abc-123"}
+
+            results2 = store.process_export_outbox(export_handler=success_handler)
+            self.assertEqual(len(results2), 1)
+            self.assertEqual(results2[0]["status"], "COMPLETED")
+            self.assertEqual(results2[0]["remote_id"], "remote-abc-123")
+
+    def test_export_to_webhook_hmac_signature(self):
+        import hashlib, hmac
+        url = "https://webhook.example.com/events"
+        payload = {"event": "minutes_concluded", "sessionId": "sess-100"}
+        secret = "super-secret-key"
+
+        with mock.patch("urllib.request.urlopen") as mock_urlopen:
+            mock_resp = mock.MagicMock()
+            mock_resp.status = 200
+            mock_resp.read.return_value = b'{"ok": true}'
+            mock_resp.__enter__.return_value = mock_resp
+            mock_urlopen.return_value = mock_resp
+
+            res = bridge.export_to_webhook(url, payload, secret=secret, allow_insecure=False)
+            self.assertEqual(res["status"], 200)
+
+            # Verify request
+            req = mock_urlopen.call_args[0][0]
+            self.assertEqual(req.full_url, url)
+            self.assertEqual(req.get_method(), "POST")
+
+            sig_header = req.headers.get("X-hub-signature-256") or req.headers.get("X-Hub-Signature-256")
+            self.assertTrue(sig_header.startswith("sha256="))
+            expected_sig = hmac.new(secret.encode("utf-8"), json.dumps(payload, ensure_ascii=False).encode("utf-8"), hashlib.sha256).hexdigest()
+            self.assertEqual(sig_header, f"sha256={expected_sig}")
+
 
 def json_item(row):
     import json

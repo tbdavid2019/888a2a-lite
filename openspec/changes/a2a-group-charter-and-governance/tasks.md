@@ -42,15 +42,15 @@
 
 ## 6. 4C — Export outbox and external integrations
 
-- [ ] 6.1 Implement Markdown export with bounded content, secret redaction, scoped filename, temporary file, atomic rename, and idempotency; verify export failure leaves approved minutes intact.
-- [ ] 6.2 Add `export_outbox` with provider, payload hash, idempotency key, attempts, retry time, state, last error, remote ID, and dead-letter handling; verify restart/timeout retries do not duplicate remote outputs.
-- [ ] 6.3 Implement optional Wiki/GitHub/Webhook adapters behind explicit configuration; verify credentials come only from process secret sources and never enter DB, logs, UI, or exported content.
-- [ ] 6.4 Enforce HTTPS, host allowlist, timeout, response bounds, webhook signing, and SSRF-safe URL validation; verify disallowed hosts and malformed responses are rejected.
-- [ ] 6.5 Add approval-controlled Action Item dispatch through standard Hub task routing; verify dispatch requires APPROVED state, idempotency, authorized assignee, and does not execute code through the Hub.
+- [x] 6.1 Implement Markdown export with bounded content, secret redaction, scoped filename, temporary file, atomic rename, and idempotency; verify export failure leaves approved minutes intact.
+- [x] 6.2 Add `export_outbox` with provider, payload hash, idempotency key, attempts, retry time, state, last error, remote ID, and dead-letter handling; verify restart/timeout retries do not duplicate remote outputs.
+- [x] 6.3 Implement optional Wiki/GitHub/Webhook adapters behind explicit configuration; verify credentials come only from process secret sources and never enter DB, logs, UI, or exported content.
+- [x] 6.4 Enforce HTTPS, host allowlist, timeout, response bounds, webhook signing, and SSRF-safe URL validation; verify disallowed hosts and malformed responses are rejected.
+- [x] 6.5 Add approval-controlled Action Item dispatch through standard Hub task routing; verify dispatch requires APPROVED state, idempotency, authorized assignee, and does not execute code through the Hub.
 
 ## 7. Documentation and rollout verification
 
-- [ ] 7.1 Document actual implementation paths (`internal/hub/group.go`, `internal/service/groups.go`, `internal/service/http.go`, `internal/store/sqlite/sqlite.go`, `internal/store/sqlite/group_repository.go`, and both Bridge assets); verify tasks no longer reference nonexistent `internal/hub/storage.go` or `groups` table.
-- [ ] 7.2 Document Charter precedence, no-charter compatibility, cache scope, secretary appointment, session commands, draft/approval lifecycle, export opt-in, retention, and failure recovery in Chinese and English docs.
-- [ ] 7.3 Add tests for prompt injection, XSS-safe Markdown rendering, credential redaction, command authorization, source provenance, stale cache, epoch split-brain, CAS conflict, outbox retry, and cross-circle isolation; verify CI coverage is behavior-based.
+- [x] 7.1 Document actual implementation paths (`internal/hub/group.go`, `internal/service/groups.go`, `internal/service/http.go`, `internal/store/sqlite/sqlite.go`, `internal/store/sqlite/group_repository.go`, and both Bridge assets); verify tasks no longer reference nonexistent `internal/hub/storage.go` or `groups` table.
+- [x] 7.2 Document Charter precedence, no-charter compatibility, cache scope, secretary appointment, session commands, draft/approval lifecycle, export opt-in, retention, and failure recovery in Chinese and English docs.
+- [x] 7.3 Add tests for prompt injection, XSS-safe Markdown rendering, credential redaction, command authorization, source provenance, stale cache, epoch split-brain, CAS conflict, outbox retry, and cross-circle isolation; verify CI coverage is behavior-based.
 - [ ] 7.4 Run GitHub Actions Go/Python/browser tests and the required remote smoke test on `david@10.9.0.11`; enable 4A, 4B, and 4C independently only after each gate passes.

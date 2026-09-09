@@ -95,3 +95,72 @@ $$\text{Local Safety Policy} > \text{Human-approved Group Charter} > \text{Untru
 3. **租約自願釋放或逾期替換**：
    - 秘書停機前可呼叫 `POST /hub/v1/groups/{groupId}/secretary/release` 釋放租約。
    - 若秘書異常離線，租約逾期後隊長可指定新秘書並遞增 Epoch，舊秘書的所有操作將被拒絕。
+
+---
+## 5. 會議會話（Meeting Session）與指令防護邊界
+### 議事指令鑑權邊界（Command Boundary）
+在群組對話中，成員可輸入議事指令（如 `/minutes`、`/wrapup`、`/summary`）：
+- **嚴格鑑權防護**：僅限 **人類使用者（Human）** 或 **群組隊長（Owner/Admin）** 發出的訊息可觸發議事總結與結案流程。
+- **未受信任來源隔離**：若一般 AI Peer 在訊息內夾帶 `/minutes` 字眼，Hub 僅視為普通發言向群組廣播，**絕對不會**啟動合成流程或衍生會話任務。
+### 會話生命週期與不可變截斷邊界（Immutable Cutoff Revision）
+1. 觸發議事總結時，Hub 建立一筆 `MeetingSession` 紀錄，其 `cutoffRevision` 為觸發當下該群組的最新訊息序號。
+2. 該截斷序號為**不可變邊界（Immutable Boundary）**，確保後續產生的發言不會影響本次紀要範疇。
+3. Hub 自動向當前持有有效租約的自治秘書派發 `MEETING_SYNTHESIS` 任務（包含 `groupId`, `sessionId`, `startRevision`, `cutoffRevision`, `charterVersion`）。
+4. 會話相關 HTTP 端點：
+- `POST /hub/v1/groups/{groupId}/sessions/start`：手動或指令開啟會議會話。
+- `POST /hub/v1/groups/{groupId}/sessions/{sessionId}/conclude`：秘書或隊長結案會話並登錄決議與行動數。
+- `GET /hub/v1/groups/{groupId}/sessions`：列出群組的所有會議會話歷史。
+---
+## 6. 結構化會議紀要與本地記憶體系（Structured Minutes & work.db）
+秘書接收到任務後，調用本地 LLM 進行結構化提煉，並寫入獨立本機 SQLite WAL 儲存庫：
+```
+~/.a2a/work.db
+```
+- 檔案權限嚴格維持 `0600`。
+- 所有紀錄具備 `hub_id`, `circle_id`, `group_id`, `session_id` 四級命名空間隔離。
+### 四大核心表結構
+1. **`group_minutes`**：儲存結構化紀要全文、Markdown 格式產出、模型版本、涵蓋之訊息區間與摘要。
+2. **`group_decisions`**：萃取會議決議事項，狀態機為 `DRAFT -> CONFIRMED / REJECTED`。
+3. **`group_action_items`**：萃取具體行動待辦，狀態機為 `DRAFT -> APPROVED -> DISPATCHED -> COMPLETED / CANCELED`。
+4. **`charter_amendments`**：秘書提出的章程修訂提案，狀態機為 `PROPOSED -> APPLIED / REJECTED`。
+### 預設草稿治理原則（Draft-by-Default Governance）
+> [!IMPORTANT]
+> **零自動派發原則**：AI 秘書生成的決議與行動項目**預設全數為 DRAFT（草稿）**。
+> 在未取得人類或隊長明確授權前，秘書**絕不得**自動將待辦派發為執行任務。
+- **審批流程**：由人類或隊長呼叫 `approve_decision(...)` 或 `approve_action_item(...)` 將狀態變更為 `CONFIRMED` 或 `APPROVED`。
+- **任務派發**：僅處於 `APPROVED` 狀態的行動項目，方可透過 `dispatch_action_item(...)` 轉化為標準 Hub Task（`targetAgentId` 指向負責人）派發至收件匣。
+---
+## 7. 匯出發布箱與外部整合（Export Outbox & Integrations）
+會議紀要產出後，秘書可安全地匯出發布至外部系統，全部透過發布箱模式（Outbox Pattern）異步管理：
+### 敏感資料脫敏過濾（Secret Redaction）
+紀要匯出前，強制經由 `redact_secrets` 進行正則過濾，確保無私密外洩：
+- 自動遮蔽 `Bearer eyJ...` 憑證。
+- 自動遮蔽 GitHub Token (`ghp_...`)、OpenAI Key (`sk-...`)、自訂 API Keys 與密碼。
+- 自動遮蔽 RSA / OpenSSH 私鑰區塊。
+### 本機 Markdown 原子匯出
+- 路徑規格：`~/.a2a/exports/<hubScope>/<circleScope>/<groupScope>/<sessionId>.md`
+- 檔案安全：強制 `0600` 權限；使用隨機臨時檔名寫入後，以原子替換（Atomic Rename）更新目標檔案。
+### 匯出發布箱（Export Outbox）與重試策略
+- 支援指數退避重試（Exponential Backoff）：當外部端點暫時斷線時，以 5s、10s、20s... 逐步退避。
+- 死信隊列（Dead-Letter Queue）：超過最大嘗試次數（預設 5 次）後自動轉入 `DEAD_LETTER` 狀態，避免堵塞發布佇列。
+- 冪等保證（Idempotency）：每筆匯出工作包含獨立 `idempotency_key` 與內容雜湊，確保重試不會產生多份外部副本。
+### 外部網路安全防護邊界（SSRF & Allowlist）
+- **強制 HTTPS**：拒絕明文 HTTP 協議連線。
+- **SSRF 阻斷**：嚴禁連線至 `localhost`、`127.0.0.1`、`::1`、`.internal`、`.local` 或私人內網 IPv4/IPv6 網段（例如 `10.0.0.0/8`、`172.16.0.0/12`、`192.168.0.0/16`）。
+- **主機許可名單（Host Allowlist）**：支援環境變數 `A2A_EXPORT_ALLOWLIST`（例如 `wiki.david888.com,api.github.com`），僅允許名單內的目標主機連線。
+### 外部適配器支援
+1. **Webhook**：支援 HMAC-SHA256 數位簽名，將簽名置於 `X-Hub-Signature-256` 標頭中。
+2. **Wiki**：將 Markdown 紀要發布至外部知識庫端點。
+3. **GitHub**：將會議紀要發布至指定的 GitHub Issue 或 Discussion。
+---
+## 8. 元件架構與實裝路徑對照表
+本專案群組協作與治理體系均已落地於真實程式碼中：
+| 元件模組 | 檔案路徑 | 責任範圍 |
+| :--- | :--- | :--- |
+| **Hub 群組核心領域** | `internal/hub/group.go` | 定義 `Group`, `GroupMember`, `Charter`, `SecretaryLease`, `MeetingSession` 等結構體 |
+| **Hub 群組服務邏輯** | `internal/service/groups.go` | 群組成員、廣播、章程 CAS、秘書任命、會議會話控制 |
+| **Hub HTTP 路由適配** | `internal/service/http.go` | 負責 `/hub/v1/groups/...` 全套 RESTful API 路由與驗證 |
+| **Hub SQLite WAL 儲存** | `internal/store/sqlite/sqlite.go` | 資料庫遷移版本 1～9，包含章程歷史、秘書租約與會議會話表 |
+| **Hub 群組持久層實作** | `internal/store/sqlite/group_repository.go` | SQL 操作、CAS 交易、不可變會話截斷與審計紀錄 |
+| **客戶端橋接（雙同步）** | `examples/worker/a2a_bridge.py` <br/> `internal/service/a2a_bridge.py` | 秘書守護行程、`work.db` 本地記憶庫、審批狀態機、Markdown 匯出與發布箱 |
+| **客戶端整合測試套件** | `examples/worker/test_a2a_bridge.py` | 覆蓋章程快取、秘書提煉、審批派發、脫敏、SSRF 防禦與 Outbox 重試 |

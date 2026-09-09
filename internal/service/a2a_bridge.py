@@ -27,11 +27,12 @@ Usage:
 
 import argparse
 import contextlib
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import fcntl
 import hashlib
 import hmac
 import http.server
+import ipaddress
 import json
 import math
 import os
@@ -664,6 +665,30 @@ class SecretaryWorkStore:
                     created_at TEXT NOT NULL,
                     PRIMARY KEY (hub_id, circle_id, group_id, amendment_id)
                 );
+
+                CREATE TABLE IF NOT EXISTS export_outbox (
+                    hub_id TEXT NOT NULL,
+                    circle_id TEXT NOT NULL,
+                    group_id TEXT NOT NULL,
+                    session_id TEXT NOT NULL,
+                    job_id TEXT NOT NULL,
+                    provider TEXT NOT NULL CHECK (provider IN ('MARKDOWN', 'WIKI', 'GITHUB', 'WEBHOOK')),
+                    payload TEXT NOT NULL,
+                    payload_hash TEXT NOT NULL,
+                    idempotency_key TEXT NOT NULL,
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    max_attempts INTEGER NOT NULL DEFAULT 5,
+                    next_retry_at TEXT NOT NULL,
+                    state TEXT NOT NULL CHECK (state IN ('PENDING', 'IN_PROGRESS', 'COMPLETED', 'DEAD_LETTER')),
+                    last_error TEXT,
+                    remote_id TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (hub_id, circle_id, group_id, session_id, job_id)
+                );
+
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_export_outbox_idem ON export_outbox (hub_id, circle_id, group_id, idempotency_key) WHERE idempotency_key <> '';
+                CREATE INDEX IF NOT EXISTS idx_export_outbox_state ON export_outbox (state, next_retry_at);
             """)
 
     def save_minutes(self, hub_id, circle_id, group_id, session_id, charter_version, start_rev, cutoff_rev, summary, rendered_md, model_version, decisions, action_items):
@@ -784,6 +809,271 @@ class SecretaryWorkStore:
                 WHERE hub_id = ? AND circle_id = ? AND group_id = ? AND amendment_id = ?
             """, (applied_ver, actor_agent_id, now, hub_id, circle_id, group_id, amendment_id))
             return res
+
+    def enqueue_export(self, hub_id, circle_id, group_id, session_id, provider, payload, idempotency_key=None, max_attempts=5):
+        payload_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+        job_id = f"job-{provider.lower()}-{uuid.uuid4().hex[:8]}"
+        now = datetime.now(timezone.utc).isoformat()
+        idem_key = idempotency_key or f"export-{group_id}-{session_id}-{provider.lower()}"
+
+        with self._get_conn() as conn:
+            existing = conn.execute("""
+                SELECT * FROM export_outbox
+                WHERE hub_id = ? AND circle_id = ? AND group_id = ? AND idempotency_key = ?
+            """, (hub_id, circle_id, group_id, idem_key)).fetchone()
+            if existing:
+                return dict(existing)
+
+            conn.execute("""
+                INSERT INTO export_outbox
+                (hub_id, circle_id, group_id, session_id, job_id, provider, payload, payload_hash, idempotency_key, attempts, max_attempts, next_retry_at, state, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'PENDING', ?, ?)
+            """, (hub_id, circle_id, group_id, session_id, job_id, provider.upper(), payload, payload_hash, idem_key, max_attempts, now, now, now))
+            row = conn.execute("""
+                SELECT * FROM export_outbox
+                WHERE hub_id = ? AND circle_id = ? AND group_id = ? AND session_id = ? AND job_id = ?
+            """, (hub_id, circle_id, group_id, session_id, job_id)).fetchone()
+            return dict(row)
+
+    def process_export_outbox(self, export_handler=None, max_jobs=10):
+        now_dt = datetime.now(timezone.utc)
+        now = now_dt.isoformat()
+        processed = []
+        with self._get_conn() as conn:
+            rows = conn.execute("""
+                SELECT * FROM export_outbox
+                WHERE state = 'PENDING' AND next_retry_at <= ?
+                ORDER BY created_at ASC LIMIT ?
+            """, (now, max_jobs)).fetchall()
+
+            for row in rows:
+                job_id = row["job_id"]
+                hub_id = row["hub_id"]
+                circle_id = row["circle_id"]
+                group_id = row["group_id"]
+                session_id = row["session_id"]
+                provider = row["provider"]
+                payload = row["payload"]
+                attempts = row["attempts"]
+                max_attempts = row["max_attempts"]
+
+                conn.execute("""
+                    UPDATE export_outbox SET state = 'IN_PROGRESS', updated_at = ?
+                    WHERE hub_id = ? AND circle_id = ? AND group_id = ? AND session_id = ? AND job_id = ?
+                """, (now, hub_id, circle_id, group_id, session_id, job_id))
+
+                success = False
+                remote_id = None
+                last_err = ""
+                try:
+                    if export_handler:
+                        res = export_handler(dict(row))
+                        remote_id = str(res.get("remote_id") or res.get("status") or "")
+                        success = True
+                    elif provider == "MARKDOWN":
+                        path = export_minutes_markdown(hub_id, circle_id, group_id, session_id, payload)
+                        remote_id = path
+                        success = True
+                    elif provider == "WEBHOOK":
+                        webhook_url = os.getenv("A2A_EXPORT_WEBHOOK_URL", "").strip()
+                        webhook_secret = os.getenv("A2A_EXPORT_WEBHOOK_SECRET", "").strip() or None
+                        if not webhook_url:
+                            try:
+                                data = json.loads(payload)
+                                webhook_url = data.get("url") or data.get("destination")
+                            except Exception:
+                                pass
+                        if not webhook_url:
+                            raise ValueError("No destination webhook URL configured")
+                        payload_data = json.loads(payload) if (payload.strip().startswith("{") and payload.strip().endswith("}")) else {"content": payload}
+                        res = export_to_webhook(webhook_url, payload_data, secret=webhook_secret)
+                        remote_id = str(res.get("status", 200))
+                        success = True
+                    elif provider == "WIKI":
+                        wiki_url = os.getenv("A2A_EXPORT_WIKI_URL", "").strip()
+                        wiki_token = os.getenv("A2A_EXPORT_WIKI_TOKEN", "").strip() or None
+                        if not wiki_url:
+                            raise ValueError("No wiki API URL configured")
+                        title = f"Meeting Minutes - {group_id} - {session_id}"
+                        res = export_to_wiki(wiki_url, title, payload, token=wiki_token)
+                        remote_id = str(res.get("status", 200))
+                        success = True
+                    elif provider == "GITHUB":
+                        github_url = os.getenv("A2A_EXPORT_GITHUB_URL", "").strip()
+                        github_token = os.getenv("A2A_EXPORT_GITHUB_TOKEN", "").strip() or None
+                        if not github_url:
+                            raise ValueError("No GitHub API URL configured")
+                        title = f"[Minutes] {group_id} - {session_id}"
+                        res = export_to_github(github_url, title, payload, token=github_token)
+                        remote_id = str(res.get("status", 200))
+                        success = True
+                    else:
+                        raise ValueError(f"No default handler for provider {provider}")
+                except Exception as e:
+                    last_err = str(e)
+                    success = False
+
+                if success:
+                    conn.execute("""
+                        UPDATE export_outbox
+                        SET state = 'COMPLETED', remote_id = ?, updated_at = ?, last_error = NULL
+                        WHERE hub_id = ? AND circle_id = ? AND group_id = ? AND session_id = ? AND job_id = ?
+                    """, (remote_id, datetime.now(timezone.utc).isoformat(), hub_id, circle_id, group_id, session_id, job_id))
+                    processed.append({"job_id": job_id, "status": "COMPLETED", "remote_id": remote_id})
+                else:
+                    new_attempts = attempts + 1
+                    if new_attempts >= max_attempts:
+                        new_state = "DEAD_LETTER"
+                        next_retry = now
+                    else:
+                        new_state = "PENDING"
+                        backoff_secs = min(3600, 5 * (2 ** new_attempts))
+                        next_retry = (datetime.now(timezone.utc) + timedelta(seconds=backoff_secs)).isoformat()
+
+                    conn.execute("""
+                        UPDATE export_outbox
+                        SET state = ?, attempts = ?, next_retry_at = ?, last_error = ?, updated_at = ?
+                        WHERE hub_id = ? AND circle_id = ? AND group_id = ? AND session_id = ? AND job_id = ?
+                    """, (new_state, new_attempts, next_retry, last_err, datetime.now(timezone.utc).isoformat(), hub_id, circle_id, group_id, session_id, job_id))
+                    processed.append({"job_id": job_id, "status": new_state, "error": last_err})
+
+        return processed
+
+
+def redact_secrets(text):
+    """Redact tokens, API keys, private keys, and passwords before export."""
+    if not isinstance(text, str):
+        return ""
+    redacted = text
+    redacted = re.sub(r"(Bearer\s+)[A-Za-z0-9_\-\.]{12,}", r"\1[REDACTED_TOKEN]", redacted, flags=re.IGNORECASE)
+    redacted = re.sub(r"(?i)\b(api[_-]?key|access[_-]?token|auth[_-]?token|secret|password|private[_-]?key)\b\s*[:=]\s*['\"]?[A-Za-z0-9_\-\.]{8,}['\"]?", r"\1: [REDACTED]", redacted)
+    redacted = re.sub(r"\b(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}\b", r"[REDACTED_GITHUB_TOKEN]", redacted)
+    redacted = re.sub(r"\b(sk-[A-Za-z0-9]{20,})\b", r"[REDACTED_API_KEY]", redacted)
+    redacted = re.sub(r"-----BEGIN [A-Z ]+PRIVATE KEY-----[\s\S]*?-----END [A-Z ]+PRIVATE KEY-----", r"[REDACTED_PRIVATE_KEY]", redacted)
+    return redacted
+
+
+def validate_outbound_url(url, host_allowlist=None, allow_insecure_for_test=False):
+    """Enforce HTTPS, block private IP/SSRF, and verify against host allowlist."""
+    if not isinstance(url, str) or not url.strip():
+        raise ValueError("URL cannot be empty")
+    parsed = urllib.parse.urlparse(url.strip())
+    if not allow_insecure_for_test and parsed.scheme != "https":
+        raise ValueError(f"Insecure scheme '{parsed.scheme}'; only HTTPS is allowed")
+
+    hostname = (parsed.hostname or "").lower()
+    if not hostname:
+        raise ValueError("Invalid URL: missing hostname")
+
+    if not allow_insecure_for_test:
+        if hostname in ("localhost", "127.0.0.1", "::1") or hostname.endswith(".internal") or hostname.endswith(".local"):
+            raise ValueError(f"SSRF protection: destination '{hostname}' is forbidden")
+        try:
+            ip = ipaddress.ip_address(hostname)
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                raise ValueError(f"SSRF protection: IP destination '{hostname}' is private/forbidden")
+        except ValueError:
+            pass
+
+    allowlist_env = os.getenv("A2A_EXPORT_ALLOWLIST", "").strip()
+    effective_allowlist = set()
+    if host_allowlist:
+        effective_allowlist.update(h.lower() for h in host_allowlist)
+    if allowlist_env:
+        effective_allowlist.update(h.strip().lower() for h in allowlist_env.split(",") if h.strip())
+
+    if effective_allowlist and hostname not in effective_allowlist:
+        raise ValueError(f"Host '{hostname}' is not permitted by export allowlist")
+
+    return True
+
+
+def export_minutes_markdown(hub_id, circle_id, group_id, session_id, rendered_markdown, base_dir=None):
+    """Write redacted markdown minutes to scoped filesystem path with atomic replacement and 0600."""
+    if base_dir is None:
+        base_dir = os.path.expanduser("~/.a2a/exports")
+    safe_hub = re.sub(r"[^A-Za-z0-9_\-\.]", "_", hub_id or "default")
+    safe_circle = re.sub(r"[^A-Za-z0-9_\-\.]", "_", circle_id or "public")
+    safe_group = re.sub(r"[^A-Za-z0-9_\-\.]", "_", group_id or "group")
+    safe_session = re.sub(r"[^A-Za-z0-9_\-\.]", "_", session_id or "session")
+
+    target_dir = os.path.join(base_dir, safe_hub, safe_circle, safe_group)
+    os.makedirs(target_dir, mode=0o700, exist_ok=True)
+
+    target_file = os.path.join(target_dir, f"{safe_session}.md")
+    tmp_file = os.path.join(target_dir, f".{safe_session}.tmp.{os.getpid()}.{secrets.token_hex(4)}")
+
+    redacted_content = redact_secrets(rendered_markdown)
+    with open(tmp_file, "w", encoding="utf-8") as f:
+        f.write(redacted_content)
+    try:
+        os.chmod(tmp_file, 0o600)
+    except OSError:
+        pass
+
+    os.replace(tmp_file, target_file)
+    return target_file
+
+
+def export_to_webhook(url, payload_dict, secret=None, host_allowlist=None, allow_insecure=False):
+    """Post JSON payload to webhook with HTTPS, timeout, size bounds, and HMAC-SHA256 signature."""
+    validate_outbound_url(url, host_allowlist=host_allowlist, allow_insecure_for_test=allow_insecure)
+    body_bytes = json.dumps(payload_dict, ensure_ascii=False).encode("utf-8")
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "888a2a-lite-secretary/1.0",
+    }
+    if secret:
+        sig = hmac.new(secret.encode("utf-8"), body_bytes, hashlib.sha256).hexdigest()
+        headers["X-Hub-Signature-256"] = f"sha256={sig}"
+
+    req = urllib.request.Request(url, data=body_bytes, headers=headers, method="POST")
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        resp_data = resp.read(65536)
+        return {"status": resp.status, "response": resp_data.decode("utf-8", errors="replace")}
+
+
+def export_to_wiki(api_url, title, content_md, token=None, host_allowlist=None, allow_insecure=False):
+    """Post markdown page to external Wiki endpoint."""
+    validate_outbound_url(api_url, host_allowlist=host_allowlist, allow_insecure_for_test=allow_insecure)
+    payload = {
+        "title": title,
+        "content": redact_secrets(content_md),
+    }
+    body_bytes = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "888a2a-lite-secretary/1.0",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    req = urllib.request.Request(api_url, data=body_bytes, headers=headers, method="POST")
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        resp_data = resp.read(65536)
+        return {"status": resp.status, "response": resp_data.decode("utf-8", errors="replace")}
+
+
+def export_to_github(api_url, title, body_md, token=None, host_allowlist=None, allow_insecure=False):
+    """Create GitHub Issue or Discussion with markdown minutes."""
+    validate_outbound_url(api_url, host_allowlist=host_allowlist, allow_insecure_for_test=allow_insecure)
+    payload = {
+        "title": title,
+        "body": redact_secrets(body_md),
+    }
+    body_bytes = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/vnd.github.v3+json",
+        "User-Agent": "888a2a-lite-secretary/1.0",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    req = urllib.request.Request(api_url, data=body_bytes, headers=headers, method="POST")
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        resp_data = resp.read(65536)
+        return {"status": resp.status, "response": resp_data.decode("utf-8", errors="replace")}
 
 
 def parse_synthesis_result(raw_text):
@@ -974,6 +1264,24 @@ def process_secretary_synthesis_task(hub_client, backend, queue, seq, synth_req,
     model_version = getattr(backend, "agent_name", backend.__class__.__name__)
     work_store.save_minutes(hub_id, circle_id, group_id, session_id, charter_version, start_rev, cutoff_rev, parsed["summary"], rendered_md, model_version, parsed["decisions"], parsed["actionItems"])
     print(f"[✓] [Secretary] Saved minutes to work.db (Decisions: {len(parsed['decisions'])}, Actions: {len(parsed['actionItems'])}).")
+
+    try:
+        work_store.enqueue_export(hub_id, circle_id, group_id, session_id, "MARKDOWN", rendered_md)
+        webhook_url = os.getenv("A2A_EXPORT_WEBHOOK_URL", "").strip()
+        if webhook_url:
+            work_store.enqueue_export(hub_id, circle_id, group_id, session_id, "WEBHOOK", json.dumps({"sessionId": session_id, "summary": parsed["summary"], "markdown": rendered_md}))
+        wiki_url = os.getenv("A2A_EXPORT_WIKI_URL", "").strip()
+        if wiki_url:
+            work_store.enqueue_export(hub_id, circle_id, group_id, session_id, "WIKI", rendered_md)
+        github_url = os.getenv("A2A_EXPORT_GITHUB_URL", "").strip()
+        if github_url:
+            work_store.enqueue_export(hub_id, circle_id, group_id, session_id, "GITHUB", rendered_md)
+
+        export_results = work_store.process_export_outbox()
+        if export_results:
+            print(f"[✓] [Secretary] Processed {len(export_results)} export outbox jobs: {export_results}")
+    except Exception as e:
+        print(f"[!] Warning: failed to process export outbox: {e}", file=sys.stderr)
 
     try:
         hub_client.conclude_meeting_session(group_id, session_id, summary=parsed["summary"], decisions=len(parsed["decisions"]), actions=len(parsed["actionItems"]))
