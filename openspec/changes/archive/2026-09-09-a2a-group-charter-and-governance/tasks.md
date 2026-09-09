@@ -53,4 +53,4 @@
 - [x] 7.1 Document actual implementation paths (`internal/hub/group.go`, `internal/service/groups.go`, `internal/service/http.go`, `internal/store/sqlite/sqlite.go`, `internal/store/sqlite/group_repository.go`, and both Bridge assets); verify tasks no longer reference nonexistent `internal/hub/storage.go` or `groups` table.
 - [x] 7.2 Document Charter precedence, no-charter compatibility, cache scope, secretary appointment, session commands, draft/approval lifecycle, export opt-in, retention, and failure recovery in Chinese and English docs.
 - [x] 7.3 Add tests for prompt injection, XSS-safe Markdown rendering, credential redaction, command authorization, source provenance, stale cache, epoch split-brain, CAS conflict, outbox retry, and cross-circle isolation; verify CI coverage is behavior-based.
-- [ ] 7.4 Run GitHub Actions Go/Python/browser tests and the required remote smoke test on `david@10.9.0.11`; enable 4A, 4B, and 4C independently only after each gate passes.
+- [x] 7.4 Run GitHub Actions Go/Python/browser tests and the required remote smoke test on `david@10.9.0.11`; enable 4A, 4B, and 4C independently only after each gate passes.

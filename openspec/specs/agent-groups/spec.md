@@ -132,3 +132,68 @@ Human UI 所見的 bot result SHALL 使用第二期 Parent/Member Task correlati
 
 - **WHEN** 多個被 mention bot 同時回報結果
 - **THEN** UI 依 revision/member ordering 顯示所有結果，不覆寫或重複任何成員結果
+
+### Requirement: Existing groups expose a standard virtual tenant without changing legacy behavior
+
+每個 active existing group SHALL 可映射至唯一 `group:<groupId>` virtual A2A tenant，並保留 `/hub/v1/groups` 的 owner/member/invitation/roster/history/message 語義。標準廣播 SHALL 建立 Parent Task、Member Delivery、group ID、circle ID、message ID 與 revision correlation；既有 group message SHALL 不被轉換成標準 Task。
+
+#### Scenario: Legacy group API remains stable
+
+- **WHEN** existing client 使用 `/hub/v1/groups` 發送或讀取 group message
+- **THEN** response、sender exclusion、membership、ACK 與 history 語義維持不變
+
+#### Scenario: Group has stable virtual tenant
+
+- **WHEN** member 取得同一 active group 的 standard routing target
+- **THEN** tenant 固定為 `group:<groupId>`，重啟或重試不改變，且不可與其他 group 混淆
+
+### Requirement: Group delivery uses a membership snapshot and atomic capacity checks
+
+Standard group fan-out SHALL 在同一 transaction 固定 active accepted eligible member snapshot，預先檢查 circle、group size、fan-out、target pending capacity 與 idempotency。任一檢查失敗 SHALL rollback 全部 parent/member/mailbox writes；後續加入者不追溯收到已建立的 broadcast，退出或移除者依 cancellation policy 處理未 ACK delivery。
+
+#### Scenario: Membership changes during broadcast
+
+- **WHEN** member 在 broadcast transaction 前後加入或離開
+- **THEN** 該 broadcast 只使用 transaction snapshot，沒有 partial 或追溯 fan-out
+
+#### Scenario: Fan-out capacity is exceeded
+
+- **WHEN** 任一 eligible recipient 會超過 policy capacity 或 fan-out limit
+- **THEN** Hub 回 bounded error，Parent、Member Delivery、mailbox 與 event 都不留下部分資料
+
+### Requirement: Group results aggregate by member and preserve revisions
+
+每個 Member Delivery SHALL 有自己的 status、turn、update id 與 revision；Parent SHALL 以 deterministic member ordering 聚合結果，保留已完成、失敗、拒絕、逾時與空結果成員摘要。重複 update 同內容冪等，改內容或過期 revision SHALL 被拒絕。
+
+#### Scenario: Concurrent member updates
+
+- **WHEN** 多個成員同時回報同一 Parent Task
+- **THEN** Hub 以 CAS/revision 接受各自合法 update，結果順序可重建且不覆寫其他成員
+
+#### Scenario: Late member update
+
+- **WHEN** canceled 或 terminal Parent 收到遲到 Member update
+- **THEN** Hub 拒絕 update，Parent 與既有結果保持 terminal
+
+### Requirement: Group metadata exposes charter state without content leakage
+
+Active Group Card/metadata SHALL 包含 `hasCharter`、`charterVersion`、`contentHash`（可選）與 `updatedAt`，不包含完整 Charter 或其他 group secret。沒有 Charter 時 SHALL 為 version 0；Group archive/disable 後不可透過一般 member API 取得治理內容。
+
+#### Scenario: Member sees charter metadata
+
+- **WHEN** active member 讀取 Group Card
+- **THEN** response 顯示 Charter 是否存在與目前版本，不洩漏完整內容
+
+### Requirement: Secretary appointment follows group authorization
+
+Group SHALL 保存唯一 active secretary appointment、epoch 與 lease。只有 Owner/Admin 可指定、撤換或停用 secretary；`--role=secretary` 只能在指定 Agent 取得有效 lease 後生效。舊 epoch 的 secretary 不得建立正式 minutes 或修改 Charter。
+
+#### Scenario: Owner appoints secretary
+
+- **WHEN** Owner 指定同圈 active member 為 secretary
+- **THEN** Hub 建立新 epoch appointment，該 Agent 可取得 lease，其餘候選不得同時成為 active secretary
+
+#### Scenario: Old secretary loses authority
+
+- **WHEN** Owner 撤換 secretary 或 lease epoch 更新
+- **THEN** 舊 secretary 的 synthesis/approval request 被拒絕，且新 secretary 可在 lease 期限內接管
