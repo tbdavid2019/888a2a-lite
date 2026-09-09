@@ -104,6 +104,9 @@ func (database *DB) migrate(ctx context.Context) error {
 	if err := migrateAgentRegistrationScope(ctx, database.db); err != nil {
 		return err
 	}
+	if err := migrateStandardA2A(ctx, database.db); err != nil {
+		return err
+	}
 	if _, err := database.db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_inbox_group_message
 ON inbox_item (hub_id, group_id, group_message_id, target_agent_id, state)`); err != nil {
 		return err
@@ -120,6 +123,73 @@ ON inbox_item (hub_id, group_id, group_message_id, target_agent_id, state)`); er
 	}
 	_, err := database.db.ExecContext(ctx, `INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (3, CURRENT_TIMESTAMP)`)
 	return err
+}
+
+func migrateStandardA2A(ctx context.Context, database *sql.DB) error {
+	var applied int
+	if err := database.QueryRowContext(ctx, "SELECT COUNT(*) FROM schema_migrations WHERE version = 5").Scan(&applied); err != nil {
+		return err
+	}
+	if applied > 0 {
+		return nil
+	}
+	statements := []string{
+		`CREATE UNIQUE INDEX idx_agent_token_hash ON agent (hub_id, token_hash)`,
+		`CREATE TABLE a2a_task (
+    hub_id TEXT NOT NULL,
+    task_id TEXT NOT NULL,
+    circle_id TEXT NOT NULL,
+    requester_agent_id TEXT NOT NULL,
+    target_agent_id TEXT NOT NULL,
+    context_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    turn_id TEXT NOT NULL,
+    revision INTEGER NOT NULL,
+    state TEXT NOT NULL,
+    message_json TEXT NOT NULL,
+    history_json TEXT NOT NULL,
+    result_message_json TEXT NOT NULL DEFAULT '',
+    artifacts_json TEXT NOT NULL,
+    mailbox_sequence INTEGER NOT NULL DEFAULT 0,
+    content_digest TEXT NOT NULL,
+    execution_deadline TEXT,
+    retry_budget INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (hub_id, task_id),
+    UNIQUE (hub_id, circle_id, requester_agent_id, target_agent_id, message_id)
+)`,
+		`CREATE INDEX idx_a2a_task_requester ON a2a_task (hub_id, circle_id, requester_agent_id, updated_at, task_id)`,
+		`CREATE INDEX idx_a2a_task_context ON a2a_task (hub_id, circle_id, requester_agent_id, context_id, updated_at)`,
+		`CREATE TABLE a2a_task_event (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    hub_id TEXT NOT NULL,
+    task_id TEXT NOT NULL,
+    circle_id TEXT NOT NULL,
+    revision INTEGER NOT NULL,
+    event_type TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE (hub_id, task_id, revision)
+)`,
+		`CREATE INDEX idx_a2a_task_event_task ON a2a_task_event (hub_id, task_id, revision)`,
+		`CREATE TABLE a2a_task_update (
+    hub_id TEXT NOT NULL,
+    task_id TEXT NOT NULL,
+    update_id TEXT NOT NULL,
+    content_digest TEXT NOT NULL,
+    task_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (hub_id, task_id, update_id)
+)`,
+		`INSERT INTO schema_migrations (version, applied_at) VALUES (5, CURRENT_TIMESTAMP)`,
+	}
+	for _, statement := range statements {
+		if _, err := database.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("migrate standard A2A schema: %w", err)
+		}
+	}
+	return nil
 }
 
 func ensureColumn(ctx context.Context, database *sql.DB, table, column, definition string) error {

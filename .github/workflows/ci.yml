@@ -24,6 +24,23 @@ jobs:
       - name: Run bridge unit tests
         run: python3 -m unittest discover -s examples/worker -p 'test_*.py'
 
+  a2a-compatibility-source:
+    name: A2A source and SDK gate
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4.2.2
+      - name: Verify locked protocol sources
+        run: bash scripts/verify-a2a-source-manifest.sh
+      - name: Set up Python
+        uses: actions/setup-python@v5.6.0
+        with:
+          python-version: '3.12'
+      - name: Install exact official SDK
+        run: python3 -m pip install --disable-pip-version-check 'a2a-sdk==1.1.4'
+      - name: Verify official REST and tenant support
+        run: python3 scripts/verify-a2a-sdk.py
+
   go:
     name: Go checks
     runs-on: ubuntu-24.04

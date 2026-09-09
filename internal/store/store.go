@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/tbdavid2019/888a2a-lite/internal/a2a"
 	"github.com/tbdavid2019/888a2a-lite/internal/hub"
 )
 
@@ -13,6 +14,7 @@ var (
 	ErrCanceled     = errors.New("store inbox item is canceled")
 	ErrInvalidState = errors.New("store record has an invalid state")
 	ErrForbidden    = errors.New("store operation is forbidden")
+	ErrConflict     = errors.New("store operation conflicts with current state")
 )
 
 type AgentStore interface {
@@ -23,6 +25,7 @@ type AgentStore interface {
 	CountAgents(context.Context) (int, error)
 	CountAgentsInCircle(context.Context, string) (int, error)
 	AuthenticateAgent(context.Context, string, string) (hub.RegisteredAgent, error)
+	AuthenticateAgentByToken(context.Context, string) (hub.RegisteredAgent, error)
 	HeartbeatAgent(context.Context, string, time.Time, time.Time) (hub.RegisteredAgent, error)
 	DisconnectAgent(context.Context, string, time.Time) error
 	RevokeAgent(context.Context, string, string, time.Time) error
@@ -48,6 +51,16 @@ type InboxStore interface {
 	PendingCountInCircle(context.Context, string) (int, error)
 	ListDirectMessagesAdmin(context.Context, uint64, int, string) ([]hub.InboxItem, error)
 	ListDirectMessagesAdminInCircle(context.Context, uint64, int, string, string) ([]hub.InboxItem, error)
+}
+
+type StandardTaskStore interface {
+	CreateTaskWithDelivery(context.Context, a2a.TaskRecord, hub.InboxItem) (a2a.TaskRecord, bool, error)
+	ResumeTaskWithDelivery(context.Context, a2a.TaskRecord, int64, hub.InboxItem) (a2a.TaskRecord, bool, error)
+	FindTask(context.Context, string, string, string, string) (a2a.TaskRecord, error)
+	FindTaskByMessage(context.Context, string, string, string, string, string) (a2a.TaskRecord, error)
+	ListTasks(context.Context, a2a.TaskFilter) ([]a2a.TaskRecord, int, error)
+	ApplyUpdate(context.Context, a2a.TaskUpdate) (a2a.TaskRecord, bool, error)
+	CancelStandardTask(context.Context, string, string, string, string, time.Time) (a2a.TaskRecord, error)
 }
 
 type EventStore interface {
@@ -109,6 +122,7 @@ type TxStore interface {
 	Events() EventStore
 	Announcements() AnnouncementStore
 	Groups() GroupStore
+	StandardTasks() StandardTaskStore
 }
 
 type Store interface {

@@ -42,6 +42,8 @@ func (repository *Repository) Announcements() store.AnnouncementStore { return r
 
 func (repository *Repository) Groups() store.GroupStore { return repository }
 
+func (repository *Repository) StandardTasks() store.StandardTaskStore { return repository }
+
 func (repository *Repository) WithTransaction(ctx context.Context, fn func(store.TxStore) error) error {
 	if repository.tx != nil {
 		return fn(repository)
@@ -229,6 +231,18 @@ func (repository *Repository) AuthenticateAgent(ctx context.Context, agentID, to
 		return hub.RegisteredAgent{}, ErrUnauthenticated
 	}
 	return agent, nil
+}
+
+func (repository *Repository) AuthenticateAgentByToken(ctx context.Context, token string) (hub.RegisteredAgent, error) {
+	if strings.TrimSpace(token) == "" {
+		return hub.RegisteredAgent{}, ErrUnauthenticated
+	}
+	return repository.findAgent(ctx, `
+	SELECT hub_id, agent_id, circle_id, registration_key_hash, token_hash, display_name,
+       provider_family, transport_id, capabilities_json, agent_card_json,
+       automatic_execution, state, last_seen_at, expires_at, lease_expires_at,
+       created_at, revoked_at, revoke_reason
+FROM agent WHERE token_hash = ?`, hub.HashToken(token))
 }
 
 func (repository *Repository) HeartbeatAgent(ctx context.Context, agentID string, seenAt, leaseExpiresAt time.Time) (hub.RegisteredAgent, error) {
