@@ -10,6 +10,7 @@ const (
 	MediaType              = "application/a2a+json"
 	JSONMediaType          = "application/json"
 	ExecutionCapability    = "a2a-executor/v1"
+	GroupExtensionURI      = "https://a2a.david888.com/extensions/groups/v1"
 	ReturnImmediatelyField = "returnImmediately"
 )
 
@@ -41,9 +42,17 @@ type AgentProvider struct {
 }
 
 type AgentCapabilities struct {
-	Streaming         bool `json:"streaming,omitempty"`
-	PushNotifications bool `json:"pushNotifications,omitempty"`
-	ExtendedCard      bool `json:"extendedAgentCard,omitempty"`
+	Streaming         bool             `json:"streaming,omitempty"`
+	PushNotifications bool             `json:"pushNotifications,omitempty"`
+	ExtendedCard      bool             `json:"extendedAgentCard,omitempty"`
+	Extensions        []AgentExtension `json:"extensions,omitempty"`
+}
+
+type AgentExtension struct {
+	URI         string         `json:"uri"`
+	Description string         `json:"description"`
+	Required    bool           `json:"required"`
+	Params      map[string]any `json:"params,omitempty"`
 }
 
 type AgentSkill struct {

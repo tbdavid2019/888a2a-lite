@@ -78,6 +78,11 @@ func (server *HTTPServer) Handler() http.Handler {
 	if server.service.config.StandardGatewayEnabled {
 		mux.HandleFunc("GET /.well-known/agent-card.json", server.standardGatewayCard)
 		mux.HandleFunc("GET /a2a/v1/agents/{agentId}/.well-known/agent-card.json", server.standardAgentCard)
+		if server.service.config.GroupExtensionEnabled {
+			mux.HandleFunc("GET /a2a/v1/groups", server.standardListGroups)
+			mux.HandleFunc("GET /a2a/v1/groups/{groupId}/card", server.standardGroupCard)
+			mux.HandleFunc("GET /a2a/v1/groups/{groupId}/.well-known/agent-card.json", server.standardGroupCard)
+		}
 		mux.HandleFunc("POST /a2a/v1/message:send", server.standardSendMessage)
 		mux.HandleFunc("POST /message:send", server.standardSendMessage)
 		mux.HandleFunc("POST /a2a/v1/{tenant}/message:send", server.standardSendMessage)

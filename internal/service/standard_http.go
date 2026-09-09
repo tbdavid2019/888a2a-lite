@@ -86,6 +86,18 @@ func (server *HTTPServer) standardSendMessage(w http.ResponseWriter, r *http.Req
 		}
 		request.Tenant = tenant
 	}
+	if groupID, isGroup := parseGroupTenant(request.Tenant); isGroup {
+		if !server.service.config.GroupExtensionEnabled || !groupExtensionOptedIn(r.Header.Get("A2A-Extensions")) {
+			writeStandardError(w, &StandardError{HTTPStatus: http.StatusBadRequest, Reason: "EXTENSION_SUPPORT_REQUIRED", Message: "Group Extension opt-in is required"})
+			return
+		}
+		server.standardSendGroupMessage(w, r, requester, request, groupID)
+		return
+	}
+	if strings.HasPrefix(strings.TrimSpace(request.Tenant), groupTenantPrefix) {
+		writeStandardError(w, &StandardError{HTTPStatus: http.StatusBadRequest, Reason: "INVALID_ARGUMENT", Message: "group tenant is invalid"})
+		return
+	}
 	task, _, err := server.service.CreateStandardTask(r.Context(), requester, request)
 	if err != nil {
 		writeStandardServiceError(w, err)
@@ -123,6 +135,12 @@ func (server *HTTPServer) standardListTasks(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	tenant := strings.TrimSpace(r.PathValue("tenant"))
+	if groupID, isGroup := parseGroupTenant(tenant); isGroup {
+		if !server.requireGroupExtension(w, r) {
+			return
+		}
+		_ = groupID
+	}
 	offset, err := decodeStandardPageToken(r.URL.Query().Get("pageToken"), requester, tenant, r.URL.Query().Get("contextId"), r.URL.Query().Get("status"))
 	if err != nil {
 		writeStandardServiceError(w, err)
@@ -165,6 +183,9 @@ func (server *HTTPServer) standardGetTask(w http.ResponseWriter, r *http.Request
 	}
 	if tenant := strings.TrimSpace(r.PathValue("tenant")); tenant != "" && tenant != task.TargetAgentID {
 		writeStandardError(w, &StandardError{HTTPStatus: http.StatusNotFound, Reason: "TASK_NOT_FOUND", Message: "task not found"})
+		return
+	}
+	if _, isGroup := parseGroupTenant(task.TargetAgentID); isGroup && !server.requireGroupExtension(w, r) {
 		return
 	}
 	writeJSON(w, http.StatusOK, task.PublicTask(parseHistoryLength(r.URL.Query().Get("historyLength")), r.URL.Query().Get("includeArtifacts") == "true"))
@@ -253,6 +274,11 @@ func (server *HTTPServer) standardCancelTask(w http.ResponseWriter, r *http.Requ
 	if !decodeEmptyOrStandardJSON(w, r, server.maxBodyBytes) {
 		return
 	}
+	if task, err := server.service.GetStandardTask(r.Context(), requester, r.PathValue("id")); err == nil {
+		if _, isGroup := parseGroupTenant(task.TargetAgentID); isGroup && !server.requireGroupExtension(w, r) {
+			return
+		}
+	}
 	task, err := server.service.CancelStandardTask(r.Context(), requester, r.PathValue("id"))
 	if err != nil {
 		writeStandardServiceError(w, err)
@@ -283,6 +309,18 @@ func (server *HTTPServer) standardStreamMessage(w http.ResponseWriter, r *http.R
 			return
 		}
 		request.Tenant = tenant
+	}
+	if groupID, isGroup := parseGroupTenant(request.Tenant); isGroup {
+		if !server.service.config.GroupExtensionEnabled || !groupExtensionOptedIn(r.Header.Get("A2A-Extensions")) {
+			writeStandardError(w, &StandardError{HTTPStatus: http.StatusBadRequest, Reason: "EXTENSION_SUPPORT_REQUIRED", Message: "Group Extension opt-in is required"})
+			return
+		}
+		server.standardStreamGroupMessage(w, r, requester, request, groupID)
+		return
+	}
+	if strings.HasPrefix(strings.TrimSpace(request.Tenant), groupTenantPrefix) {
+		writeStandardError(w, &StandardError{HTTPStatus: http.StatusBadRequest, Reason: "INVALID_ARGUMENT", Message: "group tenant is invalid"})
+		return
 	}
 	request.Configuration = &a2a.SendMessageConfiguration{ReturnImmediately: true}
 	task, _, err := server.service.CreateStandardTask(r.Context(), requester, request)
@@ -315,12 +353,27 @@ func (server *HTTPServer) standardSubscribeTask(w http.ResponseWriter, r *http.R
 		writeStandardError(w, &StandardError{HTTPStatus: http.StatusNotFound, Reason: "TASK_NOT_FOUND", Message: "task not found"})
 		return
 	}
+	if _, isGroup := parseGroupTenant(task.TargetAgentID); isGroup && !server.requireGroupExtension(w, r) {
+		return
+	}
 	if !server.standardStreamSlots.acquire(requester.AgentID) {
 		writeStandardError(w, &StandardError{HTTPStatus: http.StatusTooManyRequests, Reason: "RESOURCE_EXHAUSTED", Message: "too many standard streams for this Agent"})
 		return
 	}
 	defer server.standardStreamSlots.release(requester.AgentID)
 	server.streamStandardTask(w, r, requester, task)
+}
+
+func (server *HTTPServer) requireGroupExtension(w http.ResponseWriter, r *http.Request) bool {
+	if !server.service.config.GroupExtensionEnabled {
+		writeStandardError(w, &StandardError{HTTPStatus: http.StatusBadRequest, Reason: "EXTENSION_SUPPORT_REQUIRED", Message: "Group Extension is disabled"})
+		return false
+	}
+	if !groupExtensionOptedIn(r.Header.Get("A2A-Extensions")) {
+		writeStandardError(w, &StandardError{HTTPStatus: http.StatusBadRequest, Reason: "EXTENSION_SUPPORT_REQUIRED", Message: "Group Extension opt-in is required"})
+		return false
+	}
+	return true
 }
 
 func (server *HTTPServer) streamStandardTask(w http.ResponseWriter, r *http.Request, requester hub.RegisteredAgent, task a2a.TaskRecord) {
@@ -350,7 +403,7 @@ func (server *HTTPServer) streamStandardTask(w http.ResponseWriter, r *http.Requ
 		case <-r.Context().Done():
 			return
 		case <-keepalive.C:
-			if !server.service.standardPrincipalActive(r.Context(), requester) {
+			if !server.service.standardTaskStreamAuthorized(r.Context(), requester, task) {
 				return
 			}
 			if _, err := io.WriteString(w, ": keepalive\n\n"); err != nil {
@@ -358,7 +411,7 @@ func (server *HTTPServer) streamStandardTask(w http.ResponseWriter, r *http.Requ
 			}
 			flusher.Flush()
 		case <-ticker.C:
-			if !server.service.standardPrincipalActive(r.Context(), requester) {
+			if !server.service.standardTaskStreamAuthorized(r.Context(), requester, task) {
 				return
 			}
 			events, err := server.service.store.StandardTasks().ListTaskEvents(r.Context(), requester.HubID, requester.CircleID, requester.AgentID, task.ID, lastRevision)

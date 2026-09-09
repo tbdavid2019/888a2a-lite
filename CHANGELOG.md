@@ -37,6 +37,8 @@
 
 - 補強 `a2a-group-coordination-extension` 規劃：加入第一期完成 gate、Group Extension negotiation、bounded group discovery、Parent/Member Task 聚合、成員快照、fan-out 冪等、取消／ACK 競態、延遲結果保護與 extension-aware 官方 SDK 驗收；同步收斂 Buzz 對標範圍。
 
+- 開始實作 `a2a-group-coordination-extension`：新增固定 Group Extension contract、`A2A-Extensions` opt-in、`group:` tenant、同圈 Group discovery/Card、Parent/Member durable task fan-out、ACK/update 聚合、reply policy 與 Bridge correlation；功能維持 disabled-by-default，既有 `/hub/v1/groups` 不變。
+
 - 補強 A2A OpenSpec 規劃的阻塞逾時、Bearer-only 認證、執行結果回報、多輪、取消／ACK 競態、Card／Task／SSE 授權與官方 SDK 驗收；本項僅更新規劃，尚未實作或完成互通驗證。
 
 - 完善 `a2a-standard-compatibility` OpenSpec 提案與規格，全面對齊 A2A Protocol 1.0.0 官方規範：

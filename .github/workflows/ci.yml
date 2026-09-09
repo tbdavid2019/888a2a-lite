@@ -45,7 +45,7 @@ jobs:
       - name: Verify official REST and tenant support
         run: python3 scripts/verify-a2a-sdk.py
       - name: Compile standard client fixtures
-        run: python3 -m py_compile scripts/a2a-standard-client-fixture.py scripts/a2a-official-sdk-fixture.py
+        run: python3 -m py_compile scripts/a2a-standard-client-fixture.py scripts/a2a-official-sdk-fixture.py scripts/a2a-group-extension-fixture.py
       - name: Run official SDK interoperability fixture when configured
         if: ${{ env.A2A_OFFICIAL_BASE_URL != '' && env.A2A_OFFICIAL_CARD_URL != '' && env.A2A_OFFICIAL_TOKEN != '' }}
         run: python3 scripts/a2a-official-sdk-fixture.py

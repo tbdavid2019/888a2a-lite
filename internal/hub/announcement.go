@@ -78,6 +78,13 @@ type SystemCardExtension struct {
 	Required bool   `json:"required"`
 }
 
+type SystemCardAgentExtension struct {
+	URI         string         `json:"uri"`
+	Description string         `json:"description"`
+	Required    bool           `json:"required"`
+	Params      map[string]any `json:"params,omitempty"`
+}
+
 type StandardA2AStatus struct {
 	Enabled         bool   `json:"enabled"`
 	BaseURL         string `json:"baseUrl"`
@@ -88,23 +95,24 @@ type StandardA2AStatus struct {
 }
 
 type HubSystemCard struct {
-	HubID                string                `json:"hubId"`
-	SelfURL              string                `json:"selfUrl"`
-	Mode                 string                `json:"mode"`
-	Protocol             string                `json:"protocol"`
-	ProtocolVersion      string                `json:"protocolVersion"`
-	DeliverySemantics    string                `json:"deliverySemantics"`
-	CapabilityTrust      string                `json:"capabilityTrust"`
-	IncomingMessageTrust string                `json:"incomingMessageTrust"`
-	SystemMetadataTrust  string                `json:"systemMetadataTrust"`
-	RemoteExecution      bool                  `json:"remoteExecution"`
-	SystemCardURL        string                `json:"systemCardUrl"`
-	AnnouncementFeedURL  string                `json:"announcementFeedUrl"`
-	GroupBaseURL         string                `json:"groupBaseUrl,omitempty"`
-	Limits               map[string]int64      `json:"limits"`
-	Extensions           []SystemCardExtension `json:"extensions"`
-	StandardA2A          StandardA2AStatus     `json:"standardA2a"`
-	UpdatedAt            time.Time             `json:"updatedAt"`
+	HubID                string                     `json:"hubId"`
+	SelfURL              string                     `json:"selfUrl"`
+	Mode                 string                     `json:"mode"`
+	Protocol             string                     `json:"protocol"`
+	ProtocolVersion      string                     `json:"protocolVersion"`
+	DeliverySemantics    string                     `json:"deliverySemantics"`
+	CapabilityTrust      string                     `json:"capabilityTrust"`
+	IncomingMessageTrust string                     `json:"incomingMessageTrust"`
+	SystemMetadataTrust  string                     `json:"systemMetadataTrust"`
+	RemoteExecution      bool                       `json:"remoteExecution"`
+	SystemCardURL        string                     `json:"systemCardUrl"`
+	AnnouncementFeedURL  string                     `json:"announcementFeedUrl"`
+	GroupBaseURL         string                     `json:"groupBaseUrl,omitempty"`
+	Limits               map[string]int64           `json:"limits"`
+	Extensions           []SystemCardExtension      `json:"extensions"`
+	StandardA2A          StandardA2AStatus          `json:"standardA2a"`
+	StandardExtensions   []SystemCardAgentExtension `json:"standardExtensions,omitempty"`
+	UpdatedAt            time.Time                  `json:"updatedAt"`
 }
 
 func (input AnnouncementInput) Validate(now time.Time) error {

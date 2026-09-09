@@ -15,16 +15,20 @@ const (
 )
 
 type TaskDelivery struct {
-	TargetAgentID  string `json:"targetAgentId"`
-	ContextID      string `json:"contextId"`
-	IdempotencyKey string `json:"idempotencyKey"`
-	Message        string `json:"message"`
-	TaskID         string `json:"taskId"`
-	MaxOutputBytes int64  `json:"maxOutputBytes,omitempty"`
-	Protocol       string `json:"protocol,omitempty"`
-	MessageID      string `json:"messageId,omitempty"`
-	TurnID         string `json:"turnId,omitempty"`
-	TaskRevision   int64  `json:"taskRevision,omitempty"`
+	TargetAgentID  string   `json:"targetAgentId"`
+	ContextID      string   `json:"contextId"`
+	IdempotencyKey string   `json:"idempotencyKey"`
+	Message        string   `json:"message"`
+	TaskID         string   `json:"taskId"`
+	MaxOutputBytes int64    `json:"maxOutputBytes,omitempty"`
+	Protocol       string   `json:"protocol,omitempty"`
+	MessageID      string   `json:"messageId,omitempty"`
+	TurnID         string   `json:"turnId,omitempty"`
+	TaskRevision   int64    `json:"taskRevision,omitempty"`
+	ParentTaskID   string   `json:"parentTaskId,omitempty"`
+	MemberTaskID   string   `json:"memberTaskId,omitempty"`
+	ReplyPolicy    string   `json:"replyPolicy,omitempty"`
+	Mentions       []string `json:"mentions,omitempty"`
 }
 
 type IdempotencyKey struct {
@@ -59,6 +63,10 @@ type InboxItem struct {
 	MessageID        string        `json:"messageId,omitempty"`
 	TurnID           string        `json:"turnId,omitempty"`
 	TaskRevision     int64         `json:"taskRevision,omitempty"`
+	ParentTaskID     string        `json:"parentTaskId,omitempty"`
+	MemberTaskID     string        `json:"memberTaskId,omitempty"`
+	ReplyPolicy      string        `json:"replyPolicy,omitempty"`
+	Mentions         []string      `json:"mentions,omitempty"`
 }
 
 type AcknowledgeRecord struct {

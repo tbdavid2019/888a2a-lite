@@ -107,11 +107,18 @@ func (database *DB) migrate(ctx context.Context) error {
 	if err := migrateStandardA2A(ctx, database.db); err != nil {
 		return err
 	}
+	if err := migrateGroupA2A(ctx, database.db); err != nil {
+		return err
+	}
 	for _, column := range []struct{ table, name, ddl string }{
 		{table: "inbox_item", name: "protocol", ddl: "TEXT NOT NULL DEFAULT ''"},
 		{table: "inbox_item", name: "message_id", ddl: "TEXT NOT NULL DEFAULT ''"},
 		{table: "inbox_item", name: "turn_id", ddl: "TEXT NOT NULL DEFAULT ''"},
 		{table: "inbox_item", name: "task_revision", ddl: "INTEGER NOT NULL DEFAULT 0"},
+		{table: "inbox_item", name: "parent_task_id", ddl: "TEXT NOT NULL DEFAULT ''"},
+		{table: "inbox_item", name: "member_task_id", ddl: "TEXT NOT NULL DEFAULT ''"},
+		{table: "inbox_item", name: "reply_policy", ddl: "TEXT NOT NULL DEFAULT ''"},
+		{table: "inbox_item", name: "mentions_json", ddl: "TEXT NOT NULL DEFAULT '[]'"},
 	} {
 		if err := ensureColumn(ctx, database.db, column.table, column.name, column.ddl); err != nil {
 			return err
@@ -197,6 +204,41 @@ func migrateStandardA2A(ctx context.Context, database *sql.DB) error {
 	for _, statement := range statements {
 		if _, err := database.ExecContext(ctx, statement); err != nil {
 			return fmt.Errorf("migrate standard A2A schema: %w", err)
+		}
+	}
+	return nil
+}
+
+func migrateGroupA2A(ctx context.Context, database *sql.DB) error {
+	var applied int
+	if err := database.QueryRowContext(ctx, "SELECT COUNT(*) FROM schema_migrations WHERE version = 6").Scan(&applied); err != nil {
+		return err
+	}
+	if applied > 0 {
+		return nil
+	}
+	statements := []string{
+		`CREATE TABLE a2a_group_task_member (
+    hub_id TEXT NOT NULL,
+    circle_id TEXT NOT NULL,
+    group_id TEXT NOT NULL,
+    parent_task_id TEXT NOT NULL,
+    member_task_id TEXT NOT NULL,
+    target_agent_id TEXT NOT NULL,
+    reply_policy TEXT NOT NULL,
+    mentions_json TEXT NOT NULL,
+    ordinal INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (hub_id, parent_task_id, member_task_id),
+    UNIQUE (hub_id, parent_task_id, target_agent_id)
+)`,
+		`CREATE INDEX idx_a2a_group_task_parent ON a2a_group_task_member (hub_id, circle_id, group_id, parent_task_id, ordinal)`,
+		`CREATE INDEX idx_a2a_group_task_member ON a2a_group_task_member (hub_id, member_task_id, target_agent_id)`,
+		`INSERT INTO schema_migrations (version, applied_at) VALUES (6, CURRENT_TIMESTAMP)`,
+	}
+	for _, statement := range statements {
+		if _, err := database.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("migrate group A2A schema: %w", err)
 		}
 	}
 	return nil
@@ -397,6 +439,10 @@ CREATE TABLE IF NOT EXISTS inbox_item (
     message_id TEXT NOT NULL DEFAULT '',
     turn_id TEXT NOT NULL DEFAULT '',
     task_revision INTEGER NOT NULL DEFAULT 0,
+    parent_task_id TEXT NOT NULL DEFAULT '',
+    member_task_id TEXT NOT NULL DEFAULT '',
+    reply_policy TEXT NOT NULL DEFAULT '',
+    mentions_json TEXT NOT NULL DEFAULT '[]',
     UNIQUE (hub_id, target_agent_id, requester_agent_id, idempotency_key),
     FOREIGN KEY (hub_id, target_agent_id) REFERENCES agent (hub_id, agent_id),
     FOREIGN KEY (hub_id, requester_agent_id) REFERENCES agent (hub_id, agent_id)

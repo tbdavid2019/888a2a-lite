@@ -117,6 +117,7 @@ func runServer(args []string) error {
 				return
 			case t := <-ticker.C:
 				_, _ = repository.Agents().PruneInactiveAgents(reaperCtx, t.UTC())
+				_, _ = repository.StandardTasks().ExpireStandardTasks(reaperCtx, t.UTC())
 			}
 		}
 	}()

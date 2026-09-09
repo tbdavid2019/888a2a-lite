@@ -61,7 +61,7 @@ func (service *Service) standardPrincipalActive(ctx context.Context, principal h
 		return false
 	}
 	state := agent.StateAt(service.now().UTC())
-	if state == hub.AgentStateExpired || state == hub.AgentStateRevoked {
+	if state == hub.AgentStateExpired || state == hub.AgentStateRevoked || state == hub.AgentStateOffline || state == hub.AgentStatePending {
 		return false
 	}
 	if service.circleResolver.Mode() == "multi" {
@@ -69,6 +69,17 @@ func (service *Service) standardPrincipalActive(ctx context.Context, principal h
 		if circleErr != nil || circleRecord.State == hub.CircleStateDisabled {
 			return false
 		}
+	}
+	return true
+}
+
+func (service *Service) standardTaskStreamAuthorized(ctx context.Context, principal hub.RegisteredAgent, task a2a.TaskRecord) bool {
+	if !service.standardPrincipalActive(ctx, principal) {
+		return false
+	}
+	if groupID, ok := parseGroupTenant(task.TargetAgentID); ok {
+		_, _, err := service.groupMemberForStandard(ctx, principal, groupID)
+		return err == nil
 	}
 	return true
 }
@@ -91,7 +102,7 @@ func (service *Service) StandardAgentCard(ctx context.Context, token, agentID, b
 
 func (service *Service) standardCard(baseURL, name, description, tenant string) a2a.AgentCard {
 	baseURL = strings.TrimRight(baseURL, "/")
-	return a2a.AgentCard{
+	card := a2a.AgentCard{
 		Name: name, Description: description, Version: "1.0.0",
 		SupportedInterfaces:  []a2a.AgentInterface{{URL: baseURL + "/a2a/v1", ProtocolBinding: a2a.ProtocolBinding, ProtocolVersion: a2a.ProtocolVersion, Tenant: tenant}},
 		Provider:             &a2a.AgentProvider{URL: baseURL, Organization: "888a2a-lite"},
@@ -101,6 +112,10 @@ func (service *Service) standardCard(baseURL, name, description, tenant string) 
 		DefaultInputModes:    []string{"text/plain"}, DefaultOutputModes: []string{"text/plain"},
 		Skills: []a2a.AgentSkill{{ID: "text-relay", Name: "Text relay", Description: "Durable text Message delivery through the Hub", Tags: []string{"text", "relay"}, InputModes: []string{"text/plain"}, OutputModes: []string{"text/plain"}}},
 	}
+	if service.config.GroupExtensionEnabled {
+		card.Capabilities.Extensions = []a2a.AgentExtension{{URI: a2a.GroupExtensionURI, Description: "Virtual group tenant fan-out and member outcome aggregation", Required: false, Params: map[string]any{"tenantPrefix": "group:"}}}
+	}
+	return card
 }
 
 func messageDigest(message a2a.Message) (string, error) {

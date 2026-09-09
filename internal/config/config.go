@@ -45,6 +45,7 @@ type Config struct {
 	RegistrationPerMinute  int
 	StandardWaitTimeout    time.Duration
 	StandardGatewayEnabled bool
+	GroupExtensionEnabled  bool
 	OperatorToken          string
 	SharedKey              string
 	CircleMode             string
@@ -72,6 +73,7 @@ func Load() (Config, error) {
 		RegistrationPerMinute:  DefaultRegistrationPerMinute,
 		StandardWaitTimeout:    DefaultStandardWaitTimeout,
 		StandardGatewayEnabled: envBool("A2A888_HUB_STANDARD_ENABLED", false),
+		GroupExtensionEnabled:  envBool("A2A888_HUB_GROUP_EXTENSION_ENABLED", false),
 		OperatorToken:          os.Getenv("A2A888_HUB_OPERATOR_TOKEN"),
 		SharedKey:              strings.TrimSpace(valueOr("A2A888_HUB_SHARED_KEY", os.Getenv("A2A888_HUB_ACCESS_KEY"))),
 		CircleMode:             strings.ToLower(valueOr("A2A888_HUB_CIRCLE_MODE", circle.ModeSingle)),
