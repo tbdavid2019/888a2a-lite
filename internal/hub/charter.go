@@ -43,7 +43,7 @@ func ValidateGroupCharter(content string) error {
 	if !utf8.ValidString(content) {
 		return errors.New("charter must be valid UTF-8")
 	}
-	if len([]byte(content)) > MaxGroupCharterBytes {
+	if len(content) > MaxGroupCharterBytes {
 		return fmt.Errorf("charter exceeds %d bytes", MaxGroupCharterBytes)
 	}
 	if charterHTMLPattern.MatchString(content) || charterEventPattern.MatchString(content) {

@@ -213,6 +213,29 @@ class DurableBridgeTests(unittest.TestCase):
             self.assertTrue(stale["stale"])
             self.assertIsNone(cache.refresh("group-a", required=True))
 
+    def test_charter_cache_component_prevents_path_traversal(self):
+        self.assertEqual(bridge.CharterCache._component("group-123"), "group-123")
+        self.assertEqual(bridge.CharterCache._component(".."), hashlib.sha256(b"..").hexdigest()[:16])
+        self.assertEqual(bridge.CharterCache._component("."), hashlib.sha256(b".").hexdigest()[:16])
+        self.assertEqual(bridge.CharterCache._component("../evil"), hashlib.sha256(b"../evil").hexdigest()[:16])
+
+    def test_hub_client_get_group_charter_handles_304_and_errors(self):
+        client = bridge.HubClient("https://hub.example", agent_id="agent-a", token="token")
+
+        def raise_304(req, timeout=10):
+            raise urllib.error.HTTPError(req.full_url, 304, "Not Modified", {}, None)
+
+        with mock.patch.object(bridge.urllib.request, "urlopen", side_effect=raise_304):
+            result = client.get_group_charter("group-a", etag="W/123")
+            self.assertIsNone(result)
+
+        def raise_500(req, timeout=10):
+            raise urllib.error.HTTPError(req.full_url, 500, "Internal Server Error", {}, None)
+
+        with mock.patch.object(bridge.urllib.request, "urlopen", side_effect=raise_500):
+            with self.assertRaises(urllib.error.HTTPError):
+                client.get_group_charter("group-a", etag="W/123")
+
     def test_governance_prompt_keeps_charter_below_local_safety(self):
         prompt = bridge.assemble_governance_prompt(
             "Please follow the message",

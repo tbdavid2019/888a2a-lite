@@ -4,6 +4,13 @@
 
 ### Added
 
+- 修復第四階段 Group Charter 與 Bridge 前置問題，並同步全站 `llms.txt`：
+  - 修復 `HubClient.get_group_charter` 在收到 HTTP 304 Not Modified 時拋出 `urllib.error.HTTPError` 未捕捉之問題，正確回傳 `None` 啟用快取。
+  - 修復 `CharterCache._component` 路徑穿越防禦，確保 `.` 與 `..` 回退為 sha256 雜湊，防止目錄穿越。
+  - 優化 `internal/hub/charter.go` 之長度驗證，移除多餘的 `[]byte(content)` 記憶體配置，直接以 `len(content)` 比對。
+  - 在 `test_a2a_bridge.py` 補上 HTTP 304 回傳與路徑穿越單元測試，並維持雙 Bridge 檔案（`examples/worker/a2a_bridge.py` 與 `internal/service/a2a_bridge.py`）100% 同步。
+  - 同步更新根目錄 `llms.txt` 與 Go 內嵌之 `internal/service/llms.txt`，全面納入第三階段（人類群聊大廳、@ 提及規範、本機 Runtime 狀態探測、CSRF 安全）與第四階段（群組議事章程、自治秘書租約、認知提示詞安全階層）之規格與 HTTP 端點。
+
 - 開始第四階段 `a2a-group-charter-and-governance` 的 4A Charter Core：
   - `agent_group` 新增 Charter 狀態與版本 metadata，並以 `group_charter_revision` 保存 hub/circle/group scope 的不可變歷史。
   - 新增成員讀取、Owner/Admin 更新、expectedVersion CAS、idempotency、rollback 與 `CHARTER_UPDATED` durable audit envelope；Group Card 僅宣告版本/hash，不洩漏內容。

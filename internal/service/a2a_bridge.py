@@ -399,11 +399,14 @@ class HubClient:
         if etag:
             headers["If-None-Match"] = etag
         req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            if resp.status == 304:
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                return data
+        except urllib.error.HTTPError as err:
+            if err.code == 304:
                 return None
-            data = json.loads(resp.read().decode("utf-8"))
-            return data
+            raise
 
     def get_group_secretary(self, group_id):
         url = f"{self.hub_url}/hub/v1/groups/{urllib.parse.quote(group_id, safe='')}/secretary"
@@ -918,7 +921,7 @@ class CharterCache:
     @staticmethod
     def _component(value):
         value = str(value or "")
-        if value and re.fullmatch(r"[A-Za-z0-9._-]{1,96}", value):
+        if value and value not in (".", "..") and re.fullmatch(r"[A-Za-z0-9._-]{1,96}", value):
             return value
         return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
 
