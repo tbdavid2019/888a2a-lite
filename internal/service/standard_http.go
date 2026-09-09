@@ -186,6 +186,29 @@ func (server *HTTPServer) standardTasksDispatch(w http.ResponseWriter, r *http.R
 	writeStandardError(w, &StandardError{HTTPStatus: http.StatusNotFound, Reason: "TASK_NOT_FOUND", Message: "task not found"})
 }
 
+func (server *HTTPServer) standard5SegmentDispatch(w http.ResponseWriter, r *http.Request) {
+	p1 := r.PathValue("p1")
+	p2 := r.PathValue("p2")
+	p3 := r.PathValue("p3")
+	if p1 == "agents" && p3 == "card" {
+		r.SetPathValue("agentId", p2)
+		server.standardAgentCard(w, r)
+		return
+	}
+	if p2 == "tasks" {
+		r.SetPathValue("tenant", p1)
+		if strings.HasSuffix(p3, ":subscribe") {
+			r.SetPathValue("id", strings.TrimSuffix(p3, ":subscribe"))
+			server.standardSubscribeTask(w, r)
+			return
+		}
+		r.SetPathValue("id", p3)
+		server.standardGetTask(w, r)
+		return
+	}
+	writeStandardError(w, &StandardError{HTTPStatus: http.StatusNotFound, Reason: "TASK_NOT_FOUND", Message: "task not found"})
+}
+
 func (server *HTTPServer) standardCancelTask(w http.ResponseWriter, r *http.Request) {
 	if !server.standardRequestChecks(w, r) {
 		return
