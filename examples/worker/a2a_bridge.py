@@ -924,7 +924,8 @@ def process_standard_queued_task(hub_client, backend, queue, row, agent_name):
         expected_revision = int(item.get("taskRevision") or 1) + 1
         reply_policy = item.get("replyPolicy") or "ALL"
         mentions = item.get("mentions") or []
-        if reply_policy == "ACK_ONLY" or (reply_policy == "MENTIONED_ONLY" and hub_client.agent_id not in mentions):
+        mention_set = {m.strip().lower() for m in mentions if isinstance(m, str)}
+        if reply_policy == "ACK_ONLY" or (reply_policy == "MENTIONED_ONLY" and hub_client.agent_id.strip().lower() not in mention_set):
             update = {"updateId": update_id, "turnId": turn_id, "expectedRevision": expected_revision, "state": "TASK_STATE_COMPLETED", "artifacts": []}
         elif is_pure_closing_statement(item.get("message", "")):
             update = {"updateId": update_id, "turnId": turn_id, "expectedRevision": expected_revision, "state": "TASK_STATE_COMPLETED", "artifacts": []}

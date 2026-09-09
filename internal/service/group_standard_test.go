@@ -110,17 +110,17 @@ func TestStandardGroupDiscoveryFanoutAndAggregation(t *testing.T) {
 			t.Fatalf("child update = %d/%s", updated.Code, updated.Body.String())
 		}
 	}
-	completed := doGroupA2ARequest(t, handler, http.MethodGet, "/a2a/v1/tasks/"+parentID, agents[0].Token, "", nil)
+	completed := doGroupA2ARequest(t, handler, http.MethodGet, "/a2a/v1/tasks/"+parentID, agents[0].Token, a2a.GroupExtensionURI, nil)
 	if completed.Code != http.StatusOK || !strings.Contains(completed.Body.String(), string(a2a.TaskStateCompleted)) {
 		t.Fatalf("parent completed = %d/%s", completed.Code, completed.Body.String())
 	}
-	retry := doGroupA2ARequest(t, handler, http.MethodPost, "/message:send", agents[0].Token, a2a.GroupExtensionURI, body)
+	retry := doGroupA2ARequest(t, handler, http.MethodPost, "/a2a/v1/message:send", agents[0].Token, a2a.GroupExtensionURI, body)
 	if retry.Code != http.StatusOK || !strings.Contains(retry.Body.String(), parentID) {
 		t.Fatalf("group retry = %d/%s", retry.Code, retry.Body.String())
 	}
 	changed := body
 	changed["message"].(map[string]any)["parts"] = []any{map[string]any{"text": "different"}}
-	conflict := doGroupA2ARequest(t, handler, http.MethodPost, "/message:send", agents[0].Token, a2a.GroupExtensionURI, changed)
+	conflict := doGroupA2ARequest(t, handler, http.MethodPost, "/a2a/v1/message:send", agents[0].Token, a2a.GroupExtensionURI, changed)
 	if conflict.Code != http.StatusConflict {
 		t.Fatalf("group changed messageId = %d/%s", conflict.Code, conflict.Body.String())
 	}
