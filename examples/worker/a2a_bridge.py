@@ -822,7 +822,7 @@ def process_incoming_task(hub_client, backend, queue, item, agent_name):
     ack_result = hub_client.ack_task(seq)
     if ack_result:
         queue.set_acked(seq)
-        if ack_result.get("state") == "CANCELED":
+        if isinstance(ack_result, dict) and ack_result.get("state") == "CANCELED":
             queue.finish(seq)
         print(f"[✓] ACK confirmed for seq {seq}.")
     else:

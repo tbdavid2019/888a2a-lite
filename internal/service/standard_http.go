@@ -170,6 +170,22 @@ func (server *HTTPServer) standardGetTask(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, task.PublicTask(parseHistoryLength(r.URL.Query().Get("historyLength")), r.URL.Query().Get("includeArtifacts") == "true"))
 }
 
+func (server *HTTPServer) standardTasksDispatch(w http.ResponseWriter, r *http.Request) {
+	first := r.PathValue("first")
+	second := r.PathValue("second")
+	if first == "tasks" {
+		r.SetPathValue("id", second)
+		server.standardGetTask(w, r)
+		return
+	}
+	if second == "tasks" {
+		r.SetPathValue("tenant", first)
+		server.standardListTasks(w, r)
+		return
+	}
+	writeStandardError(w, &StandardError{HTTPStatus: http.StatusNotFound, Reason: "TASK_NOT_FOUND", Message: "task not found"})
+}
+
 func (server *HTTPServer) standardCancelTask(w http.ResponseWriter, r *http.Request) {
 	if !server.standardRequestChecks(w, r) {
 		return
