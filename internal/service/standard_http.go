@@ -170,15 +170,37 @@ func (server *HTTPServer) standardGetTask(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, task.PublicTask(parseHistoryLength(r.URL.Query().Get("historyLength")), r.URL.Query().Get("includeArtifacts") == "true"))
 }
 
-func (server *HTTPServer) standardTasksDispatch(w http.ResponseWriter, r *http.Request) {
+func parseTaskAction(segment string) (id, action string) {
+	if idx := strings.IndexByte(segment, ':'); idx >= 0 {
+		return segment[:idx], segment[idx+1:]
+	}
+	return segment, ""
+}
+
+func (server *HTTPServer) standardTasks2Dispatch(w http.ResponseWriter, r *http.Request) {
 	first := r.PathValue("first")
 	second := r.PathValue("second")
 	if first == "tasks" {
-		r.SetPathValue("id", second)
-		server.standardGetTask(w, r)
-		return
-	}
-	if second == "tasks" {
+		id, action := parseTaskAction(second)
+		r.SetPathValue("id", id)
+		switch action {
+		case "":
+			if r.Method == http.MethodGet {
+				server.standardGetTask(w, r)
+				return
+			}
+		case "cancel":
+			if r.Method == http.MethodPost {
+				server.standardCancelTask(w, r)
+				return
+			}
+		case "subscribe":
+			if r.Method == http.MethodGet || r.Method == http.MethodPost {
+				server.standardSubscribeTask(w, r)
+				return
+			}
+		}
+	} else if second == "tasks" && r.Method == http.MethodGet {
 		r.SetPathValue("tenant", first)
 		server.standardListTasks(w, r)
 		return
@@ -186,25 +208,36 @@ func (server *HTTPServer) standardTasksDispatch(w http.ResponseWriter, r *http.R
 	writeStandardError(w, &StandardError{HTTPStatus: http.StatusNotFound, Reason: "TASK_NOT_FOUND", Message: "task not found"})
 }
 
-func (server *HTTPServer) standard5SegmentDispatch(w http.ResponseWriter, r *http.Request) {
+func (server *HTTPServer) standardTasks3Dispatch(w http.ResponseWriter, r *http.Request) {
 	p1 := r.PathValue("p1")
 	p2 := r.PathValue("p2")
 	p3 := r.PathValue("p3")
-	if p1 == "agents" && p3 == "card" {
+	if p1 == "agents" && p3 == "card" && r.Method == http.MethodGet {
 		r.SetPathValue("agentId", p2)
 		server.standardAgentCard(w, r)
 		return
 	}
 	if p2 == "tasks" {
 		r.SetPathValue("tenant", p1)
-		if strings.HasSuffix(p3, ":subscribe") {
-			r.SetPathValue("id", strings.TrimSuffix(p3, ":subscribe"))
-			server.standardSubscribeTask(w, r)
-			return
+		id, action := parseTaskAction(p3)
+		r.SetPathValue("id", id)
+		switch action {
+		case "":
+			if r.Method == http.MethodGet {
+				server.standardGetTask(w, r)
+				return
+			}
+		case "cancel":
+			if r.Method == http.MethodPost {
+				server.standardCancelTask(w, r)
+				return
+			}
+		case "subscribe":
+			if r.Method == http.MethodGet || r.Method == http.MethodPost {
+				server.standardSubscribeTask(w, r)
+				return
+			}
 		}
-		r.SetPathValue("id", p3)
-		server.standardGetTask(w, r)
-		return
 	}
 	writeStandardError(w, &StandardError{HTTPStatus: http.StatusNotFound, Reason: "TASK_NOT_FOUND", Message: "task not found"})
 }
