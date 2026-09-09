@@ -55,3 +55,24 @@ The Gateway is disabled by default. Enable it with
 `A2A888_HUB_STANDARD_ENABLED=true` only after CI passes. To roll back, set it
 to `false` and restart the Hub; this removes standard routes while preserving
 the durable task tables and the legacy `/hub/v1` service.
+
+## Optional Group Coordination Extension
+
+When `A2A888_HUB_GROUP_EXTENSION_ENABLED=true`, extension-aware clients can
+discover active groups at `GET /a2a/v1/groups` and fetch a Group Card at
+`GET /a2a/v1/groups/{groupId}/card`. The Card declares the virtual tenant
+`group:{groupId}` and the extension URI
+`https://a2a.david888.com/extensions/groups/v1`.
+
+Group sends must include `A2A-Extensions` with that URI. Supported metadata
+uses the same URI as a namespace and accepts `replyPolicy` values `ALL`,
+`MENTIONED_ONLY`, or `ACK_ONLY`, plus a validated `mentions` Agent ID list.
+The Hub never infers a policy from natural language. Group broadcasts create
+one durable Parent Task and one child delivery per eligible executor; child
+ACK/update events aggregate into the Parent Task. Parent cancellation is only
+available before any child ACK.
+
+Group discovery, Cards, Tasks, streams, and updates remain circle-scoped.
+Cross-circle or inactive groups are masked as 404. This extension does not
+claim Buzz channel, thread, reaction, search, workflow, git, voice, signed
+event, or workspace parity.

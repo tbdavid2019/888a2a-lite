@@ -242,7 +242,7 @@ func (repository *Repository) ListTasks(ctx context.Context, filter a2a.TaskFilt
 	if pageSize < 1 || pageSize > 100 {
 		pageSize = 50
 	}
-	where := []string{"hub_id = ?", "circle_id = ?", "requester_agent_id = ?"}
+	where := []string{"hub_id = ?", "circle_id = ?", "requester_agent_id = ?", "NOT EXISTS (SELECT 1 FROM a2a_group_task_member gm WHERE gm.hub_id = a2a_task.hub_id AND gm.member_task_id = a2a_task.task_id)"}
 	args := []any{filter.HubID, filter.CircleID, filter.RequesterAgentID}
 	if filter.ContextID != "" {
 		where = append(where, "context_id = ?")
@@ -369,6 +369,9 @@ func (repository *Repository) ApplyUpdate(ctx context.Context, update a2a.TaskUp
 		if err := tx.appendTaskEvent(ctx, task, "update"); err != nil {
 			return err
 		}
+		if err := tx.aggregateGroupParent(ctx, task.ID); err != nil {
+			return err
+		}
 		taskJSON, marshalErr := json.Marshal(task)
 		if marshalErr != nil {
 			return marshalErr
@@ -399,7 +402,10 @@ func (repository *Repository) markStandardDeliveryAcknowledged(ctx context.Conte
 	if err := repository.saveTask(ctx, task); err != nil {
 		return err
 	}
-	return repository.appendTaskEvent(ctx, task, "delivery-acknowledged")
+	if err := repository.appendTaskEvent(ctx, task, "delivery-acknowledged"); err != nil {
+		return err
+	}
+	return repository.aggregateGroupParent(ctx, task.ID)
 }
 
 func (repository *Repository) findTaskForUpdate(ctx context.Context, hubID, taskID, targetID string) (a2a.TaskRecord, error) {
@@ -475,6 +481,30 @@ func (repository *Repository) CancelStandardTask(ctx context.Context, hubID, cir
 		if task.State != a2a.TaskStateSubmitted {
 			return store.ErrInvalidState
 		}
+		if strings.HasPrefix(task.TargetAgentID, "group:") {
+			var total, started int
+			if err := tx.executor().QueryRowContext(ctx, "SELECT COUNT(*), COALESCE(SUM(CASE WHEN t.state <> ? THEN 1 ELSE 0 END), 0) FROM a2a_task t JOIN a2a_group_task_member m ON m.hub_id = t.hub_id AND m.member_task_id = t.task_id WHERE m.hub_id = ? AND m.parent_task_id = ?", string(a2a.TaskStateSubmitted), hubID, task.ID).Scan(&total, &started); err != nil {
+				return err
+			}
+			if total == 0 || started > 0 {
+				return store.ErrInvalidState
+			}
+			if _, err := tx.executor().ExecContext(ctx, "UPDATE a2a_task SET state = ?, revision = revision + 1, updated_at = ? WHERE hub_id = ? AND task_id = ? AND state = ?", string(a2a.TaskStateCanceled), formatTime(canceledAt), hubID, task.ID, string(a2a.TaskStateSubmitted)); err != nil {
+				return err
+			}
+			if _, err := tx.executor().ExecContext(ctx, "UPDATE a2a_task SET state = ?, revision = revision + 1, updated_at = ? WHERE hub_id = ? AND task_id IN (SELECT member_task_id FROM a2a_group_task_member WHERE hub_id = ? AND parent_task_id = ?) AND state = ?", string(a2a.TaskStateCanceled), formatTime(canceledAt), hubID, hubID, task.ID, string(a2a.TaskStateSubmitted)); err != nil {
+				return err
+			}
+			if _, err := tx.executor().ExecContext(ctx, "UPDATE inbox_item SET state = 'CANCELED', canceled_at = ?, cancel_reason = 'standard group task canceled' WHERE hub_id = ? AND task_id IN (SELECT member_task_id FROM a2a_group_task_member WHERE hub_id = ? AND parent_task_id = ?) AND state = 'PENDING'", formatTime(canceledAt), hubID, hubID, task.ID); err != nil {
+				return err
+			}
+			task.State, task.Revision, task.UpdatedAt = a2a.TaskStateCanceled, task.Revision+1, canceledAt
+			if err := tx.appendTaskEvent(ctx, task, "canceled"); err != nil {
+				return err
+			}
+			result = task
+			return nil
+		}
 		task.State = a2a.TaskStateCanceled
 		task.Revision++
 		task.UpdatedAt = canceledAt
@@ -491,4 +521,47 @@ func (repository *Repository) CancelStandardTask(ctx context.Context, hubID, cir
 		return nil
 	})
 	return result, err
+}
+
+func (repository *Repository) ExpireStandardTasks(ctx context.Context, now time.Time) (int, error) {
+	count := 0
+	err := repository.withTransaction(ctx, func(tx *Repository) error {
+		rows, err := tx.executor().QueryContext(ctx, "SELECT task_id FROM a2a_task WHERE execution_deadline IS NOT NULL AND execution_deadline <= ? AND state IN (?, ?, ?, ?)", formatTime(now), string(a2a.TaskStateSubmitted), string(a2a.TaskStateWorking), string(a2a.TaskStateInputRequired), string(a2a.TaskStateAuthRequired))
+		if err != nil {
+			return err
+		}
+		defer func() { _ = rows.Close() }()
+		var ids []string
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				return err
+			}
+			ids = append(ids, id)
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		for _, id := range ids {
+			task, findErr := tx.findTask(ctx, "SELECT "+standardTaskColumns+" FROM a2a_task WHERE task_id = ?", id)
+			if findErr != nil {
+				return findErr
+			}
+			task.State = a2a.TaskStateFailed
+			task.Revision++
+			task.UpdatedAt = now
+			if err := tx.saveTask(ctx, task); err != nil {
+				return err
+			}
+			if err := tx.appendTaskEvent(ctx, task, "execution-deadline"); err != nil {
+				return err
+			}
+			if err := tx.aggregateGroupParent(ctx, task.ID); err != nil {
+				return err
+			}
+			count++
+		}
+		return nil
+	})
+	return count, err
 }

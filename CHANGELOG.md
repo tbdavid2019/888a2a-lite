@@ -19,6 +19,14 @@
 - 修正 `scripts/a2a-official-sdk-fixture.py` 在消費非終態 SSE 串流時因迭代器持續等待所引發的讀取逾時，改為首筆 Task 事件到達後即刻提取並結束串流。
 
 
+- 新立 `a2a-group-charter-and-governance` OpenSpec 計畫（第四階段）：
+  - 確立群組會議「兩層解耦架構」：將 Layer 1 門禁與通訊（Access / Hard Boundary）與 Layer 2 議事章程與認知治理（Procedure / Soft Boundary）解耦。
+  - Hub 端擴充 Group Charter 契約（`charter` Markdown 規格、`charter_version` 版本控制與 `CHARTER_UPDATED` 即時廣播），提供 `GET/PUT /hub/v1/groups/{groupId}/charter` 端點。
+  - 設計 Agent 入職 SOP 自動研讀與 Prompt 認知上下文注入（Onboarding Ingestion），快取至 `~/.a2a/groups/{groupId}/charter.md`。
+  - 規劃自治會議秘書機制（`--role=secretary`），支援 `/minutes`、`/wrapup` 指令觸發，自動提煉「關鍵決策（Decisions）」、「行動待辦（Action Items）」與「產出物參照（Artifacts）」，剔除無效寒暄噪音。
+  - 在本機 SQLite WAL（`~/.a2a/work.db`）持久化 `group_minutes` 與 `group_decisions`，並支援 Markdown 檔案及外部 Wiki/Webhook 匯出。
+  - 通過 OpenSpec 嚴格驗證（`openspec validate --strict --all`: 15 passed, 0 failed）。
+
 - 新立 `a2a-human-group-and-runtime-console` OpenSpec 計畫（第三階段）：
   - 對標 Buzz 視覺化質感，在 Local Web UI（`http://localhost:8888`）新增「Agent Runtimes」管理面板，自動探測本機 AI CLI（OpenClaw, Claude Code, Goose, Hermes, Codex, OpenCode）狀態與 `CLI needed` 提示。
   - 支援一鍵安裝與重啟本機系統常駐背景守護行程（macOS LaunchAgent / Linux systemd）以及自訂指令接入（`+ Add Runtime`）。
@@ -35,7 +43,11 @@
   - 整合群聊 Anti-Echo 守衛與 `[[A2A_NO_REPLY]]` 結單機制，防止群組無限回音風暴。
   - 嚴格綁定 Multi-Circle 隔離，跨圈完全遮蔽群組卡片與廣播。
 
+- 補強第三階段規劃：明確要求 Human Agent 必須沿用既有群組 membership、群組 UI 必須走標準 Group Gateway、`MENTIONED_ONLY` 仍對所有 eligible bot fan-out 並由未被指名者靜默完成，並加入 Local UI CSRF/Origin 防護、shell-free Runtime 設定、服務 rollback、scoped history 與 Parent Task stream 驗收。
+
 - 補強 `a2a-group-coordination-extension` 規劃：加入第一期完成 gate、Group Extension negotiation、bounded group discovery、Parent/Member Task 聚合、成員快照、fan-out 冪等、取消／ACK 競態、延遲結果保護與 extension-aware 官方 SDK 驗收；同步收斂 Buzz 對標範圍。
+
+- 開始實作 `a2a-group-coordination-extension`：新增固定 Group Extension contract、`A2A-Extensions` opt-in、`group:` tenant、同圈 Group discovery/Card、Parent/Member durable task fan-out、ACK/update 聚合、reply policy 與 Bridge correlation；功能維持 disabled-by-default，既有 `/hub/v1/groups` 不變。
 
 - 補強 A2A OpenSpec 規劃的阻塞逾時、Bearer-only 認證、執行結果回報、多輪、取消／ACK 競態、Card／Task／SSE 授權與官方 SDK 驗收；本項僅更新規劃，尚未實作或完成互通驗證。
 

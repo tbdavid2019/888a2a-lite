@@ -503,12 +503,13 @@ func (repository *Repository) Enqueue(ctx context.Context, item hub.InboxItem) (
 INSERT INTO inbox_item (
     hub_id, circle_id, target_agent_id, requester_agent_id, task_id, context_id,
     idempotency_key, message, state, created_at, acknowledged_at, canceled_at, cancel_reason,
-    group_id, group_message_id, protocol, message_id, turn_id, task_revision
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	group_id, group_message_id, protocol, message_id, turn_id, task_revision,
+	parent_task_id, member_task_id, reply_policy, mentions_json
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			item.HubID, item.CircleID, item.TargetAgentID, item.RequesterAgentID, item.TaskID, item.ContextID,
 			item.IdempotencyKey, item.Message, string(item.State), formatTime(item.CreatedAt),
 			nullTimePtr(item.AcknowledgedAt), nullTimePtr(item.CanceledAt), "", item.GroupID, item.GroupMessageID,
-			item.Protocol, item.MessageID, item.TurnID, item.TaskRevision)
+			item.Protocol, item.MessageID, item.TurnID, item.TaskRevision, item.ParentTaskID, item.MemberTaskID, item.ReplyPolicy, mustMarshalStrings(item.Mentions))
 		if insertErr != nil {
 			return insertErr
 		}
@@ -527,7 +528,8 @@ func (repository *Repository) FindByIdempotencyKey(ctx context.Context, key hub.
 	item, err := repository.findInbox(ctx, `
 	SELECT sequence, hub_id, circle_id, target_agent_id, requester_agent_id, task_id, context_id,
        idempotency_key, message, state, created_at, acknowledged_at, canceled_at,
-       group_id, group_message_id, protocol, message_id, turn_id, task_revision
+       group_id, group_message_id, protocol, message_id, turn_id, task_revision,
+       parent_task_id, member_task_id, reply_policy, mentions_json
 FROM inbox_item
 WHERE hub_id = ? AND target_agent_id = ? AND requester_agent_id = ? AND idempotency_key = ?`,
 		key.HubID, key.TargetAgentID, key.RequesterAgentID, key.Key)
@@ -541,7 +543,8 @@ func (repository *Repository) Poll(ctx context.Context, targetAgentID string, af
 	rows, err := repository.executor().QueryContext(ctx, `
 	SELECT sequence, hub_id, circle_id, target_agent_id, requester_agent_id, task_id, context_id,
        idempotency_key, message, state, created_at, acknowledged_at, canceled_at,
-       group_id, group_message_id, protocol, message_id, turn_id, task_revision
+       group_id, group_message_id, protocol, message_id, turn_id, task_revision,
+       parent_task_id, member_task_id, reply_policy, mentions_json
 FROM inbox_item
 WHERE target_agent_id = ? AND sequence > ? AND state = 'PENDING'
 ORDER BY sequence LIMIT ?`, targetAgentID, afterSequence, limit)
@@ -661,7 +664,8 @@ func (repository *Repository) ListDirectMessagesAdminInCircle(ctx context.Contex
 	query := `
 SELECT sequence, hub_id, circle_id, target_agent_id, requester_agent_id, task_id, context_id,
        idempotency_key, message, state, created_at, acknowledged_at, canceled_at,
-       group_id, group_message_id, protocol, message_id, turn_id, task_revision
+       group_id, group_message_id, protocol, message_id, turn_id, task_revision,
+       parent_task_id, member_task_id, reply_policy, mentions_json
 FROM inbox_item
 WHERE group_id = ''
   AND (? = 0 OR sequence < ?)
@@ -920,14 +924,15 @@ type scanner interface {
 
 func scanInbox(row scanner) (hub.InboxItem, error) {
 	var (
-		item                                   hub.InboxItem
-		state, created, acknowledged, canceled sql.NullString
+		item                                                 hub.InboxItem
+		state, created, acknowledged, canceled, mentionsJSON sql.NullString
 	)
 	err := row.Scan(
 		&item.Sequence, &item.HubID, &item.CircleID, &item.TargetAgentID, &item.RequesterAgentID,
 		&item.TaskID, &item.ContextID, &item.IdempotencyKey, &item.Message, &state,
 		&created, &acknowledged, &canceled, &item.GroupID, &item.GroupMessageID,
-		&item.Protocol, &item.MessageID, &item.TurnID, &item.TaskRevision)
+		&item.Protocol, &item.MessageID, &item.TurnID, &item.TaskRevision,
+		&item.ParentTaskID, &item.MemberTaskID, &item.ReplyPolicy, &mentionsJSON)
 	if errors.Is(err, sql.ErrNoRows) {
 		return hub.InboxItem{}, ErrNotFound
 	}
@@ -935,6 +940,9 @@ func scanInbox(row scanner) (hub.InboxItem, error) {
 		return hub.InboxItem{}, err
 	}
 	item.State = hub.DeliveryState(state.String)
+	if err := json.Unmarshal([]byte(mentionsJSON.String), &item.Mentions); err != nil {
+		return hub.InboxItem{}, err
+	}
 	var parseErr error
 	if item.CreatedAt, parseErr = parseRequiredTime(created); parseErr != nil {
 		return hub.InboxItem{}, parseErr
@@ -946,6 +954,11 @@ func scanInbox(row scanner) (hub.InboxItem, error) {
 		return hub.InboxItem{}, parseErr
 	}
 	return item, nil
+}
+
+func mustMarshalStrings(values []string) string {
+	encoded, _ := json.Marshal(values)
+	return string(encoded)
 }
 
 func boolInt(value bool) int {

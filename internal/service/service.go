@@ -696,7 +696,7 @@ func (service *Service) BuildSystemCard(baseURL string) hub.HubSystemCard {
 	} else if service.config.SharedKey != "" {
 		mode = "SEMI_OPEN"
 	}
-	return hub.HubSystemCard{
+	card := hub.HubSystemCard{
 		HubID:                service.config.HubID,
 		SelfURL:              baseURL + "/hub/v1/system-card.json",
 		Mode:                 mode,
@@ -733,6 +733,10 @@ func (service *Service) BuildSystemCard(baseURL string) hub.HubSystemCard {
 		},
 		UpdatedAt: service.now().UTC(),
 	}
+	if service.config.StandardGatewayEnabled && service.config.GroupExtensionEnabled {
+		card.StandardExtensions = []hub.SystemCardAgentExtension{{URI: "https://a2a.david888.com/extensions/groups/v1", Description: "Virtual group tenant fan-out and member outcome aggregation", Required: false, Params: map[string]any{"tenantPrefix": "group:"}}}
+	}
+	return card
 }
 
 func (service *Service) HubMetadata(ctx context.Context, baseURL string) (hub.HubMetadata, error) {

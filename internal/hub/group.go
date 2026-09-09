@@ -8,11 +8,12 @@ import (
 )
 
 const (
-	GroupExtensionURI       = "https://github.com/tbdavid2019/888a2a-lite/extensions/agent-groups/v1"
-	MaxGroupNameLength      = 128
-	MaxGroupMembers         = 32
-	MaxGroupFanout          = 32
-	MaxGroupHistoryPageSize = 100
+	GroupExtensionURI         = "https://github.com/tbdavid2019/888a2a-lite/extensions/agent-groups/v1"
+	StandardGroupExtensionURI = "https://a2a.david888.com/extensions/groups/v1"
+	MaxGroupNameLength        = 128
+	MaxGroupMembers           = 32
+	MaxGroupFanout            = 32
+	MaxGroupHistoryPageSize   = 100
 )
 
 type GroupState string
