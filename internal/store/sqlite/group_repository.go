@@ -187,6 +187,76 @@ WHERE hub_id = ? AND circle_id = ? AND group_id = ? AND charter_version = ?`, ne
 	return result, duplicate, err
 }
 
+func (repository *Repository) GetGroupSecretary(ctx context.Context, hubID, circleID, groupID string) (hub.GroupSecretary, error) {
+	return scanSecretary(repository.executor().QueryRowContext(ctx, `
+SELECT hub_id, circle_id, group_id, agent_id, epoch, state, lease_expires_at, appointed_by, updated_at
+FROM group_secretary WHERE hub_id = ? AND circle_id = ? AND group_id = ?`, hubID, circleID, groupID))
+}
+
+func (repository *Repository) AppointGroupSecretary(ctx context.Context, secretary hub.GroupSecretary, expectedEpoch int64) (hub.GroupSecretary, error) {
+	err := repository.withTransaction(ctx, func(tx *Repository) error {
+		var currentEpoch int64
+		lookupErr := tx.executor().QueryRowContext(ctx, `SELECT epoch FROM group_secretary WHERE hub_id = ? AND circle_id = ? AND group_id = ?`, secretary.HubID, secretary.CircleID, secretary.GroupID).Scan(&currentEpoch)
+		if errors.Is(lookupErr, sql.ErrNoRows) {
+			currentEpoch = 0
+		} else if lookupErr != nil {
+			return lookupErr
+		}
+		if currentEpoch != expectedEpoch {
+			return store.ErrConflict
+		}
+		secretary.Epoch = currentEpoch + 1
+		secretary.State = hub.SecretaryActive
+		secretary.UpdatedAt = time.Now().UTC()
+		_, err := tx.executor().ExecContext(ctx, `
+INSERT INTO group_secretary (hub_id, circle_id, group_id, agent_id, epoch, state, lease_expires_at, appointed_by, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (hub_id, group_id) DO UPDATE SET
+    circle_id = excluded.circle_id, agent_id = excluded.agent_id, epoch = excluded.epoch,
+    state = excluded.state, lease_expires_at = excluded.lease_expires_at,
+    appointed_by = excluded.appointed_by, updated_at = excluded.updated_at`,
+			secretary.HubID, secretary.CircleID, secretary.GroupID, secretary.AgentID, secretary.Epoch, string(secretary.State), formatTime(secretary.LeaseExpiresAt), secretary.AppointedBy, formatTime(secretary.UpdatedAt))
+		return err
+	})
+	return secretary, err
+}
+
+func (repository *Repository) RenewGroupSecretary(ctx context.Context, hubID, circleID, groupID, agentID string, epoch int64, expiresAt time.Time) (hub.GroupSecretary, error) {
+	now := time.Now().UTC()
+	result, err := repository.executor().ExecContext(ctx, `
+UPDATE group_secretary SET lease_expires_at = ?, updated_at = ?
+WHERE hub_id = ? AND circle_id = ? AND group_id = ? AND agent_id = ? AND epoch = ? AND state = 'ACTIVE' AND lease_expires_at > ?`,
+		formatTime(expiresAt), formatTime(now), hubID, circleID, groupID, agentID, epoch, formatTime(now))
+	if err != nil {
+		return hub.GroupSecretary{}, err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return hub.GroupSecretary{}, err
+	}
+	if count != 1 {
+		return hub.GroupSecretary{}, store.ErrConflict
+	}
+	return repository.GetGroupSecretary(ctx, hubID, circleID, groupID)
+}
+
+func (repository *Repository) RevokeGroupSecretary(ctx context.Context, hubID, circleID, groupID string, epoch int64, at time.Time) error {
+	result, err := repository.executor().ExecContext(ctx, `
+UPDATE group_secretary SET state = 'REVOKED', lease_expires_at = ?, updated_at = ?
+WHERE hub_id = ? AND circle_id = ? AND group_id = ? AND epoch = ? AND state = 'ACTIVE'`, formatTime(at), formatTime(at), hubID, circleID, groupID, epoch)
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count != 1 {
+		return store.ErrConflict
+	}
+	return nil
+}
+
 func (repository *Repository) FindMember(ctx context.Context, groupID, agentID string) (hub.GroupMember, error) {
 	return scanGroupMember(repository.executor().QueryRowContext(ctx, `
 SELECT hub_id, group_id, agent_id, circle_id, role, state, joined_at, left_at, removed_at
@@ -736,6 +806,26 @@ func scanCharter(row scanner, charter hub.GroupCharter) (hub.GroupCharter, error
 		charter.SupersededAt = &value
 	}
 	return charter, nil
+}
+
+func scanSecretary(row scanner) (hub.GroupSecretary, error) {
+	var secretary hub.GroupSecretary
+	var state, leaseExpires, updatedAt string
+	if err := row.Scan(&secretary.HubID, &secretary.CircleID, &secretary.GroupID, &secretary.AgentID, &secretary.Epoch, &state, &leaseExpires, &secretary.AppointedBy, &updatedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return hub.GroupSecretary{}, ErrNotFound
+		}
+		return hub.GroupSecretary{}, err
+	}
+	secretary.State = hub.SecretaryState(state)
+	var err error
+	if secretary.LeaseExpiresAt, err = time.Parse(time.RFC3339Nano, leaseExpires); err != nil {
+		return hub.GroupSecretary{}, err
+	}
+	if secretary.UpdatedAt, err = time.Parse(time.RFC3339Nano, updatedAt); err != nil {
+		return hub.GroupSecretary{}, err
+	}
+	return secretary, nil
 }
 
 func scanGroupMember(row scanner) (hub.GroupMember, error) {

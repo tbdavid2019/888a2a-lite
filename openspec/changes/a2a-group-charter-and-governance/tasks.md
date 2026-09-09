@@ -24,8 +24,8 @@
 
 ## 4. 4B — Secretary appointment and meeting sessions
 
-- [ ] 4.1 Add `group_secretary` persistence for group/circle/Agent, epoch, state, lease expiry, appointedBy, and updatedAt; verify only one active secretary lease exists per group/epoch.
-- [ ] 4.2 Implement Owner/Admin secretary appointment, replacement, revoke, lease renewal, and failover with CAS/epoch; verify old secretary jobs and approvals are rejected after epoch changes.
+- [x] 4.1 Add `group_secretary` persistence for group/circle/Agent, epoch, state, lease expiry, appointedBy, and updatedAt; verify only one active secretary lease exists per group/epoch.
+- [x] 4.2 Implement Owner/Admin secretary appointment, replacement, revoke, lease renewal, and failover with CAS/epoch; verify old secretary jobs and approvals are rejected after epoch changes.
 - [ ] 4.3 Add `--role=secretary`, `--auto-minutes`, and charter cache options to the Bridge; verify flags do not grant role authority without Hub appointment and valid lease.
 - [ ] 4.4 Add `meeting_session` and idempotent synthesis job records with immutable start/cutoff revisions, trigger identity, Charter version, state, and job ID; verify repeated `/minutes`/`/wrapup` does not create duplicate jobs.
 - [ ] 4.5 Implement authorized `/minutes`, `/wrapup`, and `/summary` command handling; verify only Human/Owner or explicitly charter-authorized members can trigger synthesis and untrusted message text cannot invoke commands.

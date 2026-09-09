@@ -117,6 +117,9 @@ func (database *DB) migrate(ctx context.Context) error {
 	if err := migrateGroupCharter(ctx, database.db); err != nil {
 		return err
 	}
+	if err := migrateGroupSecretary(ctx, database.db); err != nil {
+		return err
+	}
 	for _, column := range []struct{ table, name, ddl string }{
 		{table: "inbox_item", name: "protocol", ddl: "TEXT NOT NULL DEFAULT ''"},
 		{table: "inbox_item", name: "message_id", ddl: "TEXT NOT NULL DEFAULT ''"},
@@ -179,6 +182,40 @@ func migrateGroupCharter(ctx context.Context, database *sql.DB) error {
 	for _, statement := range statements {
 		if _, err := database.ExecContext(ctx, statement); err != nil {
 			return fmt.Errorf("migrate group charter schema: %w", err)
+		}
+	}
+	return nil
+}
+
+func migrateGroupSecretary(ctx context.Context, database *sql.DB) error {
+	var applied int
+	if err := database.QueryRowContext(ctx, "SELECT COUNT(*) FROM schema_migrations WHERE version = 8").Scan(&applied); err != nil {
+		return err
+	}
+	if applied > 0 {
+		return nil
+	}
+	statements := []string{
+		`CREATE TABLE group_secretary (
+    hub_id TEXT NOT NULL,
+    circle_id TEXT NOT NULL,
+    group_id TEXT NOT NULL,
+    agent_id TEXT NOT NULL,
+    epoch INTEGER NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('ACTIVE', 'REVOKED')),
+    lease_expires_at TEXT NOT NULL,
+    appointed_by TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (hub_id, group_id),
+    FOREIGN KEY (hub_id, group_id) REFERENCES agent_group (hub_id, group_id)
+)`,
+		`CREATE UNIQUE INDEX idx_group_secretary_active ON group_secretary (hub_id, circle_id, group_id) WHERE state = 'ACTIVE'`,
+		`CREATE INDEX idx_group_secretary_agent ON group_secretary (hub_id, circle_id, agent_id, state, epoch)`,
+		`INSERT INTO schema_migrations (version, applied_at) VALUES (8, CURRENT_TIMESTAMP)`,
+	}
+	for _, statement := range statements {
+		if _, err := database.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("migrate group secretary schema: %w", err)
 		}
 	}
 	return nil

@@ -120,6 +120,72 @@ func (service *Service) RollbackGroupCharter(ctx context.Context, agentID, token
 	return hub.GroupCharter{}, false, store.ErrNotFound
 }
 
+func (service *Service) GetGroupSecretary(ctx context.Context, agentID, token, groupID string) (hub.GroupSecretary, error) {
+	member, err := service.requireActiveGroupMember(ctx, agentID, token, groupID)
+	if err != nil {
+		return hub.GroupSecretary{}, err
+	}
+	return service.store.GroupSecretaries().GetGroupSecretary(ctx, service.config.HubID, member.CircleID, groupID)
+}
+
+func (service *Service) AppointGroupSecretary(ctx context.Context, agentID, token, groupID, targetAgentID string, expectedEpoch, leaseSeconds int64) (hub.GroupSecretary, error) {
+	actor, err := service.requireActiveGroupMember(ctx, agentID, token, groupID)
+	if err != nil {
+		return hub.GroupSecretary{}, err
+	}
+	if !actor.CanManageMembers() {
+		return hub.GroupSecretary{}, ErrForbidden
+	}
+	if strings.TrimSpace(targetAgentID) == "" || leaseSeconds < 30 || leaseSeconds > 86400 {
+		return hub.GroupSecretary{}, fmt.Errorf("%w: secretary appointment is invalid", ErrValidation)
+	}
+	target, err := service.store.Groups().FindMember(ctx, groupID, strings.TrimSpace(targetAgentID))
+	if err != nil || !target.IsActive() || target.CircleID != actor.CircleID {
+		return hub.GroupSecretary{}, ErrAgentUnavailable
+	}
+	agent, err := service.store.Agents().FindAgent(ctx, target.AgentID)
+	if err != nil || agent.CircleID != actor.CircleID || agent.StateAt(service.now().UTC()) == hub.AgentStateExpired || agent.StateAt(service.now().UTC()) == hub.AgentStateRevoked {
+		return hub.GroupSecretary{}, ErrAgentUnavailable
+	}
+	now := service.now().UTC()
+	secretary, err := service.store.GroupSecretaries().AppointGroupSecretary(ctx, hub.GroupSecretary{HubID: service.config.HubID, CircleID: actor.CircleID, GroupID: groupID, AgentID: target.AgentID, LeaseExpiresAt: now.Add(time.Duration(leaseSeconds) * time.Second), AppointedBy: agentID}, expectedEpoch)
+	if err == nil {
+		service.audit(ctx, hub.Event{Type: hub.EventGroupSecretaryAppointed, CircleID: actor.CircleID, ActorAgentID: agentID, TargetAgentID: target.AgentID, Details: map[string]any{"groupId": groupID, "epoch": secretary.Epoch, "appointedBy": agentID}})
+	}
+	return secretary, err
+}
+
+func (service *Service) RenewGroupSecretary(ctx context.Context, agentID, token, groupID string, epoch, leaseSeconds int64) (hub.GroupSecretary, error) {
+	member, err := service.requireActiveGroupMember(ctx, agentID, token, groupID)
+	if err != nil {
+		return hub.GroupSecretary{}, err
+	}
+	if leaseSeconds < 30 || leaseSeconds > 86400 {
+		return hub.GroupSecretary{}, fmt.Errorf("%w: secretary lease is invalid", ErrValidation)
+	}
+	now := service.now().UTC()
+	secretary, err := service.store.GroupSecretaries().RenewGroupSecretary(ctx, service.config.HubID, member.CircleID, groupID, agentID, epoch, now.Add(time.Duration(leaseSeconds)*time.Second))
+	if err == nil {
+		service.audit(ctx, hub.Event{Type: hub.EventGroupSecretaryRenewed, CircleID: member.CircleID, ActorAgentID: agentID, TargetAgentID: groupID, Details: map[string]any{"groupId": groupID, "epoch": epoch}})
+	}
+	return secretary, err
+}
+
+func (service *Service) RevokeGroupSecretary(ctx context.Context, agentID, token, groupID string, epoch int64) error {
+	member, err := service.requireActiveGroupMember(ctx, agentID, token, groupID)
+	if err != nil {
+		return err
+	}
+	if !member.CanManageMembers() {
+		return ErrForbidden
+	}
+	err = service.store.GroupSecretaries().RevokeGroupSecretary(ctx, service.config.HubID, member.CircleID, groupID, epoch, service.now().UTC())
+	if err == nil {
+		service.audit(ctx, hub.Event{Type: hub.EventGroupSecretaryRevoked, CircleID: member.CircleID, ActorAgentID: agentID, TargetAgentID: groupID, Details: map[string]any{"groupId": groupID, "epoch": epoch}})
+	}
+	return err
+}
+
 func (service *Service) InviteMember(ctx context.Context, agentID, token, groupID, inviteeAgentID string) (hub.GroupInvitation, error) {
 	actor, err := service.requireActiveGroupMember(ctx, agentID, token, groupID)
 	if err != nil {

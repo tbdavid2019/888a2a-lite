@@ -128,6 +128,10 @@ func (server *HTTPServer) Handler() http.Handler {
 	mux.HandleFunc("PUT /hub/v1/groups/{groupId}/charter", server.putGroupCharter)
 	mux.HandleFunc("GET /hub/v1/groups/{groupId}/charter/revisions", server.listGroupCharterRevisions)
 	mux.HandleFunc("POST /hub/v1/groups/{groupId}/charter/rollback", server.rollbackGroupCharter)
+	mux.HandleFunc("GET /hub/v1/groups/{groupId}/secretary", server.getGroupSecretary)
+	mux.HandleFunc("PUT /hub/v1/groups/{groupId}/secretary", server.appointGroupSecretary)
+	mux.HandleFunc("POST /hub/v1/groups/{groupId}/secretary/renew", server.renewGroupSecretary)
+	mux.HandleFunc("POST /hub/v1/groups/{groupId}/secretary/revoke", server.revokeGroupSecretary)
 	mux.HandleFunc("POST /hub/v1/admin/registration", server.setRegistration)
 	mux.HandleFunc("GET /hub/v1/admin/agents", server.adminListAgents)
 	mux.HandleFunc("GET /hub/v1/admin/circles", server.adminListCircles)
@@ -278,6 +282,15 @@ type groupCharterRollbackRequest struct {
 	TargetVersion   int64  `json:"targetVersion"`
 	ExpectedVersion int64  `json:"expectedVersion"`
 	IdempotencyKey  string `json:"idempotencyKey"`
+}
+
+type groupSecretaryLeaseRequest struct {
+	Epoch        int64 `json:"epoch"`
+	LeaseSeconds int64 `json:"leaseSeconds"`
+}
+
+type groupSecretaryRevokeRequest struct {
+	Epoch int64 `json:"epoch"`
 }
 
 type circleRotateKeyRequest struct {
@@ -1029,6 +1042,73 @@ func (server *HTTPServer) rollbackGroupCharter(w http.ResponseWriter, r *http.Re
 		status = http.StatusCreated
 	}
 	writeJSON(w, status, charter)
+}
+
+func (server *HTTPServer) getGroupSecretary(w http.ResponseWriter, r *http.Request) {
+	agentID, token, ok := server.agentCredentials(w, r, "")
+	if !ok {
+		return
+	}
+	secretary, err := server.service.GetGroupSecretary(r.Context(), agentID, token, r.PathValue("groupId"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "private, no-store")
+	writeJSON(w, http.StatusOK, secretary)
+}
+
+func (server *HTTPServer) appointGroupSecretary(w http.ResponseWriter, r *http.Request) {
+	agentID, token, ok := server.agentCredentials(w, r, "")
+	if !ok {
+		return
+	}
+	var request hub.GroupSecretaryAppointmentInput
+	if !decodeJSON(w, r, server.maxBodyBytes, &request) {
+		return
+	}
+	secretary, err := server.service.AppointGroupSecretary(r.Context(), agentID, token, r.PathValue("groupId"), request.AgentID, request.ExpectedEpoch, request.LeaseSeconds)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "private, no-store")
+	writeJSON(w, http.StatusCreated, secretary)
+}
+
+func (server *HTTPServer) renewGroupSecretary(w http.ResponseWriter, r *http.Request) {
+	agentID, token, ok := server.agentCredentials(w, r, "")
+	if !ok {
+		return
+	}
+	var request groupSecretaryLeaseRequest
+	if !decodeJSON(w, r, server.maxBodyBytes, &request) {
+		return
+	}
+	secretary, err := server.service.RenewGroupSecretary(r.Context(), agentID, token, r.PathValue("groupId"), request.Epoch, request.LeaseSeconds)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "private, no-store")
+	writeJSON(w, http.StatusOK, secretary)
+}
+
+func (server *HTTPServer) revokeGroupSecretary(w http.ResponseWriter, r *http.Request) {
+	agentID, token, ok := server.agentCredentials(w, r, "")
+	if !ok {
+		return
+	}
+	var request groupSecretaryRevokeRequest
+	if !decodeJSON(w, r, server.maxBodyBytes, &request) {
+		return
+	}
+	if err := server.service.RevokeGroupSecretary(r.Context(), agentID, token, r.PathValue("groupId"), request.Epoch); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "private, no-store")
+	writeJSON(w, http.StatusOK, map[string]any{"groupId": r.PathValue("groupId"), "epoch": request.Epoch, "state": hub.SecretaryRevoked})
 }
 
 func (server *HTTPServer) sendGroupMessage(w http.ResponseWriter, r *http.Request) {

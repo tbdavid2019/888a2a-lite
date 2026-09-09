@@ -124,6 +124,13 @@ type GroupCharterStore interface {
 	PutGroupCharter(context.Context, hub.GroupCharter, int64, string) (hub.GroupCharter, bool, error)
 }
 
+type GroupSecretaryStore interface {
+	GetGroupSecretary(context.Context, string, string, string) (hub.GroupSecretary, error)
+	AppointGroupSecretary(context.Context, hub.GroupSecretary, int64) (hub.GroupSecretary, error)
+	RenewGroupSecretary(context.Context, string, string, string, string, int64, time.Time) (hub.GroupSecretary, error)
+	RevokeGroupSecretary(context.Context, string, string, string, int64, time.Time) error
+}
+
 type TxStore interface {
 	Circles() CircleStore
 	Agents() AgentStore
@@ -133,6 +140,7 @@ type TxStore interface {
 	Announcements() AnnouncementStore
 	Groups() GroupStore
 	GroupCharters() GroupCharterStore
+	GroupSecretaries() GroupSecretaryStore
 	StandardTasks() StandardTaskStore
 }
 
