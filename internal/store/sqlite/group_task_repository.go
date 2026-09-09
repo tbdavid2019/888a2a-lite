@@ -185,7 +185,11 @@ func (repository *Repository) ListGroupTaskMembers(ctx context.Context, hubID, c
 	return members, nil
 }
 
-func (repository *Repository) aggregateGroupParent(ctx context.Context, parentTaskID string) error {
+func (repository *Repository) aggregateGroupParent(ctx context.Context, taskID string) error {
+	parentTaskID := taskID
+	if pID, err := groupParentID(ctx, repository.executor(), "", taskID); err == nil && pID != "" {
+		parentTaskID = pID
+	}
 	parent, err := repository.findTask(ctx, "SELECT "+standardTaskColumns+" FROM a2a_task WHERE task_id = ? AND target_agent_id LIKE 'group:%'", parentTaskID)
 	if errors.Is(err, store.ErrNotFound) {
 		return nil
@@ -299,7 +303,12 @@ func groupParentID(ctx context.Context, executor interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }, hubID, memberTaskID string) (string, error) {
 	var parentID string
-	err := executor.QueryRowContext(ctx, "SELECT parent_task_id FROM a2a_group_task_member WHERE hub_id = ? AND member_task_id = ?", hubID, memberTaskID).Scan(&parentID)
+	var err error
+	if hubID != "" {
+		err = executor.QueryRowContext(ctx, "SELECT parent_task_id FROM a2a_group_task_member WHERE hub_id = ? AND member_task_id = ?", hubID, memberTaskID).Scan(&parentID)
+	} else {
+		err = executor.QueryRowContext(ctx, "SELECT parent_task_id FROM a2a_group_task_member WHERE member_task_id = ?", memberTaskID).Scan(&parentID)
+	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", store.ErrNotFound
 	}
