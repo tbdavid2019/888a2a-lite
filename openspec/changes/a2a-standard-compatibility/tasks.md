@@ -28,7 +28,7 @@
 
 ## 4. Standard streaming and event mapping
 
-- [ ] 4.0 使用 durable revision/event 驅動 snapshot 與補發，限制並行等待及慢讀者；CI 驗證 snapshot/subscribe 競態、撤銷後停止推送、keepalive 檢查及不持有 DB transaction 等待網路。
+- [x] 4.0 使用 durable revision/event 驅動 snapshot 與補發，限制並行等待及慢讀者；CI 驗證 snapshot/subscribe 競態、撤銷後停止推送、keepalive 檢查及不持有 DB transaction 等待網路。
 
 - [x] 4.1 Implement `POST /a2a/v1/message:stream` (and root alias) using standard SSE `StreamResponse` envelopes (OneOf task, message, statusUpdate, artifactUpdate); verify immediate initial response and `rc.SetWriteDeadline(time.Time{})` with 15s keepalive comments.
 - [x] 4.2 Map mailbox ACK, correlated reply, failure, and cancellation to standard TaskStatusUpdateEvent or TaskArtifactUpdateEvent; verify every emitted event references the same task and context IDs.
@@ -53,7 +53,7 @@
 - [ ] 6.9 以未修改官方 SDK 跑完整 Card/Bearer/tenant/send/get/list/stream/multi-turn/cancel 流程；保存版本與結果，不以自製 client 或 serializer patch 替代。
 
 - [x] 6.1 Apply existing Agent principal authentication, rate limits, payload limits, and no-remote-execution boundary to every standard route; verify malformed JSON, unsupported parts, invalid auth, and oversized input produce bounded `google.rpc.Status` errors.
-- [ ] 6.2 Add public/private/dynamic Multi-Circle integration coverage for standard send, get, list, stream, subscribe, cancel, and reply; verify cross-circle operations return masked `TASK_NOT_FOUND` (404) and create no state.
+- [x] 6.2 Add public/private/dynamic Multi-Circle integration coverage for standard send, get, list, stream, subscribe, cancel, and reply; verify cross-circle operations return masked `TASK_NOT_FOUND` (404) and create no state.
 - [x] 6.3 Add standard/custom coexistence regression tests; verify the same Agent identity and mailbox are visible through both contracts without changing legacy response or ACK semantics.
 - [x] 6.4 Add restart, duplicate, redelivery, terminal-transition, and stream-reconnect tests for standard tasks; verify CI test names and assertions cover each lifecycle invariant.
 - [x] 6.5 Add standard Agent Card, `returnImmediately` sync/async, `SendMessageResponse` envelope, and `google.rpc.Status` conformance fixtures; verify the fixture suite runs in GitHub Actions.

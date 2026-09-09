@@ -89,6 +89,10 @@ func TestStandardGatewayUsesBearerTenantAndSeparateEnvelopes(t *testing.T) {
 	if completed.Code != http.StatusOK || !strings.Contains(completed.Body.String(), string(a2a.TaskStateCompleted)) || !strings.Contains(completed.Body.String(), "reply-1") {
 		t.Fatalf("completed standard task = %d/%s", completed.Code, completed.Body.String())
 	}
+	subscribed := doStandardRequest(t, handler, http.MethodPost, "/a2a/v1/tasks/"+sentResponse.Task.ID+":subscribe", sender.AgentToken, nil)
+	if subscribed.Code != http.StatusOK || !strings.Contains(subscribed.Header().Get("Content-Type"), "text/event-stream") || !strings.Contains(subscribed.Body.String(), string(a2a.TaskStateCompleted)) {
+		t.Fatalf("standard subscribe = %d/%s", subscribed.Code, subscribed.Body.String())
+	}
 	historyZero := doStandardRequest(t, handler, http.MethodGet, "/a2a/v1/tasks/"+sentResponse.Task.ID+"?historyLength=0", sender.AgentToken, nil)
 	if historyZero.Code != http.StatusOK || strings.Contains(historyZero.Body.String(), `"history"`) {
 		t.Fatalf("historyLength=0 task = %d/%s", historyZero.Code, historyZero.Body.String())
@@ -186,6 +190,23 @@ func TestStandardGatewayMasksCrossCircleTargetsAndCards(t *testing.T) {
 	dynamicSend := doStandardRequest(t, handler, http.MethodPost, "/a2a/v1/"+dynamicTarget.AgentID+"/message:send", dynamicSender.AgentToken, map[string]any{"message": map[string]any{"messageId": "dynamic-message", "role": "ROLE_USER", "parts": []any{map[string]any{"text": "dynamic circle"}}}, "configuration": map[string]any{"returnImmediately": true}})
 	if dynamicSend.Code != http.StatusOK || !strings.Contains(dynamicSend.Body.String(), string(a2a.TaskStateSubmitted)) {
 		t.Fatalf("dynamic-circle send = %d/%s", dynamicSend.Code, dynamicSend.Body.String())
+	}
+	var dynamicEnvelope a2a.SendMessageResponse
+	if err := json.NewDecoder(dynamicSend.Body).Decode(&dynamicEnvelope); err != nil || dynamicEnvelope.Task == nil {
+		t.Fatalf("decode dynamic send: %v", err)
+	}
+	dynamicTaskID := dynamicEnvelope.Task.ID
+	crossGet := doStandardRequest(t, handler, http.MethodGet, "/a2a/v1/tasks/"+dynamicTaskID, publicSender.AgentToken, nil)
+	if crossGet.Code != http.StatusNotFound || !strings.Contains(crossGet.Body.String(), `"reason":"TASK_NOT_FOUND"`) {
+		t.Fatalf("cross-circle get task = %d/%s", crossGet.Code, crossGet.Body.String())
+	}
+	crossCancel := doStandardRequest(t, handler, http.MethodPost, "/a2a/v1/tasks/"+dynamicTaskID+":cancel", publicSender.AgentToken, map[string]any{})
+	if crossCancel.Code != http.StatusNotFound || !strings.Contains(crossCancel.Body.String(), `"reason":"TASK_NOT_FOUND"`) {
+		t.Fatalf("cross-circle cancel task = %d/%s", crossCancel.Code, crossCancel.Body.String())
+	}
+	crossSubscribe := doStandardRequest(t, handler, http.MethodPost, "/a2a/v1/tasks/"+dynamicTaskID+":subscribe", publicSender.AgentToken, nil)
+	if crossSubscribe.Code != http.StatusNotFound || !strings.Contains(crossSubscribe.Body.String(), `"reason":"TASK_NOT_FOUND"`) {
+		t.Fatalf("cross-circle subscribe task = %d/%s", crossSubscribe.Code, crossSubscribe.Body.String())
 	}
 }
 
