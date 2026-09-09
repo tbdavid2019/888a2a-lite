@@ -413,10 +413,6 @@ func (repository *Repository) findTaskForUpdate(ctx context.Context, hubID, task
 }
 
 func (repository *Repository) saveTask(ctx context.Context, task a2a.TaskRecord) error {
-	messageJSON, err := json.Marshal(task.Message)
-	if err != nil {
-		return err
-	}
 	historyJSON, err := json.Marshal(task.History)
 	if err != nil {
 		return err

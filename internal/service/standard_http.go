@@ -397,7 +397,8 @@ func decodeEmptyOrStandardJSON(w http.ResponseWriter, r *http.Request, maxBytes 
 	r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
 	decoder := json.NewDecoder(r.Body)
 	var value any
-	if err := decoder.Decode(&value); err == io.EOF {
+	err := decoder.Decode(&value)
+	if err == io.EOF {
 		return true
 	}
 	if err != nil {

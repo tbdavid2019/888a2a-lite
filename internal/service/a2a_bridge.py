@@ -843,7 +843,7 @@ def process_queued_task(hub_client, backend, queue, row, agent_name):
         ack_result = hub_client.ack_task(seq)
         if ack_result:
             queue.set_acked(seq)
-            if ack_result.get("state") == "CANCELED":
+            if isinstance(ack_result, dict) and ack_result.get("state") == "CANCELED":
                 queue.finish(seq)
                 return
         else:
