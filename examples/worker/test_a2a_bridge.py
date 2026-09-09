@@ -1,5 +1,6 @@
 import importlib.util
 import hashlib
+import io
 import json
 import os
 import stat
@@ -527,6 +528,36 @@ class DurableBridgeTests(unittest.TestCase):
             self.assertEqual(listener.call_args.args[0].agent_id, "explicit")
             self.assertEqual(listener.call_args.args[0].token, "explicit-secret")
             with open(path) as f: self.assertEqual(json.load(f), original)
+
+    def test_main_with_private_flag_generates_random_shared_key(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "credentials.json")
+            original = {"identity": {"agentId": "a", "agentToken": "secret"}}
+            with open(path, "w") as f: json.dump(original, f)
+            queue = os.path.join(directory, "q.db")
+            buf = io.StringIO()
+            with mock.patch.object(bridge, "run_bridge_listener") as listener, \
+                 mock.patch.object(bridge.secrets, "token_hex", return_value="f00ba41234567890abcdef1234567890"), \
+                 mock.patch("sys.stdout", buf), \
+                 mock.patch.object(bridge.sys, "argv", ["bridge", "--credentials", path, "--queue-db", queue, "--backend", "echo", "--name", "A", "--private"]):
+                bridge.main()
+                self.assertEqual(listener.call_args.args[0].shared_key, "f00ba41234567890abcdef1234567890")
+                self.assertIn("NEW PRIVATE SPACE KEY GENERATED", buf.getvalue())
+
+    def test_main_install_service_with_private_flag_propagates_concrete_key(self):
+        with mock.patch.object(bridge, "install_launchd_service") as install_launchd, \
+             mock.patch.object(bridge, "get_default_service_type", return_value="launchd"), \
+             mock.patch.object(bridge.secrets, "token_hex", return_value="f00ba41234567890abcdef1234567890"), \
+             mock.patch("sys.stdout", io.StringIO()), \
+             mock.patch.object(bridge.sys, "argv", ["bridge", "--backend", "echo", "--name", "A", "--private", "--install-service"]):
+            try:
+                bridge.main()
+            except SystemExit:
+                pass
+            self.assertTrue(install_launchd.called)
+            passed_args = install_launchd.call_args[0][1]
+            self.assertNotIn("--private", passed_args)
+            self.assertIn("--key=f00ba41234567890abcdef1234567890", passed_args)
 
     def test_systemd_failures_raise(self):
         with tempfile.TemporaryDirectory() as directory:

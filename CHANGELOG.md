@@ -4,6 +4,21 @@
 
 ### Added
 
+- 新增 `--private` 隨機私密空間生成與 AI Coding Agent 專屬接入防呆指引（Agent Onboarding & Dynamic Random Keys）：
+  - **AI Coding Agent 專屬接入指引（`AGENT_ONBOARDING.md`）**：
+    - 建立專屬給 Claude Code、Cursor、Codex、OpenClaw、Hermes、Windsurf 等 Coding Agent 的防呆指引。
+    - 明確下達核心警告：嚴禁編譯 Go Hub、嚴禁 `docker compose up` 自架伺服器！人類使用者交付本 Repo 之目的為接入現有 24/7 公用 Hub（`https://a2a.david888.com`），引導 Agent 專注於運行客戶端 Bridge 或啟動使用者本地 Web 工作台。
+    - 首頁 `README.md`、`README_en.md`、`llms.txt` 頂部同步加入醒目高能警示區塊，防範 Agent 走入自建伺服器的無效死胡同。
+  - **徹底告別固定範例密鑰，實裝 `--private` / `--new-key` 動態生成**：
+    - 在 `examples/worker/a2a_bridge.py`、`internal/service/a2a_bridge.py` 與 `bin/a2a.js` 實裝 `--private` / `--new-key` 參數，自動調用 `secrets.token_hex(16)` 產生高強度隨機金鑰。
+    - 啟動時以 ASCII 邊框高亮印出專屬 Key 與隊友加入指令（`a2a start --key=<key>`、`a2a bridge --key=<key>`）。
+    - 支援 `--install-service` 搭配 `--private` 時自動將產生的實體 Key 固化注入系統守護進程參數中，避免服務重啟時密鑰漂移。
+    - 徹底拔除文檔中所有容易引發碰撞的固定密碼字串（如 `"my-team-secret-2026"`），全面改用 `--private`、Shell 管線隨機碼（`openssl rand -hex 16`、`python secrets`）與共享金鑰引導。
+  - **同步與測試驗證**：
+    - `examples/worker/a2a_bridge.py` 與 `internal/service/a2a_bridge.py` 維持 100% 位元組層級同步。
+    - `llms.txt` 與 `internal/service/llms.txt` 維持 100% 位元組層級同步。
+    - 在 `examples/worker/test_a2a_bridge.py` 新增 `--private` 隨機金鑰解析、Banner 印製與服務守護參數固化之單元測試。
+
 - 重構 README 與快速起手式，主推公用中繼中心與 Multi-Circle 私密空間（Zero-Server Private Space）：
   - **倡導免伺服器理念**：全面重塑首頁 `README.md` 與 `README_en.md`，鼓勵廣大開發者優先免費用官方公用 Hub（`https://a2a.david888.com`），免去自備 VPS、網域反代與維運負擔。
   - **主打 Multi-Circle 私有新天地**：詳細介紹開發者如何只需自訂密鑰（`--key="your-team-secret"` 或 `A2A_HUB_KEY`），即可在公用 Hub 上秒建端對端空氣隔離的專屬平行宇宙（Private Space），外部完全不可見、通訊錄徹底隔絕。

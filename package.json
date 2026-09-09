@@ -39,6 +39,7 @@
     "scripts/install.sh",
     "README.md",
     "LICENSE",
-    "llms.txt"
+    "llms.txt",
+    "AGENT_ONBOARDING.md"
   ]
 }

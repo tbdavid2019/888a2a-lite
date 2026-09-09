@@ -36,7 +36,11 @@ if (args[0] === "help" || args[0] === "--help" || args[0] === "-h") {
 
 3-Minute Quickstart:
   a2a start              Launch User Chat Web UI (http://localhost:8888)
+  a2a start --private    Generate a brand-new Private Space & open Web UI
+  a2a start --key <key>  Join an existing Private Space & open Web UI
   a2a bridge             Connect local AI Agent (auto-detects OpenClaw, Claude, etc.)
+  a2a bridge --private   Connect Agent to a brand-new Private Space
+  a2a bridge --key <key> Connect Agent to an existing Private Space
   a2a bridge --install-service   Install Agent as OS background service
   a2a mcp                Launch Stdio MCP server (Claude Desktop / Cursor)
 
@@ -45,6 +49,7 @@ Zero Configuration:
   All flags below are completely optional overrides.
 
 Optional Overrides:
+  --private              Generate a fresh random Private Space key automatically
   --key <key>            Private Space / Circle Key (creates an isolated workspace on a2a.david888.com)
   --hub <url>            Hub Base URL (default: https://a2a.david888.com)
   --name <name>          Custom display name (default: auto-detected)

@@ -2076,6 +2076,11 @@ def run_bridge_listener(hub_client, backend, agent_name, queue, charter_cache=No
     print(f" 888a2a-lite Universal Agent Bridge: {agent_name}")
     print(f" Hub:      {hub_client.hub_url}")
     print(f" Agent ID: {hub_client.agent_id}")
+    if hub_client.shared_key:
+        print(f" Space:    Private (Circle: {hub_client.circle_id or 'private'})")
+        print(f" Key:      {hub_client.shared_key}")
+    else:
+        print(" Space:    Public Circle")
     print(f" Backend:  {backend.__class__.__name__}")
     print(f" Local IP: {get_local_ip()}")
     print("=" * 65)
@@ -3994,6 +3999,11 @@ def run_local_ui(hub_client, user_name, port=8888, open_browser=True, chat_db_pa
     print("-" * 64)
     print(f"Hub URL:      {hub_client.hub_url}")
     print(f"User Agent:   {user_name} ({hub_client.agent_id})")
+    if hub_client.shared_key:
+        print(f"Private Key:  {hub_client.shared_key}")
+        print(f"Space/Circle: {hub_client.circle_id or 'private'}")
+    else:
+        print("Space/Circle: public")
     print(f"Web Console:  {url}")
     print("-" * 64)
     print("Serving client console. Press Ctrl+C to exit.")
@@ -4362,6 +4372,28 @@ WantedBy=default.target
         raise RuntimeError(f"systemd restart failed: {res.stderr.strip()}")
 
 
+def display_private_key_banner(key, is_mcp=False):
+    target_stream = sys.stderr if is_mcp else sys.stdout
+    banner = [
+        "",
+        "=" * 72,
+        "  🔑 NEW PRIVATE SPACE KEY GENERATED",
+        "=" * 72,
+        f"  Key: {key}",
+        "",
+        "  Share this key with your teammates or other agents to join this space:",
+        f"    a2a start --key={key}",
+        f"    a2a bridge --key={key}",
+        "",
+        "  Or in POSIX shell / env:",
+        f"    export A2A_HUB_KEY=\"{key}\"",
+        "=" * 72,
+        "",
+    ]
+    for line in banner:
+        print(line, file=target_stream)
+
+
 # ---------------------------------------------------------------------------
 # Main Entry Point & Argument Parsing
 # ---------------------------------------------------------------------------
@@ -4376,6 +4408,8 @@ def main():
     parser.add_argument("--key", "--shared-key", "-k", dest="shared_key",
                         default=os.getenv("A2A_HUB_KEY") or os.getenv("A2A888_HUB_SHARED_KEY"),
                         help="Private Space key / Shared Key (enables isolated Multi-Circle workspace on public Hub)")
+    parser.add_argument("--private", "--new-key", action="store_true",
+                        help="Generate a brand-new private workspace key automatically and display it")
     parser.add_argument("--credentials", help="Path to credentials JSON file")
     parser.add_argument("--queue-db", help="Durable local work queue SQLite path")
     parser.add_argument("--charter-cache-dir", help="Scoped local Group Charter cache directory")
@@ -4413,6 +4447,12 @@ def main():
     if bool(args.agent_id) != bool(args.token):
         parser.error("--agent-id and --token must be provided together")
 
+    generated_new_key = False
+    if args.private or (args.shared_key and args.shared_key.strip().lower() in ("new", "random", "generate")):
+        args.shared_key = secrets.token_hex(16)
+        generated_new_key = True
+        display_private_key_banner(args.shared_key, is_mcp=args.mcp)
+
     # Auto-detect backend if not specified
     if not args.backend:
         args.backend = detect_backend()
@@ -4445,10 +4485,28 @@ def main():
             if not srv_type:
                 print("[!] Service installation is only supported on macOS (launchd) and Linux (systemd).", file=sys.stderr)
                 sys.exit(1)
+        service_args = list(sys.argv[1:])
+        if generated_new_key:
+            clean_srv_args = []
+            skip_next = False
+            for idx, a in enumerate(service_args):
+                if skip_next:
+                    skip_next = False
+                    continue
+                if a in ("--private", "--new-key"):
+                    continue
+                if a in ("--key", "-k", "--shared-key") and idx + 1 < len(service_args) and service_args[idx + 1].lower() in ("new", "random", "generate"):
+                    skip_next = True
+                    continue
+                if a.startswith("--key=") and a.split("=", 1)[1].lower() in ("new", "random", "generate"):
+                    continue
+                clean_srv_args.append(a)
+            clean_srv_args.append(f"--key={args.shared_key}")
+            service_args = clean_srv_args
         if srv_type == "launchd":
-            install_launchd_service(args.name, sys.argv[1:], service_name=args.service_name)
+            install_launchd_service(args.name, service_args, service_name=args.service_name)
         elif srv_type == "systemd":
-            install_systemd_service(args.name, sys.argv[1:], service_name=args.service_name)
+            install_systemd_service(args.name, service_args, service_name=args.service_name)
         sys.exit(0)
 
     mcp_out = None
