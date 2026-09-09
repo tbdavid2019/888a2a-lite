@@ -15,7 +15,7 @@
 
 - [x] 3.1 Add durable Parent Task and Member Delivery models with parent/member/group/circle/requester/target/message/turn/revision fields; verify migration preserves all existing group and mailbox rows.
 - [x] 3.2 Implement `group:<groupId>` tenant parsing and active accepted member authorization; verify tenant is routing only, requester Bearer principal is the authorization source, and non-members receive the documented masked error.
-- [ ] 3.3 Implement one-transaction eligible member snapshot and all-or-nothing preflight for circle, membership, capability, group size, fan-out and per-target pending capacity; verify a failed preflight leaves no parent, delivery, mailbox or audit event.
+- [x] 3.3 Implement one-transaction eligible member snapshot and all-or-nothing preflight for circle, membership, capability, group size, fan-out and per-target pending capacity; verify a failed preflight leaves no parent, delivery, mailbox or audit event.
 - [x] 3.4 Implement deterministic idempotency for `circle/requester/group/messageId/contentDigest`; verify identical retry returns the existing Parent Task and different content with the same key returns conflict.
 - [x] 3.5 Preserve existing `/hub/v1/groups` sender exclusion and legacy delivery behavior; verify standard fan-out does not deliver to the sender and legacy tests remain unchanged.
 
@@ -25,7 +25,7 @@
 - [x] 4.2 Gate standard fan-out on a versioned executor capability and implement member update authorization; verify only the designated target can submit an update and an old bridge is not treated as a standard executor.
 - [x] 4.3 Implement ACK-to-WORKING and correlated outcome transitions with CAS/revision and updateId idempotency; verify concurrent members update independently and duplicate/modified/late updates are handled safely.
 - [x] 4.4 Implement Parent aggregation: all terminal successes/empty results complete, any failed/rejected/deadline child fails the parent with per-member metadata/artifacts, and no custom PARTIAL Task state is emitted; verify deterministic result ordering.
-- [ ] 4.5 Implement bounded execution deadline, retry budget and retention; verify timeout marks the member and parent terminal, restart preserves results, and late results cannot revive a terminal task.
+- [x] 4.5 Implement bounded execution deadline, retry budget and retention; verify timeout marks the member and parent terminal, restart preserves results, and late results cannot revive a terminal task.
 
 ## 5. Standard send, stream and cancellation integration
 
@@ -50,7 +50,7 @@
 
 ## 8. Official interoperability and rollout
 
-- [ ] 8.1 Add an extension-aware client fixture that discovers `/a2a/v1/groups`, reads a Group Card, sends `A2A-Extensions: ...` to `group:<groupId>`, subscribes and parses Parent/Member progress; verify the fixture does not patch serializers.
+- [x] 8.1 Add an extension-aware client fixture that discovers `/a2a/v1/groups`, reads a Group Card, sends `A2A-Extensions: ...` to `group:<groupId>`, subscribes and parses Parent/Member progress; verify the fixture does not patch serializers.
 - [ ] 8.2 Run the unmodified official A2A SDK against the standard core flow and the extension-aware fixture against group flow; verify the version, schema and result are recorded in CI and no unsupported-client behavior is claimed as core compatibility.
-- [ ] 8.3 Document Group Extension discovery, tenant routing, reply policies, member outcomes, cancellation, Multi-Circle rules and the explicit Buzz scope boundary in README, `llms.txt` and the client Skill; verify examples use valid extension headers and no secrets.
+- [x] 8.3 Document Group Extension discovery, tenant routing, reply policies, member outcomes, cancellation, Multi-Circle rules and the explicit Buzz scope boundary in README, `llms.txt` and the client Skill; verify examples use valid extension headers and no secrets.
 - [ ] 8.4 Update Docker/CI/deployment feature flags and run the required remote smoke test on `david@10.9.0.11`; verify standard P2P, legacy `/hub/v1/groups`, and Group Extension flows before production enablement.

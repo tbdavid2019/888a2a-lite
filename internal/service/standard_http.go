@@ -421,7 +421,16 @@ func (server *HTTPServer) streamStandardTask(w http.ResponseWriter, r *http.Requ
 			for _, durableEvent := range events {
 				lastRevision = durableEvent.Revision
 				event := a2a.StreamResponse{StatusUpdate: &a2a.TaskStatusUpdateEvent{TaskID: durableEvent.Task.ID, ContextID: durableEvent.Task.ContextID, Status: durableEvent.Task.Status}}
-				if !writeStreamResponse(w, flusher, event) || isTerminalTask(durableEvent.Task.Status.State) {
+				if !writeStreamResponse(w, flusher, event) {
+					return
+				}
+				for _, artifact := range durableEvent.Task.Artifacts {
+					artifactEvent := a2a.StreamResponse{ArtifactUpdate: &a2a.TaskArtifactUpdateEvent{TaskID: durableEvent.Task.ID, ContextID: durableEvent.Task.ContextID, Artifact: artifact, LastChunk: true}}
+					if !writeStreamResponse(w, flusher, artifactEvent) {
+						return
+					}
+				}
+				if isTerminalTask(durableEvent.Task.Status.State) {
 					return
 				}
 			}

@@ -62,7 +62,7 @@ type StandardTaskStore interface {
 	ListTaskEvents(context.Context, string, string, string, string, int64) ([]a2a.TaskEvent, error)
 	ApplyUpdate(context.Context, a2a.TaskUpdate) (a2a.TaskRecord, bool, error)
 	CancelStandardTask(context.Context, string, string, string, string, time.Time) (a2a.TaskRecord, error)
-	CreateGroupTask(context.Context, a2a.TaskRecord, []a2a.TaskRecord, []hub.InboxItem, []a2a.GroupTaskMember) (a2a.TaskRecord, bool, error)
+	CreateGroupTask(context.Context, a2a.TaskRecord, []a2a.TaskRecord, []hub.InboxItem, []a2a.GroupTaskMember, int, int) (a2a.TaskRecord, bool, error)
 	ListGroupTaskMembers(context.Context, string, string, string, string) ([]a2a.TaskRecord, error)
 	ExpireStandardTasks(context.Context, time.Time) (int, error)
 }

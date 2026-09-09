@@ -249,10 +249,13 @@ func (service *Service) CreateStandardGroupTask(ctx context.Context, requester h
 		items = append(items, hub.InboxItem{HubID: requester.HubID, CircleID: requester.CircleID, TargetAgentID: member.AgentID, RequesterAgentID: requester.AgentID, TaskID: memberTaskID, ContextID: contextID, IdempotencyKey: "a2a:group:" + parentID + ":" + member.AgentID, Message: text, GroupID: groupID, Protocol: "A2A/1.0", MessageID: childMessage.MessageID, TurnID: turnID, TaskRevision: 1, ParentTaskID: parentID, MemberTaskID: memberTaskID, ReplyPolicy: metadata.ReplyPolicy, Mentions: metadata.Mentions, CreatedAt: now})
 		links = append(links, a2a.GroupTaskMember{GroupID: groupID, CircleID: requester.CircleID, TargetAgentID: member.AgentID, ReplyPolicy: metadata.ReplyPolicy, Mentions: metadata.Mentions, Ordinal: index, CreatedAt: now})
 	}
-	created, duplicate, err := service.store.StandardTasks().CreateGroupTask(ctx, parent, children, items, links)
+	created, duplicate, err := service.store.StandardTasks().CreateGroupTask(ctx, parent, children, items, links, service.config.MaxConcurrentTasks, service.maxGroupFanout())
 	if err != nil {
 		if errors.Is(err, store.ErrConflict) {
 			return a2a.TaskRecord{}, false, standardError(http.StatusConflict, "INVALID_ARGUMENT", "messageId conflicts with an existing group task")
+		}
+		if errors.Is(err, store.ErrInvalidState) {
+			return a2a.TaskRecord{}, false, standardError(http.StatusConflict, "GROUP_PRECONDITION_FAILED", "group membership or capacity changed before fan-out")
 		}
 		return a2a.TaskRecord{}, false, err
 	}

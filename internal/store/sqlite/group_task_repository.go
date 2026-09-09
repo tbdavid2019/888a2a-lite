@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/tbdavid2019/888a2a-lite/internal/a2a"
@@ -12,7 +13,7 @@ import (
 	"github.com/tbdavid2019/888a2a-lite/internal/store"
 )
 
-func (repository *Repository) CreateGroupTask(ctx context.Context, parent a2a.TaskRecord, members []a2a.TaskRecord, items []hub.InboxItem, links []a2a.GroupTaskMember) (a2a.TaskRecord, bool, error) {
+func (repository *Repository) CreateGroupTask(ctx context.Context, parent a2a.TaskRecord, members []a2a.TaskRecord, items []hub.InboxItem, links []a2a.GroupTaskMember, maxPending, maxFanout int) (a2a.TaskRecord, bool, error) {
 	var result a2a.TaskRecord
 	duplicate := false
 	err := repository.withTransaction(ctx, func(tx *Repository) error {
@@ -26,6 +27,9 @@ func (repository *Repository) CreateGroupTask(ctx context.Context, parent a2a.Ta
 		}
 		if !errors.Is(findErr, store.ErrNotFound) {
 			return findErr
+		}
+		if err := tx.validateGroupFanoutPreflight(ctx, parent, links, maxPending, maxFanout); err != nil {
+			return err
 		}
 		if err := tx.insertStandardTaskRow(ctx, parent); err != nil {
 			return err
@@ -66,6 +70,59 @@ func (repository *Repository) CreateGroupTask(ctx context.Context, parent a2a.Ta
 		return nil
 	})
 	return result, duplicate, err
+}
+
+func (repository *Repository) validateGroupFanoutPreflight(ctx context.Context, parent a2a.TaskRecord, links []a2a.GroupTaskMember, maxPending, maxFanout int) error {
+	if len(links) == 0 || (maxFanout > 0 && len(links) > maxFanout) {
+		return store.ErrInvalidState
+	}
+	groupID := strings.TrimPrefix(parent.TargetAgentID, "group:")
+	var groupState, groupCircle string
+	if err := repository.executor().QueryRowContext(ctx, "SELECT state, circle_id FROM agent_group WHERE hub_id = ? AND group_id = ?", parent.HubID, groupID).Scan(&groupState, &groupCircle); err != nil {
+		return store.ErrInvalidState
+	}
+	if groupState != "ACTIVE" || groupCircle != parent.CircleID {
+		return store.ErrInvalidState
+	}
+	seen := make(map[string]struct{}, len(links))
+	for _, link := range links {
+		if link.GroupID != groupID || link.CircleID != parent.CircleID {
+			return store.ErrInvalidState
+		}
+		if _, exists := seen[link.TargetAgentID]; exists {
+			return store.ErrConflict
+		}
+		seen[link.TargetAgentID] = struct{}{}
+		var memberState, memberCircle string
+		if err := repository.executor().QueryRowContext(ctx, "SELECT state, circle_id FROM group_member WHERE hub_id = ? AND group_id = ? AND agent_id = ?", parent.HubID, groupID, link.TargetAgentID).Scan(&memberState, &memberCircle); err != nil || memberState != "ACTIVE" || memberCircle != parent.CircleID {
+			return store.ErrInvalidState
+		}
+		agent, err := repository.FindAgent(ctx, link.TargetAgentID)
+		if err != nil || agent.CircleID != parent.CircleID || !supportsStoredExecution(agent.Capabilities) {
+			return store.ErrInvalidState
+		}
+		state := agent.StateAt(time.Now().UTC())
+		if state == hub.AgentStateExpired || state == hub.AgentStateRevoked {
+			return store.ErrInvalidState
+		}
+		var pending int
+		if err := repository.executor().QueryRowContext(ctx, "SELECT COUNT(*) FROM inbox_item WHERE hub_id = ? AND target_agent_id = ? AND state = 'PENDING'", parent.HubID, link.TargetAgentID).Scan(&pending); err != nil {
+			return err
+		}
+		if maxPending > 0 && pending >= maxPending {
+			return store.ErrConflict
+		}
+	}
+	return nil
+}
+
+func supportsStoredExecution(capabilities []string) bool {
+	for _, capability := range capabilities {
+		if strings.EqualFold(strings.TrimSpace(capability), a2a.ExecutionCapability) {
+			return true
+		}
+	}
+	return false
 }
 
 func (repository *Repository) insertStandardTaskRow(ctx context.Context, task a2a.TaskRecord) error {
