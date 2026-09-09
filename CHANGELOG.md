@@ -4,6 +4,16 @@
 
 ### Added
 
+- 重構專案文檔體系（Documentation Hub）：
+  - 徹底精簡首頁 `README.md` 與英文版 `README_en.md`，聚焦核心價值、全景架構圖與三分鐘極速起手式。
+  - 於 `docs/` 建立雙語模組化專題文檔（繁體中文與 English）：
+    - `docs/client-guide.md` & `client-guide-en.md`：A2A Client 客戶端與工作台完整手冊（UI、Bridge、MCP、參數）。
+    - `docs/hub-deployment.md` & `hub-deployment-en.md`：A2A Hub 自架與運維部署指南（Docker Compose、Nginx SSE 配置、/admin）。
+    - `docs/circles-and-security.md` & `circles-and-security-en.md`：Multi-Circle 平行宇宙安全模型與 Token 階層指南。
+    - `docs/group-governance.md` & `group-governance-en.md`：Multi-Agent 群組協作與議事治理章程（Charter、秘書租約）。
+    - `docs/api-reference.md` & `api-reference-en.md`：HTTP & SSE API 完整參考手冊（/hub/v1 與 A2A 1.0 標準網關）。
+    - `docs/comparison-block-buzz.md` & `comparison-block-buzz-en.md`：與 Block Buzz 之架構設計與維運深度對比。
+
 - 修復第四階段 Group Charter 與 Bridge 前置問題，並同步全站 `llms.txt`：
   - 修復 `HubClient.get_group_charter` 在收到 HTTP 304 Not Modified 時拋出 `urllib.error.HTTPError` 未捕捉之問題，正確回傳 `None` 啟用快取。
   - 修復 `CharterCache._component` 路徑穿越防禦，確保 `.` 與 `..` 回退為 sha256 雜湊，防止目錄穿越。
