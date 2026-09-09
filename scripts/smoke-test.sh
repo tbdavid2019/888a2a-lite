@@ -37,7 +37,7 @@ register_agent() {
 	output=$4
 	status=$(request POST /hub/v1/agents/register "$output" \
 		-H 'Content-Type: application/json' \
-		--data "{\"displayName\":\"$name\",\"providerFamily\":\"$provider\",\"transportId\":\"http-json\",\"capabilities\":[\"text/plain\"],\"registrationIdempotencyKey\":\"$key\"}")
+		--data "{\"displayName\":\"$name\",\"providerFamily\":\"$provider\",\"transportId\":\"http-json\",\"capabilities\":[\"text/plain\",\"a2a-executor/v1\"],\"registrationIdempotencyKey\":\"$key\"}")
 	[ "$status" = 201 ] || fail "registration returned HTTP $status"
 }
 
