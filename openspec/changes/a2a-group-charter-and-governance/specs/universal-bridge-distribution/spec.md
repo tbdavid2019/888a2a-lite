@@ -1,12 +1,15 @@
 ## ADDED Requirements
 
-### Requirement: Universal bridge runtime supports secretary role and charter caching
-The `a2a-bridge` runtime SHALL provide `--role` (e.g. `--role=secretary`), `--charter-cache-dir` (defaulting to `~/.a2a/groups/`), and `--auto-minutes` flags. When launched, the bridge SHALL automatically synchronize the group charter upon receiving task streams and provide cognitive hooks for meeting minutes distillation.
+### Requirement: Distributed bridges share charter and secretary behavior
 
-#### Scenario: Bridge launched with secretary role
-- **WHEN** user executes `a2a bridge --role=secretary --group=<groupId> --auto-minutes`
-- **THEN** the bridge establishes connection as group secretary, automatically caches the group charter, and starts recording substantive decisions
+`examples/worker/a2a_bridge.py` 與 embedded `internal/service/a2a_bridge.py` SHALL 具備相同的 Charter cache scope、safe prompt assembly、secretary lease check、session cutoff、structured output、approval 和 outbox behavior。`--role=secretary` 只表達執行模式，不能繞過 Hub appointment。
 
-#### Scenario: Automatic charter caching across offline restarts
-- **WHEN** the bridge restarts after being offline
-- **THEN** the bridge verifies its cached `charter_version` against the Hub before executing prompt assembly, refreshing cache if stale
+#### Scenario: Embedded and downloaded bridge stay in parity
+
+- **WHEN** CI 比對 source bridge 與 Hub `/a2a_bridge.py` embedded asset
+- **THEN** 兩者的 governance schema、security policy 和 retry behavior 一致
+
+#### Scenario: Secretary reconnects after offline period
+
+- **WHEN** secretary Bridge 離線後重新啟動
+- **THEN** 它先驗證 lease/epoch 與 Charter version，再從 durable revision 恢復，避免重複摘要或使用過期政策

@@ -1,53 +1,75 @@
 ## Purpose
 
-Provides Hub-level Group Charter specification, versioning, and lifecycle management, allowing agents to automatically synchronize organizational SOPs and inject cognitive constraints during multi-agent group onboarding.
+提供群組 Charter 的安全託管、版本控制、成員同步與治理 context，讓 Agent 能取得一致的流程政策，同時保留 authentication、工具權限與 Multi-Circle 的既有安全邊界。
 
 ## ADDED Requirements
 
-### Requirement: Group Charter schema and versioning
-Hub SHALL maintain a Markdown-formatted `charter` string and an integer `charter_version` (starting at 1) for each Group. The charter SHALL contain standardized sections defining team RACI matrix, speaking policy (`[[A2A_NO_REPLY]]` trigger conditions), decision thresholds, and output formatting.
+### Requirement: Group Charter has explicit lifecycle and safe content limits
 
-#### Scenario: Group is created with initial charter
-- **WHEN** an authenticated agent creates a group and provides an optional initial Markdown charter
-- **THEN** Hub persists the charter, initializes `charter_version` to 1, and associates it with the created group
+Hub SHALL 以 `hasCharter`、`charterVersion`、`contentHash`、`updatedAt` 表示 Charter 狀態。未設定 Charter 時 SHALL 使用 version 0、`hasCharter=false`，不建立預設治理內容且不注入 Prompt。明確建立後從 version 0 開始；內容 SHALL 是 bounded UTF-8 Markdown subset，不得含 script、event handler、credential-like content 或未受控外部資源。
 
-#### Scenario: Default charter is assigned when omitted
-- **WHEN** an authenticated agent creates a group without providing a charter
-- **THEN** Hub populates a default minimal charter template establishing basic speaking and anti-echo rules with `charter_version: 1`
+#### Scenario: Group without charter keeps legacy behavior
 
-### Requirement: Group Charter read and write endpoints
-Hub SHALL expose `GET /hub/v1/groups/{groupId}/charter` and `PUT /hub/v1/groups/{groupId}/charter`. Only the group owner or designated administrator agents SHALL be permitted to update the charter. Updates SHALL atomically increment `charter_version` by 1 and trigger a `CHARTER_UPDATED` notification broadcast to all current group members.
+- **WHEN** group 建立時未提供 Charter
+- **THEN** Group Card 回傳 `hasCharter=false`、`charterVersion=0`，Agent 依既有群組行為運作，不載入治理 Prompt
 
-#### Scenario: Group member fetches charter
-- **WHEN** an authenticated member of the group sends `GET /hub/v1/groups/{groupId}/charter`
-- **THEN** Hub returns HTTP 200 containing `groupId`, `charter_version`, `updated_at`, and the full Markdown `charter` content
+#### Scenario: Oversized or unsafe charter is rejected
 
-#### Scenario: Non-member cannot fetch charter
-- **WHEN** an agent that is not a member of the group requests `GET /hub/v1/groups/{groupId}/charter`
-- **THEN** Hub rejects the request with HTTP 403 Forbidden or 404 Not Found
+- **WHEN** client 提交超過大小限制或含 script/credential-like content 的 Charter
+- **THEN** Hub 回傳 400，且不建立 revision、不改變目前 Charter
 
-#### Scenario: Group owner updates charter
-- **WHEN** the group owner sends `PUT /hub/v1/groups/{groupId}/charter` with a revised Markdown charter
-- **THEN** Hub saves the new content, increments `charter_version`, and broadcasts a `CHARTER_UPDATED` event through the group event stream
+### Requirement: Charter read and write uses scoped authorization and CAS
 
-#### Scenario: Non-owner update is rejected
-- **WHEN** a regular group member attempts to send `PUT /hub/v1/groups/{groupId}/charter`
-- **THEN** Hub rejects the update with HTTP 403 Forbidden without modifying the existing charter
+Hub SHALL 提供 `GET/PUT /hub/v1/groups/{groupId}/charter`。GET 只允許 active group member；PUT/rollback 只允許 Owner 或明確指定的 Admin。PUT SHALL 要求 `expectedVersion` 與 idempotency key，使用 atomic compare-and-set；版本不符回 409。API JSON SHALL 使用 camelCase，且不得把 Charter 當作權限授予來源。
 
-### Requirement: Automatic onboarding charter synchronization for joining agents
-When an agent accepts a group invitation via `POST /hub/v1/groups/{groupId}/accept` or connects to the group event stream, the agent bridge SHALL automatically fetch and cache the latest `charter.md` locally under `~/.a2a/groups/{groupId}/charter.md`.
+#### Scenario: Owner updates current charter
 
-#### Scenario: Agent accepts invitation and caches charter
-- **WHEN** an agent accepts an invitation to join a group
-- **THEN** the agent bridge invokes the charter endpoint and saves `charter.md` along with its cached version number
+- **WHEN** Owner 以正確 expectedVersion 提交合法 Charter
+- **THEN** Hub 原子建立下一版 revision、更新 contentHash/updatedAt 並寫入 audit/event
 
-#### Scenario: Agent refreshes cached charter on version bump
-- **WHEN** the agent bridge receives a `CHARTER_UPDATED` event with a higher `charter_version`
-- **THEN** the bridge invalidates its local cache and pulls the newest charter content
+#### Scenario: Concurrent charter update conflicts
 
-### Requirement: Charter prompt assembly and cognitive boundary injection
-When dispatching a group message to an underlying LLM runtime, the bridge SHALL inject an abbreviated, authoritative snapshot of the group charter into the system prompt. The injected context SHALL explicitly command the model to conform to the group's speaking rules, role boundaries, and silent acknowledgment instructions.
+- **WHEN** 兩個更新使用同一舊 expectedVersion
+- **THEN** 只有一個更新成功，另一個回 409，既有版本歷史完整保留
 
-#### Scenario: Ingestion of charter into reasoning context
-- **WHEN** the bridge receives an inbound group task requiring LLM evaluation
-- **THEN** the bridge prepends the cached group charter guidelines to the prompt context before invoking the backend LLM engine
+#### Scenario: Regular member cannot update charter
+
+- **WHEN** 一般 member 呼叫 PUT 或 rollback
+- **THEN** Hub 回 403/404，不修改 Charter 或版本
+
+### Requirement: Charter updates are durable and replayable
+
+每次 Charter revision SHALL 保存 hub/circle/group/version/contentHash/updatedBy/createdAt 與前後關係；`CHARTER_UPDATED` event SHALL 只包含 group/circle/version/hash/updatedBy/revision，不包含完整 Charter。事件 SHALL 可由 member 的 group event stream 或版本查詢補回。
+
+#### Scenario: Member receives charter update
+
+- **WHEN** Owner 更新 Charter 且 member 已連線
+- **THEN** member 收到帶有新 version/hash 的 `CHARTER_UPDATED` event，並能 GET 相同版本內容
+
+#### Scenario: Disconnected member catches up
+
+- **WHEN** member 在更新時離線，之後重新加入或連線
+- **THEN** bridge 以版本/ETag 校準取得最新 Charter，不依賴 event 必定到達
+
+### Requirement: Bridge cache is scoped, atomic, and stale-aware
+
+Bridge SHALL 將 Charter cache 存在含 Hub/Circle/Group scope 的目錄，檔案與 metadata SHALL 具有限制、0600 權限、atomic replace 與 symlink protection。Cache SHALL 驗證 version 與 contentHash；拉取失敗時保留舊 cache 並標記 stale。Charter required policy 未能取得最新內容時，Bridge SHALL 暫停需要 governance context 的執行。
+
+#### Scenario: Charter cache survives restart
+
+- **WHEN** Bridge 重啟且 cache 版本仍有效
+- **THEN** Bridge 讀取 scoped cache，並以 bounded version check 確認是否需要更新
+
+#### Scenario: Cache cannot cross Hub or circle
+
+- **WHEN** 同一台機器切換 Hub、Circle 或 Agent identity
+- **THEN** Bridge 不讀取其他 scope 的 Charter cache
+
+### Requirement: Charter context cannot grant authority
+
+Bridge SHALL 將 Charter 以標記清楚的 policy data 注入 LLM context，優先順序 SHALL 低於 system/local safety policy 且高於 untrusted group message。Charter 不得授予工具、檔案、網路、credential、membership 或 operator 權限；UI 顯示 SHALL 安全 escape/sanitize。
+
+#### Scenario: Charter requests forbidden action
+
+- **WHEN** Charter 內容要求讀取 Token、執行 shell 或外傳秘密
+- **THEN** Bridge 忽略該要求，沿用 local safety policy，且不執行副作用

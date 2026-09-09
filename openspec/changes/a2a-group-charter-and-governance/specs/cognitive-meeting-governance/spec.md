@@ -1,49 +1,75 @@
 ## Purpose
 
-Defines autonomous multi-agent cognitive meeting governance, including secretary role activation, in-stream meeting minutes synthesis, durable decision extraction, and persistent local SQLite and external knowledge base export.
+提供具有唯一角色、可追溯來源、可審核狀態與可靠匯出的會議治理流程，將群組對話轉為可驗證的 minutes、decisions、action items 與 artifact references。
 
 ## ADDED Requirements
 
-### Requirement: Secretary role declaration and activation
-A group member SHALL be capable of declaring or being designated as the meeting secretary (`role: secretary`). A secretary agent SHALL monitor full-stream group conversation and act as the designated synthesizer of team conclusions.
+### Requirement: Secretary uses durable appointment and meeting sessions
 
-#### Scenario: Agent configured as secretary
-- **WHEN** an agent bridge is launched with `--role=secretary` and joins an active group
-- **THEN** the bridge identifies its role as secretary and tracks all conversational turns for synthesis
+Secretary SHALL 是 Hub 指定且持有有效 epoch/lease 的 group member；本機 `--role=secretary` 不得自行取得職權。每次 meeting SHALL 建立 immutable session cutoff revision、trigger identity、Charter version、synthesis job ID 與 state。只有 Human/Owner 或 Charter 明確授權的 member 可觸發 `/minutes`、`/wrapup`、`/summary`。
 
-#### Scenario: Human triggers explicit wrapup command
-- **WHEN** a human or authorized participant posts `/minutes`, `/wrapup`, or `/summary` in the group chat
-- **THEN** the designated secretary agent acknowledges receipt and initiates cognitive synthesis of the preceding session
+#### Scenario: Authorized member starts a synthesis job
 
-### Requirement: In-stream meeting minutes and key decisions synthesis
-The secretary agent SHALL filter out transient pleasantries, intermediate debugging logs, and chit-chat, synthesizing conversation into structured sections: Key Decisions (conclusions reached), Action Items (assignee, deliverable, deadline), and Artifact References (files, PRs, URLs).
+- **WHEN** authorized participant 發送 `/wrapup`
+- **THEN** designated secretary 建立一個以 cutoff revision 為界的 idempotent synthesis job
 
-#### Scenario: Secretary generates structured minutes
-- **WHEN** the session concludes or a synthesis command is received
-- **THEN** the secretary agent parses dialogue turns and produces a structured Markdown document containing Key Decisions and Action Items
+#### Scenario: Unauthorized command is ignored
 
-#### Scenario: Non-essential messages are omitted from permanent record
-- **WHEN** conversation contains small talk, greeting ping-pong, or transient error retries
-- **THEN** the synthesized minutes exclude these items while preserving substantive technical deliberations and agreements
+- **WHEN** 未授權 member 或不可信 Agent 發送 minutes command
+- **THEN** Hub/Bridge 不建立 synthesis job，也不觸發 LLM 或外部 export
 
-### Requirement: Durable group memory persistence in local SQLite work.db
-Synthesized meeting minutes and distinct decision items SHALL be stored durably in the local SQLite WAL database (`~/.a2a/work.db`) under dedicated tables (`group_minutes` and `group_decisions`), decoupled from transient chat message logs.
+### Requirement: Synthesis output is structured and source-traceable
 
-#### Scenario: Persisting minutes record
-- **WHEN** structured minutes are synthesized
-- **THEN** the bridge writes a record to `group_minutes` with `group_id`, `session_id`, `charter_version`, `summary_md`, and `created_at` timestamp
+Secretary SHALL 先產生可驗證 JSON，再渲染 Markdown。每個 Decision、Action Item、Artifact Reference SHALL 保存 source event/message IDs、revision range、session ID、Charter version、proposer、synthesis schema/model version、contentHash 與 review state。摘要不得把 LLM 推測標成已確認決策。
 
-#### Scenario: Querying past decisions across sessions
-- **WHEN** a participant or agent queries past decisions for a group
-- **THEN** the local bridge retrieves historical decision records from `group_decisions` without replaying raw chat messages
+#### Scenario: Minutes preserve source evidence
 
-### Requirement: Markdown and Wiki export of structured meeting outcomes
-The secretary bridge SHALL support automated export of synthesized minutes to local Markdown archives (`~/.a2a/minutes/<groupId>-<timestamp>.md`) and integration endpoints (such as Wiki REST APIs or GitHub Issues).
+- **WHEN** secretary 完成 synthesis
+- **THEN** minutes/decision/action records 可追溯到原始事件範圍，且包含目前 Charter version 與 needsReview 狀態
 
-#### Scenario: Exporting minutes to local filesystem
-- **WHEN** minutes are persisted
-- **THEN** the bridge creates a standardized Markdown file in the configured local output directory for immediate inspection
+#### Scenario: Chit-chat is excluded safely
 
-#### Scenario: Automatic dispatch of action items
-- **WHEN** action items are clearly assigned to specific member agents
-- **THEN** the secretary optionally dispatches direct follow-up reminder tasks to assigned agents via standard Hub task routing
+- **WHEN**輸入包含寒暄、重試日誌與技術討論
+- **THEN**輸出可排除低價值噪音，但不得刪除被引用為決策依據的 substantive event
+
+### Requirement: Governance results require explicit approval
+
+Decision SHALL 使用 `DRAFT/CONFIRMED/REJECTED`；Action Item SHALL 使用 `DRAFT/APPROVED/DISPATCHED/COMPLETED/CANCELED`。Action Item 預設不得 dispatch；核准者必須是 Human/Owner，assignee 必須解析為 Agent ID，deadline 必須帶 timezone。Charter amendment SHALL 先成為 proposal，使用 base version CAS，經 Owner approve 後才套用。
+
+#### Scenario: Human approves an action
+
+- **WHEN** Human/Owner 審核合法 draft action 並確認
+- **THEN** action 進入 APPROVED，可由受控 outbox 以 idempotency key dispatch
+
+#### Scenario: Secretary cannot auto-dispatch
+
+- **WHEN** secretary synthesis 產生 assigned action
+- **THEN** action 保持 DRAFT，不直接發送 Hub task
+
+#### Scenario: Charter amendment uses approval and CAS
+
+- **WHEN** Owner approve 基於目前 Charter version 的 amendment
+- **THEN** Hub 建立下一 Charter revision；base version 過期時回 409 且不套用
+
+### Requirement: Local governance memory is durable and scoped
+
+Bridge SHALL 在 `work.db` 保存 `group_minutes`、`group_decisions`、`group_action_items`，所有 record SHALL 包含 hub/circle/group/session scope、revision、Charter version、state、source provenance 與 timestamps。WAL migration、0600、retention 和 concurrent writer lock SHALL 被定義；不同 scope 不得互讀。
+
+#### Scenario: Governance memory survives restart
+
+- **WHEN** secretary/Bridge 重啟
+- **THEN** 可依 group/session 查詢既有 minutes、decisions、actions 與 provenance，不重複建立 synthesis
+
+### Requirement: External exports use an opt-in durable outbox
+
+Markdown、Wiki、GitHub、Webhook export SHALL 經 `export_outbox`，保存 provider、payload hash、idempotency key、attempt、retry time、state、last error 與 remote ID。Connector 預設關閉；credential 不得寫入 DB、log 或 UI；Webhook 只允許 HTTPS/allowlist/timeout/signature。產生 minutes 的 transaction 不得直接進行網路呼叫。
+
+#### Scenario: Export retry is idempotent
+
+- **WHEN** external export request timeout 或 process restart
+- **THEN** outbox 以相同 idempotency key 重試，不重複建立 remote artifact
+
+#### Scenario: Export failure does not erase minutes
+
+- **WHEN** Wiki/GitHub/Webhook export 失敗
+- **THEN** minutes/decision 保持已核准狀態，只有該 export job 進入 retry/dead-letter

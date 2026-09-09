@@ -135,5 +135,7 @@ func TestStandardGroupAuthorizationAndMalformedExtensionMetadata(t *testing.T) {
 		t.Fatalf("revoked member card: %d/%s", revokedCard.Code, revokedCard.Body.String())
 	}
 	noRecipient := doGroupA2ARequest(t, handler, http.MethodPost, "/a2a/v1/message:send", owner.AgentToken, a2a.GroupExtensionURI, map[string]any{"tenant": "group:" + group.GroupID, "message": map[string]any{"messageId": "no-recipient", "role": "ROLE_USER", "parts": []any{map[string]any{"text": "none"}}}, "configuration": map[string]any{"returnImmediately": true}})
-	if noRecipient.Code != http.StatusBadRequest || !strings.Contains(noRecipient.Body.String(), `"reason":"GROUP_NO_RECIPIENTS"`) { t.Fatalf("no-recipient group: %d/%s", noRecipient.Code, noRecipient.Body.String()) }
+	if noRecipient.Code != http.StatusBadRequest || !strings.Contains(noRecipient.Body.String(), `"reason":"GROUP_NO_RECIPIENTS"`) {
+		t.Fatalf("no-recipient group: %d/%s", noRecipient.Code, noRecipient.Body.String())
+	}
 }
