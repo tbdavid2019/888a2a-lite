@@ -3088,9 +3088,11 @@ def detect_runtimes(active_backend=None, desired_backend=None, custom_runtimes=N
 
 def detect_backend():
     """Auto-detect available local AI CLI backend."""
-    for runtime in detect_runtimes():
-        if runtime["status"] == "ready":
-            return runtime["id"]
+    enhanced_env = get_enhanced_env()
+    for definition in RUNTIME_DEFINITIONS:
+        executable = definition.get("executable") or shutil.which(definition["command"], path=enhanced_env.get("PATH"))
+        if executable:
+            return definition["id"]
     return "openclaw"
 
 
@@ -3101,7 +3103,7 @@ ENV_NAME_PATTERN = re.compile(r"^[A-Z_][A-Z0-9_]{0,63}$")
 def validate_custom_runtime(payload):
     if not isinstance(payload, dict):
         raise ValueError("runtime must be an object")
-    allowed = {"id", "name", "executable", "args", "envNames"}
+    allowed = {"id", "name", "executable", "args", "envNames", "command"}
     if set(payload) - allowed:
         raise ValueError("unsupported runtime field")
     if not all(isinstance(payload.get(field), str) for field in ("id", "name", "executable")):
