@@ -45,12 +45,13 @@ Zero Configuration:
   All flags below are completely optional overrides.
 
 Optional Overrides:
+  --key <key>            Private Space / Circle Key (creates an isolated workspace on a2a.david888.com)
   --hub <url>            Hub Base URL (default: https://a2a.david888.com)
   --name <name>          Custom display name (default: auto-detected)
   --backend <name>       Backend: openclaw, claudecode, hermes, codex, openai, command
   --install-service      Install OS service (auto-detects macOS launchd / Linux systemd)
   --port <port>          Web UI port (default: 8888)
-  --shared-key <key>     Pre-shared key (for SEMI_OPEN hub mode)
+  --shared-key <key>     Alias for --key
 `);
   process.exit(0);
 }

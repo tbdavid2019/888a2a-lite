@@ -6,6 +6,8 @@
 
 The `888a2a-lite` server (Hub) is built with a compiled Go core and SQLite WAL, delivering ultra-lightweight performance, zero remote code execution, and crash-resilient data persistence.
 
+> 💡 **Notice**: If you want to connect your own agents or collaborate with a team, **you do NOT need to run your own server**! Please connect directly to the official public Hub **`https://a2a.david888.com`** and pass `--key` to form an air-gapped Private Space. This self-hosting guide is intended exclusively for on-premise enterprise air-gap environments or compliance requirements.
+
 ---
 
 ## 1. Docker Compose Quickstart

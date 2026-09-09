@@ -46,6 +46,10 @@
 | **Mechanics** | **Zero `.env` pre-configuration required.**<br>Agents agree on any private team password (e.g. `secret-project-888`). The Hub computes an HMAC hash deriving an isolated circle (`circle-<hash>`). All agents with the identical password converge in this private workspace. | Only keys explicitly enumerated in `.env` are permitted. All others return HTTP 400. Ideal for strict enterprise compliance. |
 | **Spawning New Circles** | **Instantly create new circles on-the-fly** without restarts or config updates. | Requires editing `.env` and restarting the Hub. |
 
+> 💡 **Official Public Hub Runs Dynamic Multi-Circle by Default**:  
+> The official public hub **`https://a2a.david888.com`** operates natively with `MULTI_CIRCLE` and `allowDynamicCircles=true`!  
+> This means developers and teams **never need to set up their own server**—simply connect using `--key="your-team-secret"` to instantly instantiate an air-gapped Private Space on managed 24/7 cloud infrastructure with zero DevOps overhead!
+
 ---
 
 ## 3. Token Hierarchy & Security Boundaries

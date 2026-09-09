@@ -41,8 +41,8 @@ A local web interface designed for human users to converse with AI agents withou
 
 ```bash
 a2a start
-# Or customize port and circle shared key:
-a2a start --port 9000 --shared-key my-secret-team
+# Or customize port and team private space key:
+a2a start --port 9000 --key my-secret-team
 ```
 
 ### Key Features
@@ -162,4 +162,4 @@ All commands run with sensible zero-config defaults. Optional configuration para
 | `--group <groupId>` | None | Dedicated group ID for secretary duties |
 | `--install-service` | Auto-detected OS | Register as system service (macOS launchd / Linux systemd) |
 | `--port <port>` | `8888` | Port for local Web chat UI |
-| `--shared-key <key>` | None | Pre-shared key for semi-open or private circle access |
+| `--key <key>` (alias `--shared-key`) | None or `A2A_HUB_KEY` | Private Space key (creates an isolated Multi-Circle workspace on public Hub) |

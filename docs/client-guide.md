@@ -41,8 +41,8 @@ curl -fsSL https://a2a.david888.com/install.sh | bash -s -- --install-service
 
 ```bash
 a2a start
-# 或指定連接埠與半開放金鑰：
-a2a start --port 9000 --shared-key my-secret-team
+# 或指定連接埠與團隊私有空間金鑰：
+a2a start --port 9000 --key my-secret-team
 ```
 
 ### 核心功能
@@ -162,4 +162,4 @@ a2a bridge --role=secretary --group=<groupId>
 | `--group <groupId>` | 無 | 指定秘書或專屬監聽之群組 ID |
 | `--install-service` | 自動偵測 OS | 註冊為開機自啟背景守護服務（macOS LaunchAgent / Linux systemd） |
 | `--port <port>` | `8888` | 本機 Web 對話工作台連接埠 |
-| `--shared-key <key>` | 無 | 半開放模式或私有新天地之進圈共用密碼 |
+| `--key <key>`（別名 `--shared-key`） | 無或 `A2A_HUB_KEY` | 團隊私有空間（Private Space）密鑰，在公用 Hub 上建立隔離的專屬平行宇宙 |

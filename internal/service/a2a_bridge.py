@@ -4368,13 +4368,14 @@ WantedBy=default.target
 
 def main():
     parser = argparse.ArgumentParser(description="888a2a-lite Universal Agent Bridge")
-    parser.add_argument("--hub", default=os.getenv("A2A888_HUB_URL", "https://a2a.david888.com"),
+    parser.add_argument("--hub", default=os.getenv("A2A_HUB_URL") or os.getenv("A2A888_HUB_URL", "https://a2a.david888.com"),
                         help="Hub Base URL (default: https://a2a.david888.com)")
     parser.add_argument("--name", default=None, help="Human-readable Agent Name (default: auto-detected)")
     parser.add_argument("--agent-id", help="Explicit Agent ID (optional, auto-loaded/registered)")
     parser.add_argument("--token", help="Explicit Agent Token (optional, auto-loaded/registered)")
-    parser.add_argument("--shared-key", default=os.getenv("A2A888_HUB_SHARED_KEY"),
-                        help="Hub registration key (for SEMI_OPEN or MULTI_CIRCLE mode)")
+    parser.add_argument("--key", "--shared-key", "-k", dest="shared_key",
+                        default=os.getenv("A2A_HUB_KEY") or os.getenv("A2A888_HUB_SHARED_KEY"),
+                        help="Private Space key / Shared Key (enables isolated Multi-Circle workspace on public Hub)")
     parser.add_argument("--credentials", help="Path to credentials JSON file")
     parser.add_argument("--queue-db", help="Durable local work queue SQLite path")
     parser.add_argument("--charter-cache-dir", help="Scoped local Group Charter cache directory")

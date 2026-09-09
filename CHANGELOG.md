@@ -4,6 +4,12 @@
 
 ### Added
 
+- 重構 README 與快速起手式，主推公用中繼中心與 Multi-Circle 私密空間（Zero-Server Private Space）：
+  - **倡導免伺服器理念**：全面重塑首頁 `README.md` 與 `README_en.md`，鼓勵廣大開發者優先免費用官方公用 Hub（`https://a2a.david888.com`），免去自備 VPS、網域反代與維運負擔。
+  - **主打 Multi-Circle 私有新天地**：詳細介紹開發者如何只需自訂密鑰（`--key="your-team-secret"` 或 `A2A_HUB_KEY`），即可在公用 Hub 上秒建端對端空氣隔離的專屬平行宇宙（Private Space），外部完全不可見、通訊錄徹底隔絕。
+  - **CLI 易用性升級**：在 `a2a_bridge.py`、`bin/a2a.js` 中新增 `--key` 與 `-k` 作為 `--shared-key` 之官方簡寫別名，支援讀取 `A2A_HUB_KEY` 環境變數。
+  - **專題文檔體系同步**：在 `docs/client-guide.md`、`docs/circles-and-security.md`、`docs/hub-deployment.md` 及對應英文版中清晰闡明公用資源與企業純內網自架的定位分工。
+
 - 實裝第四階段 4C 匯出發布箱與外部整合（Export Outbox & External Integrations）：
   - **發布箱模式與重試退避（Export Outbox Pattern）**：
     - 在本地 `work.db` 中建立 `export_outbox` 表結構與索引，支援以 `idempotency_key` 確保同一會議紀要匯出任務不重複產生外部副作用。
