@@ -47,6 +47,97 @@ class DurableBridgeTests(unittest.TestCase):
         self.assertEqual(by_id["codex"]["status"], "unavailable")
         self.assertNotIn("provider secret", json.dumps(runtimes))
 
+    def test_custom_runtime_config_rejects_unsafe_values_and_recovers(self):
+        executable = next((path for path in ("/bin/sh", "/usr/bin/sh") if os.path.isfile(path)), None)
+        self.assertIsNotNone(executable)
+        valid = {
+            "id": "team-shell",
+            "name": "Team Shell",
+            "executable": executable,
+            "args": ["--version"],
+            "envNames": ["A2A_RUNTIME_MODE"],
+        }
+        runtime = bridge.validate_custom_runtime(valid)
+        self.assertEqual(runtime["id"], "team-shell")
+        for unsafe_args in (["--mode=fast;touch /tmp/pwned"], ["$(whoami)"], ["line\nfeed"]):
+            with self.assertRaises(ValueError):
+                bridge.validate_custom_runtime({**valid, "args": unsafe_args})
+        with self.assertRaises(ValueError):
+            bridge.validate_custom_runtime({**valid, "envNames": ["TOKEN=secret"]})
+        with self.assertRaises(ValueError):
+            bridge.validate_custom_runtime({**valid, "unexpected": "value"})
+        with self.assertRaises(ValueError):
+            bridge.validate_custom_runtime({**valid, "name": 123})
+
+        with tempfile.TemporaryDirectory() as directory:
+            config_path = os.path.join(directory, "runtime_config.json")
+            store = bridge.RuntimeConfigStore(config_path)
+            store.add_custom(runtime)
+            store.select("team-shell")
+            self.assertEqual(os.stat(config_path).st_mode & 0o777, 0o600)
+            with open(config_path, "r", encoding="utf-8") as handle:
+                saved = json.load(handle)
+            self.assertEqual(saved["schemaVersion"], 1)
+            self.assertEqual(saved["desiredBackend"], "team-shell")
+            self.assertNotIn("secret", json.dumps(saved).lower())
+            restored = bridge.RuntimeConfigStore(config_path)
+            self.assertEqual(restored.desired_backend, "team-shell")
+            self.assertEqual(restored.custom[0]["executable"], executable)
+            with self.assertRaises(ValueError):
+                restored.add_custom(runtime)
+
+    def test_runtime_config_mutations_are_json_and_token_protected(self):
+        executable = next((path for path in ("/bin/sh", "/usr/bin/sh") if os.path.isfile(path)), None)
+        self.assertIsNotNone(executable)
+
+        class MockHub:
+            agent_id = "agent-ui-user"
+            hub_url = "https://a2a.test.com"
+
+        with tempfile.TemporaryDirectory() as directory:
+            config_path = os.path.join(directory, "runtime_config.json")
+            server = bridge.LocalUIServer(("127.0.0.1", 0), bridge.LocalUIHandler, MockHub(), "TestUser", runtime_config_path=config_path)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            base_url = f"http://127.0.0.1:{server.server_port}"
+            payload = json.dumps({
+                "id": "team-shell",
+                "name": "Team Shell",
+                "executable": executable,
+                "args": ["--version"],
+                "envNames": [],
+            }).encode("utf-8")
+            headers = {
+                "Content-Type": "application/json",
+                "X-Local-UI-Token": server.local_ui_token,
+                "Origin": base_url,
+            }
+            try:
+                request = urllib.request.Request(f"{base_url}/api/runtimes/custom", data=payload, headers=headers)
+                with urllib.request.urlopen(request) as response:
+                    self.assertEqual(response.status, 201)
+                    self.assertNotIn("secret", response.read().decode("utf-8").lower())
+                select = urllib.request.Request(
+                    f"{base_url}/api/runtimes/select",
+                    data=json.dumps({"id": "team-shell"}).encode("utf-8"),
+                    headers=headers,
+                )
+                with urllib.request.urlopen(select) as response:
+                    result = json.loads(response.read().decode("utf-8"))
+                    self.assertEqual(result["requested"], "team-shell")
+                    self.assertEqual(result["state"], "pending")
+                missing_token = urllib.request.Request(
+                    f"{base_url}/api/runtimes/select",
+                    data=json.dumps({"id": "team-shell"}).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                with self.assertRaises(urllib.error.HTTPError) as ctx:
+                    urllib.request.urlopen(missing_token)
+                self.assertEqual(ctx.exception.code, 403)
+            finally:
+                server.shutdown()
+                server.server_close()
+
     def test_default_credentials_are_separated_by_hub_and_circle_key(self):
         public_path = bridge.default_credential_path("https://hub-a", "Agent")
         private_a = bridge.default_credential_path("https://hub-a", "Agent", "key-a")
@@ -383,7 +474,7 @@ class DurableBridgeTests(unittest.TestCase):
             req = bridge.urllib.request.Request(
                 f"{base_url}/api/send",
                 data=json.dumps({"targetAgentId": "peer-1", "message": "Hello from UI"}).encode("utf-8"),
-                headers={"Content-Type": "application/json"}
+                headers={"Content-Type": "application/json", "X-Local-UI-Token": server.local_ui_token}
             )
             with bridge.urllib.request.urlopen(req) as resp:
                 self.assertEqual(resp.status, 200)
@@ -398,6 +489,45 @@ class DurableBridgeTests(unittest.TestCase):
                 self.assertEqual(len(hist["messages"]), 1)
                 self.assertEqual(hist["messages"][0]["message"], "Hello from UI")
                 self.assertTrue(hist["messages"][0]["isOutgoing"])
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_local_ui_mutations_require_process_token_and_same_origin(self):
+        class MockHub:
+            agent_id = "agent-ui-user"
+            hub_url = "https://a2a.test.com"
+            def send_task(self, target, msg, *args, **kwargs): return {"taskId": "task-secure"}
+
+        server = bridge.LocalUIServer(("127.0.0.1", 0), bridge.LocalUIHandler, MockHub(), "TestUser")
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        base_url = f"http://127.0.0.1:{server.server_port}"
+        payload = json.dumps({"targetAgentId": "peer", "message": "hello"}).encode("utf-8")
+        try:
+            with self.assertRaises(urllib.error.HTTPError) as ctx:
+                urllib.request.urlopen(urllib.request.Request(f"{base_url}/api/send", data=payload, headers={"Content-Type": "application/json"}))
+            self.assertEqual(ctx.exception.code, 403)
+            with self.assertRaises(urllib.error.HTTPError) as ctx:
+                urllib.request.urlopen(urllib.request.Request(f"{base_url}/api/send", data=payload, headers={"Content-Type": "application/json", "X-Local-UI-Token": server.local_ui_token, "Origin": "https://evil.example"}))
+            self.assertEqual(ctx.exception.code, 403)
+            valid = urllib.request.Request(f"{base_url}/api/send", data=payload, headers={"Content-Type": "application/json", "X-Local-UI-Token": server.local_ui_token, "Origin": base_url})
+            with urllib.request.urlopen(valid) as response:
+                self.assertEqual(response.status, 200)
+            with urllib.request.urlopen(base_url) as response:
+                html = response.read().decode("utf-8")
+                self.assertIn(server.local_ui_token, html)
+                self.assertNotIn(f"?token={server.local_ui_token}", html)
+                self.assertEqual(response.headers["Cache-Control"], "no-store")
+            with tempfile.TemporaryDirectory() as directory:
+                replacement = bridge.LocalUIServer(
+                    ("127.0.0.1", 0), bridge.LocalUIHandler, MockHub(), "TestUser",
+                    chat_db_path=os.path.join(directory, "chat.db"),
+                )
+                try:
+                    self.assertNotEqual(server.local_ui_token, replacement.local_ui_token)
+                finally:
+                    replacement.server_close()
         finally:
             server.shutdown()
             server.server_close()
@@ -619,7 +749,7 @@ class DurableBridgeTests(unittest.TestCase):
                 payload = json.dumps({"targetAgentId": "peer-A", "message": "hello outbox", "taskId": task_id}).encode("utf-8")
 
                 # Attempt 1: Hub fails -> returns 502, state becomes FAILED
-                req = urllib.request.Request(f"http://127.0.0.1:{port}/api/send", data=payload, headers={"Content-Type": "application/json"})
+                req = urllib.request.Request(f"http://127.0.0.1:{port}/api/send", data=payload, headers={"Content-Type": "application/json", "X-Local-UI-Token": server.local_ui_token})
                 with self.assertRaises(urllib.error.HTTPError) as ctx:
                     urllib.request.urlopen(req)
                 self.assertEqual(ctx.exception.code, 502)
@@ -631,7 +761,7 @@ class DurableBridgeTests(unittest.TestCase):
 
                 # Attempt 2 (Retry): Hub succeeds -> returns 200, state becomes SENT
                 mock_hub.send_task.return_value = {"taskId": task_id, "state": "PENDING"}
-                req2 = urllib.request.Request(f"http://127.0.0.1:{port}/api/send", data=payload, headers={"Content-Type": "application/json"})
+                req2 = urllib.request.Request(f"http://127.0.0.1:{port}/api/send", data=payload, headers={"Content-Type": "application/json", "X-Local-UI-Token": server.local_ui_token})
                 with urllib.request.urlopen(req2) as resp:
                     self.assertEqual(resp.status, 200)
                     res_data = json.loads(resp.read().decode("utf-8"))
@@ -739,7 +869,7 @@ class DurableBridgeTests(unittest.TestCase):
                 request = urllib.request.Request(
                     f"http://127.0.0.1:{port}/api/send",
                     data=payload,
-                    headers={"Content-Type": "application/json"},
+                    headers={"Content-Type": "application/json", "X-Local-UI-Token": server.local_ui_token},
                 )
                 with urllib.request.urlopen(request) as response:
                     result = json.loads(response.read().decode("utf-8"))

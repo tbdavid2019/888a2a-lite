@@ -4,6 +4,11 @@
 
 ### Added
 
+- 第三階段先行完成 Local UI 安全邊界與 Runtime 設定基礎：
+  - 每個 UI 程序產生獨立 session/CSRF token，mutation 僅接受 loopback、同源、JSON 請求，並使用 constant-time token 比對、大小限制、欄位白名單與 `no-store` 回應。
+  - 新增 `/api/runtimes/custom` 與 `/api/runtimes/select`，限制絕對 executable、bounded argv、環境變數名稱參照，拒絕 shell operator 與秘密值。
+  - Runtime 設定以 schema version 1、原子替換及 `0600` 權限寫入；desired backend 與目前 active process 狀態分開呈現，並同步更新 source/embedded Bridge。
+
 - 完成 `a2a-standard-compatibility` 全量部署與 CI/CD 雙主機上線：
   - 通過 GitHub Actions 四大檢核（Go checks、Python bridge checks、A2A source and SDK gate、Container build）。
   - 自動構建並推送多架構 Docker 映像檔（`tbdavid2019/888a2a-lite:latest`，涵蓋 amd64 及 arm64）。

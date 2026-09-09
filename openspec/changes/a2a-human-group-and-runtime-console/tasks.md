@@ -13,15 +13,15 @@
 
 ## 3. Local UI security boundary
 
-- [ ] 3.1 Generate a high-entropy per-process local UI session/CSRF token and inject it through a safe same-origin bootstrap mechanism; verify tokens are absent from URLs and logs and invalid after server restart.
-- [ ] 3.2 Enforce loopback Host validation, Origin/Referer checks, strict JSON Content-Type, bounded bodies, unknown-field rejection, no-store/security headers, and constant-time token comparison; verify cross-origin and missing-token mutations are rejected.
+- [x] 3.1 Generate a high-entropy per-process local UI session/CSRF token and inject it through a safe same-origin bootstrap mechanism; verify tokens are absent from URLs and logs and invalid after server restart.
+- [x] 3.2 Enforce loopback Host validation, Origin/Referer checks, strict JSON Content-Type, bounded bodies, unknown-field rejection, no-store/security headers, and constant-time token comparison; verify cross-origin and missing-token mutations are rejected.
 - [ ] 3.3 Apply the local security boundary to group sends, custom Runtime mutation, service install, service restart, and active Runtime changes; verify GET history/events never trigger an OS mutation.
 
 ## 4. Runtime configuration and service control
 
-- [ ] 4.1 Implement `POST /api/runtimes/custom` using bounded name/ID, absolute executable, argv array, and environment name references; verify shell operators, arbitrary paths, environment values, duplicate IDs, and oversized input are rejected.
-- [ ] 4.2 Persist Runtime configuration with schema version, 0600 permissions, atomic replace, and no secret values; verify restart recovery, malformed-file handling, and configuration migration.
-- [ ] 4.3 Implement Runtime selection using persisted desired config plus immutable current process state; verify UI reports requested/pending/active accurately and does not claim an un-restarted process changed backend.
+- [x] 4.1 Implement `POST /api/runtimes/custom` using bounded name/ID, absolute executable, argv array, and environment name references; verify shell operators, arbitrary paths, environment values, duplicate IDs, and oversized input are rejected.
+- [x] 4.2 Persist Runtime configuration with schema version, 0600 permissions, atomic replace, and no secret values; verify restart recovery, malformed-file handling, and configuration migration.
+- [x] 4.3 Implement Runtime selection using persisted desired config plus immutable current process state; verify UI reports requested/pending/active accurately and does not claim an un-restarted process changed backend.
 - [ ] 4.4 Implement fixed managed LaunchAgent/systemd user service status/install/restart endpoints with idempotency and bounded OS command execution; verify browser cannot provide arbitrary unit/plist names or arguments.
 - [ ] 4.5 Implement failed-start rollback and service status reporting; verify a new Runtime failure preserves old config, credential file, queue, and recoverable service state.
 - [ ] 4.6 Add the Runtime panel controls for add/select/install/restart; verify ready-only execution, confirmation/error state, no duplicate service units, and accessible status feedback.

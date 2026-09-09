@@ -30,6 +30,7 @@ import contextlib
 from datetime import datetime, timezone
 import fcntl
 import hashlib
+import hmac
 import http.server
 import json
 import math
@@ -37,6 +38,7 @@ import os
 import plistlib
 import queue
 import re
+import secrets
 import shlex
 import shutil
 import socket
@@ -1399,6 +1401,7 @@ CLIENT_HTML = """<!DOCTYPE html>
 
   <script>
     const $ = (id) => document.getElementById(id);
+    const LOCAL_UI_TOKEN = "{{LOCAL_UI_TOKEN}}";
     let myInfo = null;
     let peers = [];
     let conversations = [];
@@ -1605,7 +1608,7 @@ CLIENT_HTML = """<!DOCTYPE html>
       try {
         const res = await fetch("/api/send", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "X-Local-UI-Token": LOCAL_UI_TOKEN },
           body: JSON.stringify({
             targetAgentId: activePeer.agentId,
             message: m.message,
@@ -1654,7 +1657,7 @@ CLIENT_HTML = """<!DOCTYPE html>
       try {
         const res = await fetch("/api/send", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "X-Local-UI-Token": LOCAL_UI_TOKEN },
           body: JSON.stringify({
             targetAgentId: activePeer.agentId,
             message: msgText,
@@ -1997,12 +2000,14 @@ class LocalChatStore:
 
 
 class LocalUIServer(http.server.ThreadingHTTPServer):
-    def __init__(self, server_address, RequestHandlerClass, hub_client, user_name, chat_db_path=None, active_backend=None, desired_backend=None):
+    def __init__(self, server_address, RequestHandlerClass, hub_client, user_name, chat_db_path=None, active_backend=None, desired_backend=None, runtime_config_path=None):
         super().__init__(server_address, RequestHandlerClass)
         self.hub_client = hub_client
         self.user_name = user_name
+        self.local_ui_token = secrets.token_urlsafe(32)
+        self.runtime_config = RuntimeConfigStore(runtime_config_path)
         self.active_backend = active_backend or ""
-        self.desired_backend = desired_backend or self.active_backend
+        self.desired_backend = desired_backend or self.runtime_config.desired_backend or self.active_backend
         self.chat_store = LocalChatStore(chat_db_path or os.path.expanduser("~/.a2a/chat.db"))
         self.subscribers = set()
         self.lock = threading.Lock()
@@ -2106,9 +2111,11 @@ class LocalUIHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path in ("/", "/index.html"):
-            content = CLIENT_HTML.encode("utf-8")
+            content = CLIENT_HTML.replace("{{LOCAL_UI_TOKEN}}", self.server.local_ui_token).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
             self.send_header("Content-Length", str(len(content)))
             self.end_headers()
             self.wfile.write(content)
@@ -2125,7 +2132,7 @@ class LocalUIHandler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
         elif parsed.path == "/api/runtimes":
-            data = {"runtimes": detect_runtimes(self.server.active_backend, self.server.desired_backend)}
+            data = {"runtimes": detect_runtimes(self.server.active_backend, self.server.desired_backend, self.server.runtime_config.custom), "configStatus": "invalid" if self.server.runtime_config.error else "ok"}
             body = json.dumps(data, ensure_ascii=False).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -2139,16 +2146,13 @@ class LocalUIHandler(http.server.BaseHTTPRequestHandler):
                 body = json.dumps({"agents": agents}, ensure_ascii=False).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("X-Content-Type-Options", "nosniff")
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
-            except Exception as exc:
-                body = json.dumps({"error": str(exc)}, ensure_ascii=False).encode("utf-8")
-                self.send_response(500)
-                self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
+            except Exception:
+                self._write_local_error(500, "peer discovery failed")
         elif parsed.path == "/api/conversations":
             convs = self.server.chat_store.get_conversations()
             body = json.dumps({"conversations": convs}, ensure_ascii=False).encode("utf-8")
@@ -2248,6 +2252,45 @@ class LocalUIHandler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urllib.parse.urlparse(self.path)
+        if not self._validate_local_mutation():
+            return
+        if parsed.path == "/api/runtimes/custom":
+            payload = self._read_json_body()
+            if payload is None: return
+            try:
+                runtime = validate_custom_runtime(payload)
+                self.server.runtime_config.add_custom(runtime)
+            except (ValueError, OSError):
+                self._write_local_error(400, "invalid Runtime configuration")
+                return
+            self.send_response(201)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            body = json.dumps({"runtime": {"id": runtime["id"], "name": runtime["name"], "executable": runtime["executable"], "args": runtime["args"], "envNames": runtime["envNames"]}}, ensure_ascii=False).encode("utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if parsed.path == "/api/runtimes/select":
+            payload = self._read_json_body()
+            if payload is None: return
+            if not isinstance(payload, dict) or set(payload) != {"id"} or not isinstance(payload["id"], str):
+                self._write_local_error(400, "runtime selection is invalid")
+                return
+            try:
+                self.server.runtime_config.select(payload["id"].strip())
+            except (ValueError, OSError):
+                self._write_local_error(400, "runtime id does not exist")
+                return
+            self.server.desired_backend = payload["id"].strip()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            body = json.dumps({"requested": self.server.desired_backend, "active": self.server.active_backend, "state": "active" if self.server.desired_backend == self.server.active_backend else "pending"}).encode("utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if parsed.path == "/api/send":
             try:
                 length = int(self.headers.get("Content-Length", 0))
@@ -2272,6 +2315,11 @@ class LocalUIHandler(http.server.BaseHTTPRequestHandler):
             raw = self.rfile.read(length).decode("utf-8")
             try:
                 payload = json.loads(raw)
+                allowed_fields = {"targetAgentId", "message", "taskId"}
+                if not isinstance(payload, dict) or set(payload) - allowed_fields:
+                    raise ValueError("unsupported request field")
+                if not all(isinstance(payload.get(field, ""), str) for field in ("targetAgentId", "message", "taskId")):
+                    raise ValueError("request fields must be strings")
                 target_id = payload.get("targetAgentId", "").strip()
                 msg_text = payload.get("message", "").strip()
                 task_id = payload.get("taskId", "").strip() or f"out-{uuid.uuid4()}"
@@ -2311,6 +2359,7 @@ class LocalUIHandler(http.server.BaseHTTPRequestHandler):
                     }, ensure_ascii=False).encode("utf-8")
                     self.send_response(502)
                     self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Cache-Control", "no-store")
                     self.send_header("Content-Length", str(len(body)))
                     self.end_headers()
                     self.wfile.write(body)
@@ -2320,19 +2369,73 @@ class LocalUIHandler(http.server.BaseHTTPRequestHandler):
                 body = json.dumps({"ok": True, "taskId": final_task_id, "state": "SENT"}, ensure_ascii=False).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
-            except Exception as exc:
-                body = json.dumps({"error": str(exc)}, ensure_ascii=False).encode("utf-8")
-                self.send_response(500)
-                self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
+            except ValueError:
+                self._write_local_error(400, "request body is invalid")
+            except Exception:
+                self._write_local_error(500, "local delivery failed")
         else:
             self.send_response(404)
             self.end_headers()
+
+    def _validate_local_mutation(self):
+        host = self.headers.get("Host", "")
+        try:
+            host_url = urllib.parse.urlsplit("//" + host)
+            valid_host = host_url.hostname in {"127.0.0.1", "localhost", "::1"} and host_url.port == self.server.server_port
+        except ValueError:
+            valid_host = False
+        if not valid_host:
+            self._write_local_error(400, "invalid local host")
+            return False
+        for header_name in ("Origin", "Referer"):
+            value = self.headers.get(header_name)
+            if not value:
+                continue
+            try:
+                origin = urllib.parse.urlsplit(value)
+                valid_origin = origin.scheme == "http" and origin.hostname in {"127.0.0.1", "localhost", "::1"} and origin.port == self.server.server_port
+            except ValueError:
+                valid_origin = False
+            if not valid_origin:
+                self._write_local_error(403, "origin is not allowed")
+                return False
+        if not hmac.compare_digest(self.headers.get("X-Local-UI-Token", ""), self.server.local_ui_token):
+            self._write_local_error(403, "local session is invalid")
+            return False
+        content_type = self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+        if content_type != "application/json":
+            self._write_local_error(415, "Content-Type must be application/json")
+            return False
+        return True
+
+    def _write_local_error(self, status, message):
+        body = json.dumps({"error": message}, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _read_json_body(self):
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except (TypeError, ValueError):
+            length = -1
+        if length < 0 or length > MAX_LOCAL_REQUEST_BYTES:
+            self._write_local_error(413 if length > MAX_LOCAL_REQUEST_BYTES else 400, "request body is invalid")
+            return None
+        try:
+            value = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            self._write_local_error(400, "request body is invalid")
+            return None
+        return value
 
 
 def run_local_ui(hub_client, user_name, port=8888, open_browser=True, chat_db_path=None, active_backend=None, desired_backend=None):
@@ -2441,14 +2544,33 @@ RUNTIME_DEFINITIONS = (
 )
 
 
-def detect_runtimes(active_backend=None, desired_backend=None):
+def probe_runtime(executable, env):
+    try:
+        probe = subprocess.run(
+            [executable, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            env=env,
+            shell=False,
+        )
+        if probe.returncode == 0:
+            version = (probe.stdout or "").strip().splitlines()[0:1]
+            return "ready", version[0][:128] if version else "unknown"
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return "unavailable", None
+
+
+def detect_runtimes(active_backend=None, desired_backend=None, custom_runtimes=None):
     """Inspect known local binaries without claiming provider/login health."""
     enhanced_env = get_enhanced_env()
     active_backend = active_backend or ""
     desired_backend = desired_backend or active_backend
     runtimes = []
-    for definition in RUNTIME_DEFINITIONS:
-        executable = shutil.which(definition["command"], path=enhanced_env.get("PATH"))
+    definitions = list(RUNTIME_DEFINITIONS) + list(custom_runtimes or [])
+    for definition in definitions:
+        executable = definition.get("executable") or shutil.which(definition["command"], path=enhanced_env.get("PATH"))
         runtime = {
             "id": definition["id"],
             "name": definition["name"],
@@ -2460,20 +2582,7 @@ def detect_runtimes(active_backend=None, desired_backend=None):
         }
         if executable:
             try:
-                probe = subprocess.run(
-                    [executable, "--version"],
-                    capture_output=True,
-                    text=True,
-                    timeout=2,
-                    env=enhanced_env,
-                    shell=False,
-                )
-                if probe.returncode == 0:
-                    version = (probe.stdout or "").strip().splitlines()[0:1]
-                    runtime["version"] = version[0][:128] if version else "unknown"
-                    runtime["status"] = "ready"
-            except (OSError, subprocess.SubprocessError):
-                pass
+                runtime["status"], runtime["version"] = probe_runtime(executable, enhanced_env)
         runtimes.append(runtime)
     return runtimes
 
@@ -2484,6 +2593,101 @@ def detect_backend():
         if runtime["status"] == "ready":
             return runtime["id"]
     return "openclaw"
+
+
+RUNTIME_ID_PATTERN = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
+ENV_NAME_PATTERN = re.compile(r"^[A-Z_][A-Z0-9_]{0,63}$")
+
+
+def validate_custom_runtime(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("runtime must be an object")
+    allowed = {"id", "name", "executable", "args", "envNames"}
+    if set(payload) - allowed:
+        raise ValueError("unsupported runtime field")
+    if not all(isinstance(payload.get(field), str) for field in ("id", "name", "executable")):
+        raise ValueError("id, name, and executable must be strings")
+    runtime_id = payload["id"].strip()
+    name = payload["name"].strip()
+    executable = payload["executable"].strip()
+    if not RUNTIME_ID_PATTERN.fullmatch(runtime_id):
+        raise ValueError("id must be a bounded lower-case runtime identifier")
+    if not name or len(name) > 80:
+        raise ValueError("name must contain 1 to 80 characters")
+    if not os.path.isabs(executable) or not os.path.isfile(executable) or not os.access(executable, os.X_OK):
+        raise ValueError("executable must be an existing executable absolute path")
+    args = payload.get("args", [])
+    env_names = payload.get("envNames", [])
+    if not isinstance(args, list) or len(args) > 16 or any(not isinstance(value, str) or len(value) > 128 or any(marker in value for marker in (";", "|", "&", "$", "`", "\n", "\r")) for value in args):
+        raise ValueError("args must be a bounded argv array without shell operators")
+    if not isinstance(env_names, list) or len(env_names) > 16 or any(not isinstance(value, str) or not ENV_NAME_PATTERN.fullmatch(value) for value in env_names):
+        raise ValueError("envNames must contain environment variable names only")
+    return {"id": runtime_id, "name": name, "command": runtime_id, "executable": executable, "args": list(args), "envNames": list(env_names)}
+
+
+class RuntimeConfigStore:
+    """0600, schema-versioned local desired Runtime configuration."""
+    def __init__(self, path=None):
+        self.path = os.path.abspath(os.path.expanduser(path or "~/.a2a/runtime_config.json"))
+        self.lock = threading.Lock()
+        self.desired_backend = ""
+        self.custom = []
+        self.error = None
+        self._load()
+
+    def _load(self):
+        try:
+            with open(self.path, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+            if not isinstance(data, dict) or data.get("schemaVersion") != 1:
+                raise ValueError("unsupported runtime config schema")
+            self.desired_backend = data.get("desiredBackend", "") if isinstance(data.get("desiredBackend", ""), str) else ""
+            custom = data.get("custom", [])
+            if not isinstance(custom, list):
+                raise ValueError("custom runtimes must be an array")
+            self.custom = [validate_custom_runtime(item) for item in custom]
+            custom_ids = [item["id"] for item in self.custom]
+            if len(custom_ids) != len(set(custom_ids)):
+                raise ValueError("custom runtime IDs must be unique")
+            available = {item["id"] for item in RUNTIME_DEFINITIONS} | set(custom_ids)
+            if self.desired_backend and self.desired_backend not in available:
+                raise ValueError("desired runtime does not exist")
+        except FileNotFoundError:
+            return
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            self.error = "runtime configuration is invalid"
+
+    def _save(self):
+        parent = os.path.dirname(self.path)
+        os.makedirs(parent, mode=0o700, exist_ok=True)
+        fd, temporary = tempfile.mkstemp(prefix=".runtime-config.", dir=parent)
+        try:
+            os.fchmod(fd, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump({"schemaVersion": 1, "desiredBackend": self.desired_backend, "custom": self.custom}, handle, ensure_ascii=False, indent=2)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, self.path)
+            os.chmod(self.path, 0o600)
+        except Exception:
+            try: os.unlink(temporary)
+            except FileNotFoundError: pass
+            raise
+
+    def add_custom(self, runtime):
+        with self.lock:
+            if any(item["id"] == runtime["id"] for item in self.custom) or any(item["id"] == runtime["id"] for item in RUNTIME_DEFINITIONS):
+                raise ValueError("runtime id already exists")
+            self.custom.append(runtime)
+            self._save()
+
+    def select(self, runtime_id):
+        with self.lock:
+            available = {item["id"] for item in RUNTIME_DEFINITIONS} | {item["id"] for item in self.custom}
+            if runtime_id not in available:
+                raise ValueError("runtime id does not exist")
+            self.desired_backend = runtime_id
+            self._save()
 
 
 def get_default_service_type():
