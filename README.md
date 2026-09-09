@@ -78,31 +78,35 @@ flowchart TD
 3. **不可信協作資料邊界（Untrusted Collaborative Boundary）**：
    - Hub 的 System Card 明確宣告 `incomingMessageTrust: "UNTRUSTED_DATA"`。
    - 所有來自其他 Agent 的訊息均被視為外部不可信輸入，防止 Prompt Injection 攻擊。
+4. **單向出站穿透（Outbound-Only SSE）**：
+   - Agent 僅需向 Hub 建立向外連線（Outbound HTTPS），無須公網 IP、無須設定路由器連接埠轉發（Port Forwarding），在家用與公司內網即可原生連線。
 
-## A2A 1.0 HTTP+JSON Gateway（可選）
+---
 
-Lite Hub 另提供獨立的 A2A 1.0 HTTP+JSON 相容面，與既有 `/hub/v1`
-mailbox contract 共存，不改變既有 ACK、InboxItem 或 legacy SSE 語義。
+## A2A 1.0 HTTP+JSON Gateway
 
-啟用前請先通過 GitHub Actions 中固定 A2A `v1.0.0` source manifest 與官方
-`a2a-sdk==1.1.4` gate：
+Lite Hub 另提供獨立且符合官方規範的 A2A 1.0 HTTP+JSON 網關，與既有 `/hub/v1` 郵箱合約共存互不干擾，不改變既有 ACK、InboxItem 或 legacy SSE 語義。
 
+### 官方規範互通性保證
+- **官方 SDK 實機互通**：通過未修改之官方 Python SDK（`a2a-sdk==1.1.4`）端對端驗收（Agent Card 解析、Bearer 授權、tenant 路由、`send_message` SSE 串流、`get_task`、`list_tasks`、`cancel_task`）。
+- **CI/CD 自動防護**：GitHub Actions 自動鎖定官方 A2A 1.0.0 規範 source manifest（commit `416c141`）與 pyproject 依賴校驗。
+- **雙主機線上運行**：正式環境（`https://a2a.david888.com`）與內網環境（`http://10.9.0.11:8080`）預設啟用標準網關。
+
+### 標準通訊與端點一覽
+- **網關根卡片**：`GET /.well-known/agent-card.json`（宣告 `HTTP+JSON` 協定、`bearerAuth` 鑑權方案與支援能力）。
+- **個別 Agent 卡片**：`GET /a2a/v1/agents/{agentId}/card`（自動宣告 `tenant = agentId` 供標準 SDK 發現與路由）。
+- **發送訊息**：`POST /a2a/v1/message:send`（支援 `tenant` 目標與 `returnImmediately` 語義）。
+- **串流訊息**：`POST /a2a/v1/message:stream`（標準 SSE 任務進度事件串流）。
+- **任務查詢與列表**：`GET /a2a/v1/tasks/{id}`、`GET /a2a/v1/tasks`（支援分頁與圈圈隔離保護）。
+- **任務取消與訂閱**：`POST /a2a/v1/tasks/{id}:cancel`、`POST /a2a/v1/tasks/{id}:subscribe`。
+
+環境變數控制：
 ```bash
+# 預設為 true，可在容器或 .env 中自訂
 A2A888_HUB_STANDARD_ENABLED=true
 ```
 
-Standard client 從 `/.well-known/agent-card.json` 或同圈的
-`/a2a/v1/agents/{agentId}/card` 發現，使用 `Authorization: Bearer
-<agentToken>`，並以 Agent Card 宣告的 `tenant` 路由目標 Agent。MVP 只接受
-`text/plain` Parts；不支援 file、raw、URL、data、push notifications 或
-extended Agent Card。`returnImmediately: true` 會在 durable submission 後返回；
-省略或設為 `false` 時等待 terminal/interrupted state，等待逾時回傳 504，但
-Task 保留於 Hub。
-
-完整端點與差異請見
-[`docs/a2a-standard-compatibility.md`](docs/a2a-standard-compatibility.md)。
-4. **單向出站穿透（Outbound-Only SSE）**：
-   - Agent 僅需向 Hub 建立向外連線（Outbound HTTPS），無須公網 IP、無須設定路由器連接埠轉發（Port Forwarding），在家用與公司內網即可原生連線。
+完整端點對照與規格細節請參見 [`docs/a2a-standard-compatibility.md`](docs/a2a-standard-compatibility.md)。
 
 ---
 
@@ -429,6 +433,14 @@ POST /hub/v1/groups/{groupId}/archive                    # OWNER 歸檔／解散
 | `/hub/v1/admin/circles/{circleId}/disable` | `POST` | Operator 停用 circle 並撤銷該圈 Agent session |
 | `/hub/v1/admin/circles/{circleId}/keys/rotate` | `POST` | Operator 輪替 circle key version，不保存明文 key |
 | `/hub/v1/admin/circles/{circleId}/keys/{version}/revoke` | `POST` | Operator 撤銷指定 key version |
+| `/.well-known/agent-card.json` | `GET` | A2A 標準主機根卡片（宣告支援介面、鑑權與 Capabilities） |
+| `/a2a/v1/agents/{agentId}/card` | `GET` | A2A 標準 Per-Agent 卡片（帶 `tenant` 供標準 SDK 路由） |
+| `/a2a/v1/message:send` | `POST` | A2A 標準任務提交（支援 `returnImmediately`） |
+| `/a2a/v1/message:stream` | `POST` | A2A 標準任務 SSE 串流提交 |
+| `/a2a/v1/tasks/{id}` | `GET` | A2A 標準查詢單一任務狀態與結果 |
+| `/a2a/v1/tasks` | `GET` | A2A 標準任務清單查詢（支援分頁） |
+| `/a2a/v1/tasks/{id}:cancel` | `POST` | A2A 標準取消任務 |
+| `/a2a/v1/tasks/{id}:subscribe` | `POST` | A2A 標準訂閱任務狀態更新事件串流 |
 
 ---
 

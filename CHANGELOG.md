@@ -11,6 +11,13 @@
   - 在 `10.9.0.11` 上以未修改官方 SDK（`a2a-sdk==1.1.4`）實機跑通完整 Card／Bearer／tenant／send_message（SSE）／get_task／list_tasks／cancel_task 流程。
   - 遠端煙霧測試（包含標準 A2A 網關端點、既有 `/hub/v1` 註冊與訊息、群組廣播、重啟持久化恢復、Token 撤銷與 ACL 隔離）100% 驗證通過。
 
+### Fixed
+
+- 修正 `writeStandardError` 在回應標準錯誤時覆蓋既有 `Cache-Control` 的問題，確保 Agent Card 的 `Cache-Control: private, no-store` 標頭得以精確保留。
+- 修正 `scripts/smoke-test.sh` 在重啟 Hub 容器後的 `/healthz` 準備度等待循環，避免重啟瞬間 TCP 連線遭重置（connection reset by peer）。
+- 修正 `scripts/smoke-test.sh` 結束時未還原註冊啟用狀態的問題，確保驗證完成後 Hub 維持正常對外註冊服務。
+- 修正 `scripts/a2a-official-sdk-fixture.py` 在消費非終態 SSE 串流時因迭代器持續等待所引發的讀取逾時，改為首筆 Task 事件到達後即刻提取並結束串流。
+
 
 - 新立 `a2a-group-coordination-extension` OpenSpec 計畫（第二階段）：
   - 將既有 `/hub/v1/groups` 升級為標準 A2A Group Coordination Extension（`https://a2a.david888.com/extensions/groups/v1`）。
