@@ -1,5 +1,31 @@
 # Changelog
 
+## 2026-09-09
+
+### Added
+
+- 新立 `a2a-group-coordination-extension` OpenSpec 計畫（第二階段）：
+  - 將既有 `/hub/v1/groups` 升級為標準 A2A Group Coordination Extension（`https://a2a.david888.com/extensions/groups/v1`）。
+  - 提供虛擬群組 Agent 路由（`tenant: "group:<groupId>"`）與專屬標準 Agent Card（`/a2a/v1/groups/{groupId}/card`）。
+  - 規劃基於 SQLite WAL 交易的原子廣播複製與群成員 Instant ACK 簽收機制。
+  - 整合群聊 Anti-Echo 守衛與 `[[A2A_NO_REPLY]]` 結單機制，防止群組無限回音風暴。
+  - 嚴格綁定 Multi-Circle 隔離，跨圈完全遮蔽群組卡片與廣播。
+
+- 補強 `a2a-group-coordination-extension` 規劃：加入第一期完成 gate、Group Extension negotiation、bounded group discovery、Parent/Member Task 聚合、成員快照、fan-out 冪等、取消／ACK 競態、延遲結果保護與 extension-aware 官方 SDK 驗收；同步收斂 Buzz 對標範圍。
+
+- 補強 A2A OpenSpec 規劃的阻塞逾時、Bearer-only 認證、執行結果回報、多輪、取消／ACK 競態、Card／Task／SSE 授權與官方 SDK 驗收；本項僅更新規劃，尚未實作或完成互通驗證。
+
+- 完善 `a2a-standard-compatibility` OpenSpec 提案與規格，全面對齊 A2A Protocol 1.0.0 官方規範：
+  - 增補 `returnImmediately` 執行語意規格（預設 `false` 為阻塞同步等待 correlated reply，`true` 為非同步立即返回提交態）。
+  - 增補標準 Response Envelope 規範（`SendMessageResponse`、`ListTasksResponse`、`StreamResponse`），禁止裸物件直接序列化於 JSON 根層級。
+  - 增補 `google.rpc.Status` 與 `google.rpc.ErrorInfo`（`domain: "a2a-protocol.org"`，UPPER_SNAKE_CASE 9 大規範錯誤原因）標準錯誤體系。
+  - 增補 Per-Agent 標準卡片端點（`/a2a/v1/agents/{agentId}/card`），自動宣告 `supportedInterfaces[0].tenant = agentId`，打通外部標準 SDK 之多 Agent 發現與路由閉環。
+  - 增補 OpenAPI 3.2 `securitySchemes`（Bearer Token）於 Agent Card 宣告。
+  - 增補 `Content-Type: application/a2a+json` 與 `A2A-Version` 服務參數標頭解析規格。
+  - 增補主機根目錄與 `/a2a/v1` 雙向端點掛載相容規劃。
+
+- 開始實作 `a2a-standard-compatibility`：鎖定 A2A 1.0.0 source manifest 與官方 Python SDK CI gate，新增獨立 HTTP+JSON model、Bearer-only Agent Card、tenant routing、durable Task/revision/event/update persistence、標準 Task routes、SSE 與 `google.rpc.Status` 錯誤 envelope；既有 `/hub/v1` contract 維持不變。
+
 ## 2026-09-08
 
 ### Fixed
