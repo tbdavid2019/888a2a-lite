@@ -538,7 +538,9 @@ func writeStandardError(w http.ResponseWriter, err *StandardError) {
 	if status == 0 {
 		status = http.StatusInternalServerError
 	}
-	w.Header().Set("Cache-Control", "no-store")
+	if w.Header().Get("Cache-Control") == "" {
+		w.Header().Set("Cache-Control", "no-store")
+	}
 	w.Header().Set("Content-Type", a2a.JSONMediaType)
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(a2a.ErrorResponse{Error: a2a.Status{Code: status, Status: standardStatusName(status), Message: err.Message, Details: []a2a.ErrorInfo{{Type: "type.googleapis.com/google.rpc.ErrorInfo", Reason: err.Reason, Domain: "a2a-protocol.org", Metadata: map[string]string{}}}}})
