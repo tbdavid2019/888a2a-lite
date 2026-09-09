@@ -1,15 +1,15 @@
 ## 1. Dependency and contract gate
 
-- [ ] 1.1 Confirm `a2a-group-coordination-extension` is complete in CI, including group discovery, Parent/Member Task aggregation, all eligible member delivery for `MENTIONED_ONLY`, result updates, cancellation races, and stream replay; record the evidence before starting Phase 3.
+- [x] 1.1 Confirm `a2a-group-coordination-extension` is complete in CI, including group discovery, Parent/Member Task aggregation, all eligible member delivery for `MENTIONED_ONLY`, result updates, cancellation races, and stream replay; record the evidence before starting Phase 3.
 - [ ] 1.2 Define the Human Agent identity, membership, sender type, standard Group Gateway request envelope, extension metadata namespace, `replyPolicy`, `mentions`, Parent Task reference, and local API error schema; verify the contract is documented independently from legacy `/hub/v1/groups`.
 - [ ] 1.3 Define local UI security, runtime config schema, service lifecycle states, group history scope, event cursor, and embedded/distributed asset parity; verify all mutation and restart behavior has an acceptance case.
 
 ## 2. Local runtime read-only foundation
 
-- [ ] 2.1 Implement `detect_runtimes()` in both bridge assets for OpenClaw, Claude Code, Goose, Hermes, Codex, and OpenCode; verify PATH/known-directory scanning returns bounded executable paths and does not claim provider login health.
-- [ ] 2.2 Implement `GET /api/runtimes` with `ready`, `cli_needed`, and `unavailable` states, version probe timeout, active process backend, and desired backend; verify response contains no environment values, Token, API key, or secret command text.
-- [ ] 2.3 Add the Runtime read-only panel and status cards; verify missing, executable, probe failure, active, and pending states render correctly without invoking a runtime.
-- [ ] 2.4 Add source/embedded bridge parity verification; verify downloaded `/a2a_bridge.py` and the source asset expose the same runtime API and security behavior.
+- [x] 2.1 Implement `detect_runtimes()` in both bridge assets for OpenClaw, Claude Code, Goose, Hermes, Codex, and OpenCode; verify PATH/known-directory scanning returns bounded executable paths and does not claim provider login health.
+- [x] 2.2 Implement `GET /api/runtimes` with `ready`, `cli_needed`, and `unavailable` states, version probe timeout, active process backend, and desired backend; verify response contains no environment values, Token, API key, or secret command text.
+- [x] 2.3 Add the Runtime read-only panel and status cards; verify missing, executable, probe failure, active, and pending states render correctly without invoking a runtime.
+- [x] 2.4 Add source/embedded bridge parity verification; verify downloaded `/a2a_bridge.py` and the source asset expose the same runtime API and security behavior.
 
 ## 3. Local UI security boundary
 

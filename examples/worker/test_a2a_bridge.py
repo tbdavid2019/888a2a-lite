@@ -16,6 +16,37 @@ SPEC.loader.exec_module(bridge)
 
 
 class DurableBridgeTests(unittest.TestCase):
+    def test_runtime_detection_covers_known_clis_without_login_claims(self):
+        def fake_which(command, path=None):
+            return f"/safe/bin/{command}"
+
+        def fake_probe(args, **kwargs):
+            return mock.Mock(returncode=0, stdout=f"{args[0]} 1.2.3\n", stderr="")
+
+        with mock.patch.object(bridge.shutil, "which", side_effect=fake_which), mock.patch.object(bridge.subprocess, "run", side_effect=fake_probe):
+            runtimes = bridge.detect_runtimes(active_backend="codex", desired_backend="opencode")
+        self.assertEqual([runtime["id"] for runtime in runtimes], ["openclaw", "claudecode", "goose", "hermes", "codex", "opencode"])
+        self.assertTrue(all(runtime["status"] == "ready" for runtime in runtimes))
+        self.assertTrue(next(runtime for runtime in runtimes if runtime["id"] == "codex")["active"])
+        self.assertTrue(next(runtime for runtime in runtimes if runtime["id"] == "opencode")["desired"])
+        serialized = json.dumps(runtimes)
+        self.assertNotIn("TOKEN", serialized)
+        self.assertNotIn("API_KEY", serialized)
+
+    def test_runtime_detection_distinguishes_missing_and_probe_failure(self):
+        def fake_which(command, path=None):
+            return None if command == "goose" else f"/safe/bin/{command}"
+
+        def failed_probe(args, **kwargs):
+            return mock.Mock(returncode=1, stdout="", stderr="provider secret must not escape")
+
+        with mock.patch.object(bridge.shutil, "which", side_effect=fake_which), mock.patch.object(bridge.subprocess, "run", side_effect=failed_probe):
+            runtimes = bridge.detect_runtimes()
+        by_id = {runtime["id"]: runtime for runtime in runtimes}
+        self.assertEqual(by_id["goose"]["status"], "cli_needed")
+        self.assertEqual(by_id["codex"]["status"], "unavailable")
+        self.assertNotIn("provider secret", json.dumps(runtimes))
+
     def test_default_credentials_are_separated_by_hub_and_circle_key(self):
         public_path = bridge.default_credential_path("https://hub-a", "Agent")
         private_a = bridge.default_credential_path("https://hub-a", "Agent", "key-a")
@@ -338,6 +369,15 @@ class DurableBridgeTests(unittest.TestCase):
                 data = json.loads(resp.read().decode("utf-8"))
                 self.assertEqual(len(data["agents"]), 1)
                 self.assertEqual(data["agents"][0]["displayName"], "PeerAgent")
+
+            with mock.patch.object(bridge, "detect_runtimes", return_value=[{"id": "codex", "name": "Codex", "executable": "/safe/bin/codex", "version": "codex 1.2.3", "status": "ready", "active": True, "desired": True}]):
+                runtime_request = bridge.urllib.request.Request(f"{base_url}/api/runtimes", headers={"Accept": "application/json"})
+                with bridge.urllib.request.urlopen(runtime_request) as resp:
+                    self.assertEqual(resp.status, 200)
+                    self.assertEqual(resp.headers["Cache-Control"], "no-store")
+                    runtime_data = json.loads(resp.read().decode("utf-8"))
+                    self.assertEqual(runtime_data["runtimes"][0]["status"], "ready")
+                    self.assertNotIn("token", json.dumps(runtime_data).lower())
 
             # 4. POST /api/send
             req = bridge.urllib.request.Request(

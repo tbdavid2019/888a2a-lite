@@ -1287,6 +1287,17 @@ CLIENT_HTML = """<!DOCTYPE html>
     .search-bar input { width: 100%; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; outline: none; transition: border-color .15s; }
     .search-bar input:focus { border-color: var(--accent); }
     .peer-list { flex: 1 1 auto; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+    .runtime-panel { border-top: 1px solid var(--line); padding: 12px 14px; background: #f8fafc; max-height: 230px; overflow-y: auto; }
+    .runtime-panel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .runtime-panel h3 { font-size: 12px; color: var(--ink); }
+    .runtime-refresh { border: 1px solid var(--line); background: #fff; border-radius: 6px; padding: 3px 7px; cursor: pointer; color: var(--muted); font-size: 11px; }
+    .runtime-card { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; padding: 7px 8px; margin-top: 5px; border: 1px solid var(--line); border-radius: 7px; background: #fff; }
+    .runtime-name { font-size: 12px; font-weight: 700; }
+    .runtime-version { font-size: 10px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .runtime-state { grid-row: 1 / span 2; align-self: center; font-size: 10px; font-weight: 700; padding: 3px 6px; border-radius: 10px; }
+    .runtime-state.ready { color: #166534; background: #dcfce7; }
+    .runtime-state.cli_needed { color: #92400e; background: #fef3c7; }
+    .runtime-state.unavailable { color: #991b1b; background: #fee2e2; }
     .peer-card { padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; background: #fff; transition: all .15s; }
     .peer-card:hover { border-color: var(--accent); background: var(--accent-light); }
     .peer-card.active { border-color: var(--accent); background: var(--accent-light); box-shadow: 0 1px 3px rgba(37,99,235,.15); }
@@ -1346,6 +1357,13 @@ CLIENT_HTML = """<!DOCTYPE html>
       <div id="peer-list" class="peer-list">
         <div style="padding:20px;text-align:center;color:var(--muted);font-size:13px">正在獲取 Agent 名單...</div>
       </div>
+      <section class="runtime-panel" aria-labelledby="runtime-title">
+        <div class="runtime-panel-header">
+          <h3 id="runtime-title">本機 Agent Runtimes</h3>
+          <button id="refresh-runtimes" class="runtime-refresh" type="button">↻</button>
+        </div>
+        <div id="runtime-list" aria-live="polite"><div style="font-size:11px;color:var(--muted)">正在檢測本機 CLI...</div></div>
+      </section>
     </aside>
 
     <main>
@@ -1437,6 +1455,23 @@ CLIENT_HTML = """<!DOCTYPE html>
         renderPeers();
       } catch (err) {
         console.error("Failed to load peers", err);
+      }
+    }
+
+    async function loadRuntimes() {
+      try {
+        const res = await fetch("/api/runtimes", { cache: "no-store" });
+        if (!res.ok) throw new Error("runtime API unavailable");
+        const data = await res.json();
+        const runtimes = Array.isArray(data.runtimes) ? data.runtimes : [];
+        $("runtime-list").innerHTML = runtimes.map(runtime => {
+          const state = ["ready", "cli_needed", "unavailable"].includes(runtime.status) ? runtime.status : "unavailable";
+          const label = state === "ready" ? "Ready" : state === "cli_needed" ? "CLI needed" : "Unavailable";
+          const marker = runtime.active ? " · active" : runtime.desired ? " · desired" : "";
+          return `<div class="runtime-card"><div class="runtime-name">${escapeHtml(runtime.name)}${marker}</div><span class="runtime-state ${state}">${label}</span><div class="runtime-version">${escapeHtml(runtime.version || runtime.executable || "未找到可執行檔")}</div></div>`;
+        }).join("") || `<div style="font-size:11px;color:var(--muted)">沒有可用 Runtime</div>`;
+      } catch (err) {
+        $("runtime-list").innerHTML = `<div style="font-size:11px;color:#991b1b">無法取得 Runtime 狀態</div>`;
       }
     }
 
@@ -1699,13 +1734,17 @@ CLIENT_HTML = """<!DOCTYPE html>
       await loadMe();
       await loadConversations();
       await loadPeers();
+      await loadRuntimes();
       connectEvents();
       setInterval(loadPeers, 4000);
+      setInterval(loadRuntimes, 10000);
       const defaultPeer = peers.find(p => p.agentId === conversations[0]?.peerId) || 
                           peers.find(p => p.state === "ONLINE") || 
                           peers[0];
       if (defaultPeer) await selectPeer(defaultPeer);
     }
+
+    $("refresh-runtimes").addEventListener("click", loadRuntimes);
 
     init();
   </script>
@@ -1958,10 +1997,12 @@ class LocalChatStore:
 
 
 class LocalUIServer(http.server.ThreadingHTTPServer):
-    def __init__(self, server_address, RequestHandlerClass, hub_client, user_name, chat_db_path=None):
+    def __init__(self, server_address, RequestHandlerClass, hub_client, user_name, chat_db_path=None, active_backend=None, desired_backend=None):
         super().__init__(server_address, RequestHandlerClass)
         self.hub_client = hub_client
         self.user_name = user_name
+        self.active_backend = active_backend or ""
+        self.desired_backend = desired_backend or self.active_backend
         self.chat_store = LocalChatStore(chat_db_path or os.path.expanduser("~/.a2a/chat.db"))
         self.subscribers = set()
         self.lock = threading.Lock()
@@ -2080,6 +2121,15 @@ class LocalUIHandler(http.server.BaseHTTPRequestHandler):
             body = json.dumps(data, ensure_ascii=False).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        elif parsed.path == "/api/runtimes":
+            data = {"runtimes": detect_runtimes(self.server.active_backend, self.server.desired_backend)}
+            body = json.dumps(data, ensure_ascii=False).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -2285,13 +2335,13 @@ class LocalUIHandler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
 
 
-def run_local_ui(hub_client, user_name, port=8888, open_browser=True, chat_db_path=None):
+def run_local_ui(hub_client, user_name, port=8888, open_browser=True, chat_db_path=None, active_backend=None, desired_backend=None):
     """Serve local User Chat Web UI and stream live events with agents."""
     actual_port = port
     server = None
     for p in range(port, port + 20):
         try:
-            server = LocalUIServer(("127.0.0.1", p), LocalUIHandler, hub_client, user_name, chat_db_path=chat_db_path)
+            server = LocalUIServer(("127.0.0.1", p), LocalUIHandler, hub_client, user_name, chat_db_path=chat_db_path, active_backend=active_backend, desired_backend=desired_backend)
             actual_port = p
             break
         except OSError:
@@ -2381,17 +2431,58 @@ def run_local_ui(hub_client, user_name, port=8888, open_browser=True, chat_db_pa
 # Service Installation (LaunchAgent & systemd)
 # ---------------------------------------------------------------------------
 
+RUNTIME_DEFINITIONS = (
+    {"id": "openclaw", "name": "OpenClaw", "command": "openclaw"},
+    {"id": "claudecode", "name": "Claude Code", "command": "claude"},
+    {"id": "goose", "name": "Goose", "command": "goose"},
+    {"id": "hermes", "name": "Hermes", "command": "hermes"},
+    {"id": "codex", "name": "Codex", "command": "codex"},
+    {"id": "opencode", "name": "OpenCode", "command": "opencode"},
+)
+
+
+def detect_runtimes(active_backend=None, desired_backend=None):
+    """Inspect known local binaries without claiming provider/login health."""
+    enhanced_env = get_enhanced_env()
+    active_backend = active_backend or ""
+    desired_backend = desired_backend or active_backend
+    runtimes = []
+    for definition in RUNTIME_DEFINITIONS:
+        executable = shutil.which(definition["command"], path=enhanced_env.get("PATH"))
+        runtime = {
+            "id": definition["id"],
+            "name": definition["name"],
+            "executable": executable,
+            "version": None,
+            "status": "cli_needed" if not executable else "unavailable",
+            "active": definition["id"] == active_backend,
+            "desired": definition["id"] == desired_backend,
+        }
+        if executable:
+            try:
+                probe = subprocess.run(
+                    [executable, "--version"],
+                    capture_output=True,
+                    text=True,
+                    timeout=2,
+                    env=enhanced_env,
+                    shell=False,
+                )
+                if probe.returncode == 0:
+                    version = (probe.stdout or "").strip().splitlines()[0:1]
+                    runtime["version"] = version[0][:128] if version else "unknown"
+                    runtime["status"] = "ready"
+            except (OSError, subprocess.SubprocessError):
+                pass
+        runtimes.append(runtime)
+    return runtimes
+
+
 def detect_backend():
     """Auto-detect available local AI CLI backend."""
-    enhanced_env = get_enhanced_env()
-    for candidate, name in [
-        ("openclaw", "openclaw"),
-        ("claude", "claudecode"),
-        ("hermes", "hermes"),
-        ("codex", "codex"),
-    ]:
-        if shutil.which(candidate, path=enhanced_env.get("PATH")):
-            return name
+    for runtime in detect_runtimes():
+        if runtime["status"] == "ready":
+            return runtime["id"]
     return "openclaw"
 
 
@@ -2661,7 +2752,7 @@ def main():
     # If Client Web UI mode requested, run local workstation server and exit
     if args.ui:
         try:
-            run_local_ui(hub_client, args.name, port=args.port, chat_db_path=default_chat_db_path(args.hub, hub_client.agent_id))
+            run_local_ui(hub_client, args.name, port=args.port, chat_db_path=default_chat_db_path(args.hub, hub_client.agent_id), active_backend=args.backend)
         except KeyboardInterrupt:
             pass
         sys.exit(0)
