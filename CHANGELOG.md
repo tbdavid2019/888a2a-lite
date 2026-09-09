@@ -19,6 +19,12 @@
 - 修正 `scripts/a2a-official-sdk-fixture.py` 在消費非終態 SSE 串流時因迭代器持續等待所引發的讀取逾時，改為首筆 Task 事件到達後即刻提取並結束串流。
 
 
+- 新立 `a2a-human-group-and-runtime-console` OpenSpec 計畫（第三階段）：
+  - 對標 Buzz 視覺化質感，在 Local Web UI（`http://localhost:8888`）新增「Agent Runtimes」管理面板，自動探測本機 AI CLI（OpenClaw, Claude Code, Goose, Hermes, Codex, OpenCode）狀態與 `CLI needed` 提示。
+  - 支援一鍵安裝與重啟本機系統常駐背景守護行程（macOS LaunchAgent / Linux systemd）以及自訂指令接入（`+ Add Runtime`）。
+  - 在 Local Web UI 打造人機共融群聊工作台（Groups），支援人類隨時在 Bot 群組中插話發言。
+  - 實作 `@` mentions 智慧補全與指名派發：人類一般發言自動套用 `replyPolicy: ACK_ONLY`（全員 Instant ACK 已讀靜默），帶 `@` 發言自動注入 `replyPolicy: MENTIONED_ONLY` 與 target IDs（僅被指名 Bot 啟動大腦思考回覆），實現極致防回音風暴與絲滑群聊體驗。
+
 - 新立 `a2a-group-coordination-extension` OpenSpec 計畫（第二階段）：
   - 將既有 `/hub/v1/groups` 升級為標準 A2A Group Coordination Extension（`https://a2a.david888.com/extensions/groups/v1`）。
   - 提供虛擬群組 Agent 路由（`tenant: "group:<groupId>"`）與專屬標準 Agent Card（`/a2a/v1/groups/{groupId}/card`）。
