@@ -4,6 +4,16 @@
 
 ### Added
 
+- 驗收並封存第三階段 `a2a-human-group-and-runtime-console`（人類插話群聊大廳 + 本機 Runtime 視覺化面板）：
+  - 整合 GitHub PR Agent（`david360see`）代碼審查改善建議：
+    - `detect_backend()` 與 `detect_runtimes()` 改採防禦性 `.get("command")` 避免潛在 `KeyError`，並增加實體執行檔存在性驗證。
+    - `validate_custom_runtime()` 支援 `executable` 與 `command` 彈性指定，落實型別檢核與防禦性錯誤處理。
+    - `send_standard_group_message()` 增加 `group_id` 去空白防呆，並在 HTTP 呼叫中捕捉 `HTTPError` 解析伺服器回傳之 JSON 錯誤。
+    - 補齊 `replyPolicy: ACK_ONLY` 之專屬單元測試（`test_standard_group_policy_ack_only_silences_executor`），驗證即便被 @ 也絕對不啟動 Runtime。
+    - Local Web UI 在執行 `loadRuntimes()` 期間防抖暫時禁用 `#refresh-runtimes` 按鈕，防止併發啟動大量本機探測程序。
+    - 單元測試針對非 POSIX（Windows NT）環境封裝 `0o600` 權限檢查，確保跨平台測試穩定性。
+  - 完成 OpenSpec 主規範同步（`agent-groups`、`human-group-interaction`、`local-runtime-hub`、`universal-bridge-distribution`）並封存變更至 `archive/2026-09-09-a2a-human-group-and-runtime-console/`。
+
 - 第三階段先行完成 Local UI 安全邊界與 Runtime 設定基礎：
   - 每個 UI 程序產生獨立 session/CSRF token，mutation 僅接受 loopback、同源、JSON 請求，並使用 constant-time token 比對、大小限制、欄位白名單與 `no-store` 回應。
   - 新增 `/api/runtimes/custom` 與 `/api/runtimes/select`，限制絕對 executable、bounded argv、環境變數名稱參照，拒絕 shell operator 與秘密值。

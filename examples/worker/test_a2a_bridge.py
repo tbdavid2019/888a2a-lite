@@ -74,7 +74,8 @@ class DurableBridgeTests(unittest.TestCase):
             store = bridge.RuntimeConfigStore(config_path)
             store.add_custom(runtime)
             store.select("team-shell")
-            self.assertEqual(os.stat(config_path).st_mode & 0o777, 0o600)
+            if os.name != "nt":
+                self.assertEqual(os.stat(config_path).st_mode & 0o777, 0o600)
             with open(config_path, "r", encoding="utf-8") as handle:
                 saved = json.load(handle)
             self.assertEqual(saved["schemaVersion"], 1)
@@ -514,6 +515,31 @@ class DurableBridgeTests(unittest.TestCase):
             self.assertEqual(hub.task_id, "member-task")
             self.assertEqual(hub.update["state"], "TASK_STATE_COMPLETED")
             self.assertEqual(hub.update["message"]["taskId"], "member-task")
+
+    def test_standard_group_policy_ack_only_silences_executor(self):
+        class Hub:
+            agent_id = "executor"
+            def ack_task(self, sequence): return True
+            def submit_standard_update(self, task_id, update):
+                self.update = update
+                return {"task": {"id": task_id}}
+
+        class Backend:
+            def execute(self, *args):
+                raise AssertionError("ACK_ONLY must never invoke Runtime")
+
+        with tempfile.TemporaryDirectory() as directory:
+            queue = bridge.DurableWorkQueue(os.path.join(directory, "queue.db"), scope="hub/executor")
+            queue.enqueue({
+                "sequence": 13, "taskId": "member-task", "parentTaskId": "parent-task",
+                "protocol": "A2A/1.0", "turnId": "turn-1", "taskRevision": 1,
+                "requesterAgentId": "human", "contextId": "group-context", "groupId": "group-1",
+                "replyPolicy": "ACK_ONLY", "mentions": ["executor"], "message": "broadcast"
+            })
+            hub = Hub()
+            bridge.process_queued_task(hub, Backend(), queue, queue.next(), "Executor")
+            self.assertEqual(hub.update["state"], "TASK_STATE_COMPLETED")
+            self.assertNotIn("message", hub.update)
 
     def test_claudecode_backend_execution(self):
         backend = bridge.ClaudeCodeBackend(system_prompt="Test Prompt")

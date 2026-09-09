@@ -403,6 +403,9 @@ class HubClient:
 
     def send_standard_group_message(self, group_id, message, mentions=None, context_id=None, message_id=None, idempotency_key=None):
         """Send a Human message through the standard Group Gateway only."""
+        clean_group_id = str(group_id or "").strip()
+        if not clean_group_id or "/" in clean_group_id:
+            raise ValueError("invalid group_id")
         mentions = list(mentions or [])
         policy = "MENTIONED_ONLY" if mentions else "ACK_ONLY"
         message_id = message_id or f"human-{uuid.uuid4()}"
@@ -411,7 +414,7 @@ class HubClient:
         if mentions:
             extension_metadata["mentions"] = mentions
         body = {
-            "tenant": f"group:{group_id}",
+            "tenant": f"group:{clean_group_id}",
             "message": {
                 "messageId": message_id,
                 "contextId": context_id,
@@ -428,8 +431,17 @@ class HubClient:
             data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
             headers=headers,
         )
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as err:
+            err_body = err.read().decode("utf-8", errors="replace")
+            try:
+                err_data = json.loads(err_body)
+                msg = err_data.get("error") or err_body
+            except Exception:
+                msg = err_body or str(err)
+            raise RuntimeError(f"Standard group send failed ({err.code}): {msg}") from err
 
     def status(self):
         """Query Hub health status and mode."""
@@ -1660,6 +1672,8 @@ CLIENT_HTML = """<!DOCTYPE html>
     }
 
     async function loadRuntimes() {
+      const btn = $("refresh-runtimes");
+      if (btn) btn.disabled = true;
       try {
         const res = await fetch("/api/runtimes", { cache: "no-store" });
         if (!res.ok) throw new Error("runtime API unavailable");
@@ -1673,6 +1687,8 @@ CLIENT_HTML = """<!DOCTYPE html>
         }).join("") || `<div style="font-size:11px;color:var(--muted)">沒有可用 Runtime</div>`;
       } catch (err) {
         $("runtime-list").innerHTML = `<div style="font-size:11px;color:#991b1b">無法取得 Runtime 狀態</div>`;
+      } finally {
+        if (btn) btn.disabled = false;
       }
     }
 
@@ -3065,12 +3081,14 @@ def probe_runtime(executable, env):
 def detect_runtimes(active_backend=None, desired_backend=None, custom_runtimes=None):
     """Inspect known local binaries without claiming provider/login health."""
     enhanced_env = get_enhanced_env()
+    path = enhanced_env.get("PATH")
     active_backend = active_backend or ""
     desired_backend = desired_backend or active_backend
     runtimes = []
     definitions = list(RUNTIME_DEFINITIONS) + list(custom_runtimes or [])
     for definition in definitions:
-        executable = definition.get("executable") or shutil.which(definition["command"], path=enhanced_env.get("PATH"))
+        cmd = definition.get("command")
+        executable = definition.get("executable") or (shutil.which(cmd, path=path) if cmd else None)
         runtime = {
             "id": definition["id"],
             "name": definition["name"],
@@ -3081,7 +3099,10 @@ def detect_runtimes(active_backend=None, desired_backend=None, custom_runtimes=N
             "desired": definition["id"] == desired_backend,
         }
         if executable:
-            runtime["status"], runtime["version"] = probe_runtime(executable, enhanced_env)
+            try:
+                runtime["status"], runtime["version"] = probe_runtime(executable, enhanced_env)
+            except Exception:
+                runtime["status"] = "unavailable"
         runtimes.append(runtime)
     return runtimes
 
@@ -3089,9 +3110,13 @@ def detect_runtimes(active_backend=None, desired_backend=None, custom_runtimes=N
 def detect_backend():
     """Auto-detect available local AI CLI backend."""
     enhanced_env = get_enhanced_env()
+    path = enhanced_env.get("PATH")
     for definition in RUNTIME_DEFINITIONS:
-        executable = definition.get("executable") or shutil.which(definition["command"], path=enhanced_env.get("PATH"))
-        if executable:
+        executable = definition.get("executable")
+        if executable and (os.path.isabs(executable) and os.path.exists(executable) or shutil.which(executable, path=path)):
+            return definition["id"]
+        cmd = definition.get("command")
+        if cmd and shutil.which(cmd, path=path):
             return definition["id"]
     return "openclaw"
 
@@ -3106,11 +3131,24 @@ def validate_custom_runtime(payload):
     allowed = {"id", "name", "executable", "args", "envNames", "command"}
     if set(payload) - allowed:
         raise ValueError("unsupported runtime field")
-    if not all(isinstance(payload.get(field), str) for field in ("id", "name", "executable")):
-        raise ValueError("id, name, and executable must be strings")
+    if not all(isinstance(payload.get(field), str) for field in ("id", "name")):
+        raise ValueError("id and name must be strings")
     runtime_id = payload["id"].strip()
     name = payload["name"].strip()
-    executable = payload["executable"].strip()
+    executable = payload.get("executable")
+    command = payload.get("command")
+    if executable is not None and not isinstance(executable, str):
+        raise ValueError("executable must be a string")
+    if command is not None and not isinstance(command, str):
+        raise ValueError("command must be a string")
+    if not (executable or command):
+        raise ValueError("either executable or command must be provided")
+    if executable:
+        executable = executable.strip()
+    else:
+        command = command.strip()
+        enhanced_env = get_enhanced_env()
+        executable = shutil.which(command, path=enhanced_env.get("PATH")) or command
     if not RUNTIME_ID_PATTERN.fullmatch(runtime_id):
         raise ValueError("id must be a bounded lower-case runtime identifier")
     if not name or len(name) > 80:
@@ -3123,7 +3161,7 @@ def validate_custom_runtime(payload):
         raise ValueError("args must be a bounded argv array without shell operators")
     if not isinstance(env_names, list) or len(env_names) > 16 or any(not isinstance(value, str) or not ENV_NAME_PATTERN.fullmatch(value) for value in env_names):
         raise ValueError("envNames must contain environment variable names only")
-    return {"id": runtime_id, "name": name, "command": runtime_id, "executable": executable, "args": list(args), "envNames": list(env_names)}
+    return {"id": runtime_id, "name": name, "command": command or runtime_id, "executable": executable, "args": list(args), "envNames": list(env_names)}
 
 
 class RuntimeConfigStore:
