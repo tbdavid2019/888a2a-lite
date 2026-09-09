@@ -77,6 +77,24 @@ peers_status=$(request GET /hub/v1/agents "$peers_file" \
 jq -e --arg a "$agent_a" --arg b "$agent_b" --arg c "$agent_c" \
 	'[.agents[].agentId] | index($a) and index($b) and index($c)' "$peers_file" >/dev/null || fail "peer list missed a registered agent"
 
+card_file=$workdir/standard-card.json
+card_status=$(request GET "/.well-known/agent-card.json" "$card_file")
+[ "$card_status" = 200 ] || fail "standard agent-card returned HTTP $card_status"
+jq -e '.capabilities.streaming == true and .supportedInterfaces[0].protocolBinding == "HTTP+JSON"' "$card_file" >/dev/null || fail "standard card capabilities invalid"
+
+agent_card_file=$workdir/agent-a-card.json
+agent_card_status=$(request GET "/a2a/v1/agents/$agent_a/card" "$agent_card_file" \
+	-H "Authorization: Bearer $token_a")
+[ "$agent_card_status" = 200 ] || fail "per-agent card returned HTTP $agent_card_status"
+jq -e --arg a "$agent_a" '.supportedInterfaces[0].tenant == $a' "$agent_card_file" >/dev/null || fail "per-agent card tenant invalid"
+
+if [ -f "$(dirname "$0")/a2a-standard-client-fixture.py" ]; then
+	A2A_FIXTURE_URL="$HUB_URL" \
+	A2A_FIXTURE_TOKEN="$token_a" \
+	A2A_FIXTURE_TENANT="$agent_a" \
+	python3 "$(dirname "$0")/a2a-standard-client-fixture.py" || fail "standard client fixture failed"
+fi
+
 task_body='{"contextId":"smoke-context","idempotencyKey":"smoke-task-1","message":"smoke notification","taskId":"smoke-task-1"}'
 task_file=$workdir/task.json
 task_status=$(request POST "/hub/v1/agents/$agent_b/tasks" "$task_file" \
@@ -190,6 +208,15 @@ recovery_status=$(request POST "/hub/v1/agents/$agent_b/tasks" "$recovery_file" 
 
 docker compose restart "$HUB_SERVICE" >/dev/null
 
+health_attempt=1
+while [ "$health_attempt" -le 30 ]; do
+	health_status=$(request GET /healthz "$health_file" 2>/dev/null || true)
+	[ "$health_status" = 200 ] && break
+	sleep 1
+	health_attempt=$((health_attempt + 1))
+done
+[ "$health_status" = 200 ] || fail "health returned HTTP $health_status after restart wait"
+
 recovered_file=$workdir/recovered.json
 recovered_status=$(request GET "/hub/v1/agents/$agent_b/inbox?afterSequence=0" "$recovered_file" \
 	-H "X-Agent-ID: $agent_b" -H "Authorization: Bearer $token_b")
@@ -234,5 +261,10 @@ blocked_status=$(request POST /hub/v1/agents/register "$blocked_file" \
 	-H 'Content-Type: application/json' \
 	--data '{"displayName":"blocked","providerFamily":"test","transportId":"http-json","registrationIdempotencyKey":"smoke-blocked"}')
 [ "$blocked_status" = 403 ] || fail "disabled registration returned HTTP $blocked_status"
+
+# Re-enable registration so the hub remains functional after smoke test
+request POST /hub/v1/admin/registration "$control_file" \
+	-H "Authorization: Bearer $OPERATOR_TOKEN" -H 'Content-Type: application/json' \
+	--data '{"enabled":true}' >/dev/null || true
 
 echo "888a2a-lite smoke test passed"
