@@ -3081,8 +3081,7 @@ def detect_runtimes(active_backend=None, desired_backend=None, custom_runtimes=N
             "desired": definition["id"] == desired_backend,
         }
         if executable:
-            try:
-                runtime["status"], runtime["version"] = probe_runtime(executable, enhanced_env)
+            runtime["status"], runtime["version"] = probe_runtime(executable, enhanced_env)
         runtimes.append(runtime)
     return runtimes
 
