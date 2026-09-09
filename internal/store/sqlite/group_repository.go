@@ -45,13 +45,13 @@ VALUES (?, ?, ?, ?, 'OWNER', 'ACTIVE', ?, NULL, NULL)`, group.HubID, group.Group
 
 func (repository *Repository) FindGroup(ctx context.Context, groupID string) (hub.Group, error) {
 	return scanGroup(repository.executor().QueryRowContext(ctx, `
-SELECT hub_id, group_id, circle_id, name, state, owner_agent_id, created_at, archived_at
+SELECT hub_id, group_id, circle_id, name, state, owner_agent_id, charter_version, has_charter, charter_content_hash, charter_updated_at, created_at, archived_at
 FROM agent_group WHERE group_id = ?`, groupID))
 }
 
 func (repository *Repository) ListGroups(ctx context.Context, agentID string) ([]hub.Group, error) {
 	rows, err := repository.executor().QueryContext(ctx, `
-SELECT g.hub_id, g.group_id, g.circle_id, g.name, g.state, g.owner_agent_id, g.created_at, g.archived_at
+	SELECT g.hub_id, g.group_id, g.circle_id, g.name, g.state, g.owner_agent_id, g.charter_version, g.has_charter, g.charter_content_hash, g.charter_updated_at, g.created_at, g.archived_at
 FROM agent_group g
 JOIN group_member m ON m.hub_id = g.hub_id AND m.group_id = g.group_id
 WHERE m.agent_id = ? AND m.state = 'ACTIVE' AND m.circle_id = g.circle_id
@@ -69,6 +69,122 @@ ORDER BY g.created_at, g.group_id`, agentID)
 		groups = append(groups, group)
 	}
 	return groups, rows.Err()
+}
+
+func (repository *Repository) GetGroupCharter(ctx context.Context, hubID, circleID, groupID string) (hub.GroupCharter, error) {
+	var charter hub.GroupCharter
+	var hasCharter int
+	var updatedAt sql.NullString
+	err := repository.executor().QueryRowContext(ctx, `
+SELECT group_id, charter_version, has_charter, charter_content_hash, charter_updated_at
+FROM agent_group WHERE hub_id = ? AND circle_id = ? AND group_id = ?`, hubID, circleID, groupID).Scan(
+		&charter.GroupID, &charter.CharterVersion, &hasCharter, &charter.ContentHash, &updatedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return hub.GroupCharter{}, ErrNotFound
+	}
+	if err != nil {
+		return hub.GroupCharter{}, err
+	}
+	charter.HubID, charter.CircleID, charter.HasCharter = hubID, circleID, hasCharter != 0
+	charter.UpdatedAt = updatedAt.String
+	if !charter.HasCharter {
+		return charter, nil
+	}
+	return scanCharter(repository.executor().QueryRowContext(ctx, `
+SELECT content, updated_by, created_at, superseded_at
+FROM group_charter_revision
+WHERE hub_id = ? AND circle_id = ? AND group_id = ? AND version = ?`, hubID, circleID, groupID, charter.CharterVersion), charter)
+}
+
+func (repository *Repository) ListGroupCharterRevisions(ctx context.Context, hubID, circleID, groupID string) ([]hub.GroupCharter, error) {
+	rows, err := repository.executor().QueryContext(ctx, `
+SELECT group_id, version, content, content_hash, updated_by, created_at, superseded_at
+FROM group_charter_revision WHERE hub_id = ? AND circle_id = ? AND group_id = ? ORDER BY version`, hubID, circleID, groupID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	charters := make([]hub.GroupCharter, 0)
+	for rows.Next() {
+		var item hub.GroupCharter
+		var superseded sql.NullString
+		if err := rows.Scan(&item.GroupID, &item.CharterVersion, &item.Content, &item.ContentHash, &item.UpdatedBy, &item.CreatedAt, &superseded); err != nil {
+			return nil, err
+		}
+		item.HubID, item.CircleID, item.HasCharter = hubID, circleID, true
+		if superseded.Valid {
+			value := superseded.String
+			item.SupersededAt = &value
+		}
+		charters = append(charters, item)
+	}
+	return charters, rows.Err()
+}
+
+func (repository *Repository) PutGroupCharter(ctx context.Context, charter hub.GroupCharter, expectedVersion int64, idempotencyKey string) (hub.GroupCharter, bool, error) {
+	var result hub.GroupCharter
+	duplicate := false
+	err := repository.withTransaction(ctx, func(tx *Repository) error {
+		var existing hub.GroupCharter
+		var superseded sql.NullString
+		lookupErr := tx.executor().QueryRowContext(ctx, `
+SELECT group_id, version, content, content_hash, updated_by, created_at, superseded_at
+FROM group_charter_revision WHERE hub_id = ? AND circle_id = ? AND group_id = ? AND idempotency_key = ?`, charter.HubID, charter.CircleID, charter.GroupID, idempotencyKey).Scan(
+			&existing.GroupID, &existing.CharterVersion, &existing.Content, &existing.ContentHash, &existing.UpdatedBy, &existing.CreatedAt, &superseded,
+		)
+		if lookupErr == nil {
+			existing.HubID, existing.CircleID, existing.HasCharter = charter.HubID, charter.CircleID, true
+			if existing.ContentHash != charter.ContentHash {
+				return store.ErrConflict
+			}
+			result, duplicate = existing, true
+			return nil
+		}
+		if !errors.Is(lookupErr, sql.ErrNoRows) {
+			return lookupErr
+		}
+		var currentVersion int64
+		if err := tx.executor().QueryRowContext(ctx, `SELECT charter_version FROM agent_group WHERE hub_id = ? AND circle_id = ? AND group_id = ?`, charter.HubID, charter.CircleID, charter.GroupID).Scan(&currentVersion); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return ErrNotFound
+			}
+			return err
+		}
+		if currentVersion != expectedVersion {
+			return store.ErrConflict
+		}
+		nextVersion := currentVersion + 1
+		now := time.Now().UTC()
+		createdAt := now.Format(time.RFC3339Nano)
+		if _, err := tx.executor().ExecContext(ctx, `
+INSERT INTO group_charter_revision (hub_id, circle_id, group_id, version, content, content_hash, idempotency_key, updated_by, created_at, superseded_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`, charter.HubID, charter.CircleID, charter.GroupID, nextVersion, charter.Content, charter.ContentHash, idempotencyKey, charter.UpdatedBy, createdAt); err != nil {
+			return err
+		}
+		if currentVersion > 0 {
+			if _, err := tx.executor().ExecContext(ctx, `UPDATE group_charter_revision SET superseded_at = ? WHERE hub_id = ? AND circle_id = ? AND group_id = ? AND version = ?`, createdAt, charter.HubID, charter.CircleID, charter.GroupID, currentVersion); err != nil {
+				return err
+			}
+		}
+		updated, err := tx.executor().ExecContext(ctx, `
+UPDATE agent_group SET charter_version = ?, has_charter = 1, charter_content_hash = ?, charter_updated_at = ?
+WHERE hub_id = ? AND circle_id = ? AND group_id = ? AND charter_version = ?`, nextVersion, charter.ContentHash, createdAt, charter.HubID, charter.CircleID, charter.GroupID, expectedVersion)
+		if err != nil {
+			return err
+		}
+		count, err := updated.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if count != 1 {
+			return store.ErrConflict
+		}
+		result = charter
+		result.CharterVersion, result.HasCharter, result.CreatedAt, result.UpdatedAt = nextVersion, true, createdAt, createdAt
+		return nil
+	})
+	return result, duplicate, err
 }
 
 func (repository *Repository) FindMember(ctx context.Context, groupID, agentID string) (hub.GroupMember, error) {
@@ -583,15 +699,20 @@ WHERE group_message_id = ? ORDER BY sequence`, messageID)
 
 func scanGroup(row scanner) (hub.Group, error) {
 	var group hub.Group
-	var state, created, archived sql.NullString
-	if err := row.Scan(&group.HubID, &group.GroupID, &group.CircleID, &group.Name, &state, &group.OwnerAgentID, &created, &archived); err != nil {
+	var state, created, archived, charterUpdated sql.NullString
+	var hasCharter int
+	if err := row.Scan(&group.HubID, &group.GroupID, &group.CircleID, &group.Name, &state, &group.OwnerAgentID, &group.CharterVersion, &hasCharter, &group.ContentHash, &charterUpdated, &created, &archived); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return hub.Group{}, ErrNotFound
 		}
 		return hub.Group{}, err
 	}
 	group.State = hub.GroupState(state.String)
+	group.HasCharter = hasCharter != 0
 	var err error
+	if group.CharterUpdatedAt, err = parseNullableTimePtr(charterUpdated); err != nil {
+		return hub.Group{}, err
+	}
 	if group.CreatedAt, err = parseRequiredTime(created); err != nil {
 		return hub.Group{}, err
 	}
@@ -599,6 +720,22 @@ func scanGroup(row scanner) (hub.Group, error) {
 		return hub.Group{}, err
 	}
 	return group, nil
+}
+
+func scanCharter(row scanner, charter hub.GroupCharter) (hub.GroupCharter, error) {
+	var content, updatedBy, createdAt, superseded sql.NullString
+	if err := row.Scan(&content, &updatedBy, &createdAt, &superseded); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return hub.GroupCharter{}, ErrNotFound
+		}
+		return hub.GroupCharter{}, err
+	}
+	charter.Content, charter.UpdatedBy, charter.CreatedAt = content.String, updatedBy.String, createdAt.String
+	if superseded.Valid {
+		value := superseded.String
+		charter.SupersededAt = &value
+	}
+	return charter, nil
 }
 
 func scanGroupMember(row scanner) (hub.GroupMember, error) {

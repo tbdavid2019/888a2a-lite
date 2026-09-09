@@ -42,6 +42,8 @@ func (repository *Repository) Announcements() store.AnnouncementStore { return r
 
 func (repository *Repository) Groups() store.GroupStore { return repository }
 
+func (repository *Repository) GroupCharters() store.GroupCharterStore { return repository }
+
 func (repository *Repository) StandardTasks() store.StandardTaskStore { return repository }
 
 func (repository *Repository) WithTransaction(ctx context.Context, fn func(store.TxStore) error) error {

@@ -96,6 +96,10 @@ func (database *DB) migrate(ctx context.Context) error {
 		{table: "group_message", name: "circle_id", ddl: "TEXT NOT NULL DEFAULT 'public'"},
 		{table: "group_delivery", name: "circle_id", ddl: "TEXT NOT NULL DEFAULT 'public'"},
 		{table: "event_log", name: "circle_id", ddl: "TEXT NOT NULL DEFAULT 'public'"},
+		{table: "agent_group", name: "charter_version", ddl: "INTEGER NOT NULL DEFAULT 0"},
+		{table: "agent_group", name: "has_charter", ddl: "INTEGER NOT NULL DEFAULT 0"},
+		{table: "agent_group", name: "charter_content_hash", ddl: "TEXT NOT NULL DEFAULT ''"},
+		{table: "agent_group", name: "charter_updated_at", ddl: "TEXT"},
 	} {
 		if err := ensureColumn(ctx, database.db, column.table, column.name, column.ddl); err != nil {
 			return err
@@ -108,6 +112,9 @@ func (database *DB) migrate(ctx context.Context) error {
 		return err
 	}
 	if err := migrateGroupA2A(ctx, database.db); err != nil {
+		return err
+	}
+	if err := migrateGroupCharter(ctx, database.db); err != nil {
 		return err
 	}
 	for _, column := range []struct{ table, name, ddl string }{
@@ -140,6 +147,41 @@ ON inbox_item (hub_id, group_id, group_message_id, target_agent_id, state)`); er
 	}
 	_, err := database.db.ExecContext(ctx, `INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (3, CURRENT_TIMESTAMP)`)
 	return err
+}
+
+func migrateGroupCharter(ctx context.Context, database *sql.DB) error {
+	var applied int
+	if err := database.QueryRowContext(ctx, "SELECT COUNT(*) FROM schema_migrations WHERE version = 7").Scan(&applied); err != nil {
+		return err
+	}
+	if applied > 0 {
+		return nil
+	}
+	statements := []string{
+		`CREATE TABLE group_charter_revision (
+    hub_id TEXT NOT NULL,
+    circle_id TEXT NOT NULL,
+    group_id TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL,
+    updated_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    superseded_at TEXT,
+    PRIMARY KEY (hub_id, group_id, version),
+    FOREIGN KEY (hub_id, group_id) REFERENCES agent_group (hub_id, group_id)
+)`,
+		`CREATE UNIQUE INDEX idx_group_charter_idempotency ON group_charter_revision (hub_id, circle_id, group_id, idempotency_key) WHERE idempotency_key <> ''`,
+		`CREATE INDEX idx_group_charter_scope ON group_charter_revision (hub_id, circle_id, group_id, version)`,
+		`INSERT INTO schema_migrations (version, applied_at) VALUES (7, CURRENT_TIMESTAMP)`,
+	}
+	for _, statement := range statements {
+		if _, err := database.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("migrate group charter schema: %w", err)
+		}
+	}
+	return nil
 }
 
 func migrateStandardA2A(ctx context.Context, database *sql.DB) error {
@@ -497,6 +539,10 @@ CREATE TABLE IF NOT EXISTS agent_group (
     name TEXT NOT NULL,
     state TEXT NOT NULL CHECK (state IN ('ACTIVE', 'ARCHIVED')),
     owner_agent_id TEXT NOT NULL,
+    charter_version INTEGER NOT NULL DEFAULT 0,
+    has_charter INTEGER NOT NULL DEFAULT 0 CHECK (has_charter IN (0, 1)),
+    charter_content_hash TEXT NOT NULL DEFAULT '',
+    charter_updated_at TEXT,
     created_at TEXT NOT NULL,
     archived_at TEXT,
     PRIMARY KEY (hub_id, group_id),

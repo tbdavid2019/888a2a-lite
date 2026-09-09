@@ -45,6 +45,7 @@ const (
 	EventGroupHistoryViewed          = "group.history_viewed"
 	EventGroupDeliveryPolled         = "group.delivery_polled"
 	EventGroupAuthorizationDenied    = "group.authorization_denied"
+	EventGroupCharterUpdated         = "group.charter_updated"
 	EventAgentDeleted                = "agent.deleted"
 	EventAgentsPruned                = "agents.pruned"
 	EventCircleDisabled              = "circle.disabled"

@@ -115,6 +115,23 @@ func (service *Service) StandardGroupCard(ctx context.Context, requester hub.Reg
 		return a2a.AgentCard{}, err
 	}
 	card := service.standardCard(baseURL, group.Name, "A2A Group Coordination Extension for "+group.Name, groupTenantPrefix+groupID)
+	for index := range card.Capabilities.Extensions {
+		if card.Capabilities.Extensions[index].URI == a2a.GroupExtensionURI {
+			params := card.Capabilities.Extensions[index].Params
+			if params == nil {
+				params = map[string]any{}
+			}
+			params["hasCharter"] = group.HasCharter
+			params["charterVersion"] = group.CharterVersion
+			if group.ContentHash != "" {
+				params["contentHash"] = group.ContentHash
+			}
+			if group.CharterUpdatedAt != nil {
+				params["updatedAt"] = group.CharterUpdatedAt.UTC().Format(time.RFC3339Nano)
+			}
+			card.Capabilities.Extensions[index].Params = params
+		}
+	}
 	card.Skills = []a2a.AgentSkill{{ID: "group-coordination", Name: "Group coordination", Description: "Fan out text messages to eligible group members and aggregate their outcomes", Tags: []string{"group", "coordination", "fan-out"}, InputModes: []string{"text/plain"}, OutputModes: []string{"text/plain"}}}
 	return card, nil
 }

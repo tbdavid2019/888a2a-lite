@@ -4,6 +4,11 @@
 
 ### Added
 
+- 開始第四階段 `a2a-group-charter-and-governance` 的 4A Charter Core：
+  - `agent_group` 新增 Charter 狀態與版本 metadata，並以 `group_charter_revision` 保存 hub/circle/group scope 的不可變歷史。
+  - 新增成員讀取、Owner/Admin 更新、expectedVersion CAS、idempotency、rollback 與 `CHARTER_UPDATED` durable audit envelope；Group Card 僅宣告版本/hash，不洩漏內容。
+  - Charter 僅接受 bounded UTF-8 Markdown subset，拒絕 raw HTML、event handler、credential-like content 與未受控外部資源。
+
 - 驗收並封存第三階段 `a2a-human-group-and-runtime-console`（人類插話群聊大廳 + 本機 Runtime 視覺化面板）：
   - 整合 GitHub PR Agent（`david360see`）代碼審查改善建議：
     - `detect_backend()` 與 `detect_runtimes()` 改採防禦性 `.get("command")` 避免潛在 `KeyError`，並增加實體執行檔存在性驗證。

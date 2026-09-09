@@ -62,6 +62,64 @@ func (service *Service) GetGroup(ctx context.Context, agentID, token, groupID st
 	return group, members, err
 }
 
+func (service *Service) GetGroupCharter(ctx context.Context, agentID, token, groupID string) (hub.GroupCharter, error) {
+	member, err := service.requireActiveGroupMember(ctx, agentID, token, groupID)
+	if err != nil {
+		return hub.GroupCharter{}, err
+	}
+	return service.store.GroupCharters().GetGroupCharter(ctx, service.config.HubID, member.CircleID, groupID)
+}
+
+func (service *Service) ListGroupCharterRevisions(ctx context.Context, agentID, token, groupID string) ([]hub.GroupCharter, error) {
+	member, err := service.requireActiveGroupMember(ctx, agentID, token, groupID)
+	if err != nil {
+		return nil, err
+	}
+	return service.store.GroupCharters().ListGroupCharterRevisions(ctx, service.config.HubID, member.CircleID, groupID)
+}
+
+func (service *Service) PutGroupCharter(ctx context.Context, agentID, token, groupID string, input hub.GroupCharterInput) (hub.GroupCharter, bool, error) {
+	member, err := service.requireActiveGroupMember(ctx, agentID, token, groupID)
+	if err != nil {
+		return hub.GroupCharter{}, false, err
+	}
+	if !member.CanManageMembers() {
+		return hub.GroupCharter{}, false, ErrForbidden
+	}
+	if err := hub.ValidateGroupCharterInput(input); err != nil {
+		return hub.GroupCharter{}, false, fmt.Errorf("%w: %s", ErrValidation, err.Error())
+	}
+	charter := hub.GroupCharter{HubID: service.config.HubID, CircleID: member.CircleID, GroupID: groupID, Content: input.Content, ContentHash: hub.GroupCharterContentHash(input.Content), UpdatedBy: agentID}
+	result, duplicate, err := service.store.GroupCharters().PutGroupCharter(ctx, charter, input.ExpectedVersion, strings.TrimSpace(input.IdempotencyKey))
+	if err != nil {
+		return hub.GroupCharter{}, duplicate, err
+	}
+	if !duplicate {
+		service.audit(ctx, hub.Event{Type: hub.EventGroupCharterUpdated, CircleID: member.CircleID, ActorAgentID: agentID, TargetAgentID: groupID, Details: map[string]any{"groupId": groupID, "circleId": member.CircleID, "charterVersion": result.CharterVersion, "contentHash": result.ContentHash, "updatedBy": agentID, "revision": result.CharterVersion}})
+	}
+	return result, duplicate, nil
+}
+
+func (service *Service) RollbackGroupCharter(ctx context.Context, agentID, token, groupID string, expectedVersion, targetVersion int64, idempotencyKey string) (hub.GroupCharter, bool, error) {
+	member, err := service.requireActiveGroupMember(ctx, agentID, token, groupID)
+	if err != nil {
+		return hub.GroupCharter{}, false, err
+	}
+	if !member.CanManageMembers() {
+		return hub.GroupCharter{}, false, ErrForbidden
+	}
+	revisions, err := service.store.GroupCharters().ListGroupCharterRevisions(ctx, service.config.HubID, member.CircleID, groupID)
+	if err != nil {
+		return hub.GroupCharter{}, false, err
+	}
+	for _, revision := range revisions {
+		if revision.CharterVersion == targetVersion {
+			return service.PutGroupCharter(ctx, agentID, token, groupID, hub.GroupCharterInput{Content: revision.Content, ExpectedVersion: expectedVersion, IdempotencyKey: idempotencyKey})
+		}
+	}
+	return hub.GroupCharter{}, false, store.ErrNotFound
+}
+
 func (service *Service) InviteMember(ctx context.Context, agentID, token, groupID, inviteeAgentID string) (hub.GroupInvitation, error) {
 	actor, err := service.requireActiveGroupMember(ctx, agentID, token, groupID)
 	if err != nil {

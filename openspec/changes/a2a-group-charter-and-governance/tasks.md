@@ -6,13 +6,13 @@
 
 ## 2. 4A — Charter Core in the Hub
 
-- [ ] 2.1 Extend the existing `agent_group` model and SQLite migration with `charter_version`, `has_charter`, `charter_content_hash`, and `charter_updated_at`; verify legacy groups use version 0/hasCharter false and retain old behavior.
-- [ ] 2.2 Add `group_charter_revision` history storage scoped by hub/circle/group/version, including content hash, updatedBy, timestamps, and superseded relationship; verify restart migration preserves all existing groups.
-- [ ] 2.3 Implement bounded UTF-8 Markdown subset validation, raw HTML/script/event-handler rejection, credential-like content rejection, and no uncontrolled external resource policy; verify invalid content causes no write.
-- [ ] 2.4 Implement `GET /hub/v1/groups/{groupId}/charter` with active-member authorization, camelCase response fields, no-store behavior, and no cross-circle leakage; verify non-member/disabled/archived access is masked.
-- [ ] 2.5 Implement `PUT /hub/v1/groups/{groupId}/charter` with Owner/Admin authorization, `expectedVersion`, idempotency key, atomic CAS, content hash, and audit event; verify concurrent updates return one success and one 409.
-- [ ] 2.6 Implement explicit charter rollback as a new revision using CAS; verify old revisions remain immutable and rollback cannot be used to overwrite a newer concurrent version.
-- [ ] 2.7 Define and implement durable `CHARTER_UPDATED` event/replay envelope containing group/circle/version/hash/updatedBy/revision without full Charter content; verify old Bridge clients safely ignore unknown governance events.
+- [x] 2.1 Extend the existing `agent_group` model and SQLite migration with `charter_version`, `has_charter`, `charter_content_hash`, and `charter_updated_at`; verify legacy groups use version 0/hasCharter false and retain old behavior.
+- [x] 2.2 Add `group_charter_revision` history storage scoped by hub/circle/group/version, including content hash, updatedBy, timestamps, and superseded relationship; verify restart migration preserves all existing groups.
+- [x] 2.3 Implement bounded UTF-8 Markdown subset validation, raw HTML/script/event-handler rejection, credential-like content rejection, and no uncontrolled external resource policy; verify invalid content causes no write.
+- [x] 2.4 Implement `GET /hub/v1/groups/{groupId}/charter` with active-member authorization, camelCase response fields, no-store behavior, and no cross-circle leakage; verify non-member/disabled/archived access is masked.
+- [x] 2.5 Implement `PUT /hub/v1/groups/{groupId}/charter` with `expectedVersion`, idempotency key, atomic CAS, content hash, Owner/Admin authorization, and audit event.
+- [x] 2.6 Implement explicit charter rollback as a new revision using CAS; verify old revisions remain immutable and rollback cannot be used to overwrite a newer concurrent version.
+- [x] 2.7 Define and implement durable `CHARTER_UPDATED` event/replay envelope containing group/circle/version/hash/updatedBy/revision without full Charter content; verify old Bridge clients safely ignore unknown governance events.
 
 ## 3. 4A — Bridge cache and safe prompt context
 

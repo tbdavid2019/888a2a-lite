@@ -118,6 +118,12 @@ type GroupStore interface {
 	ListGroupMessagesAdminInCircle(context.Context, uint64, int, string, string, string) ([]hub.GroupMessage, error)
 }
 
+type GroupCharterStore interface {
+	GetGroupCharter(context.Context, string, string, string) (hub.GroupCharter, error)
+	ListGroupCharterRevisions(context.Context, string, string, string) ([]hub.GroupCharter, error)
+	PutGroupCharter(context.Context, hub.GroupCharter, int64, string) (hub.GroupCharter, bool, error)
+}
+
 type TxStore interface {
 	Circles() CircleStore
 	Agents() AgentStore
@@ -126,6 +132,7 @@ type TxStore interface {
 	Events() EventStore
 	Announcements() AnnouncementStore
 	Groups() GroupStore
+	GroupCharters() GroupCharterStore
 	StandardTasks() StandardTaskStore
 }
 

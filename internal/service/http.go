@@ -124,6 +124,10 @@ func (server *HTTPServer) Handler() http.Handler {
 	mux.HandleFunc("GET /hub/v1/groups/{groupId}/roster", server.groupRoster)
 	mux.HandleFunc("GET /hub/v1/groups/{groupId}/history", server.groupHistory)
 	mux.HandleFunc("POST /hub/v1/groups/{groupId}/messages", server.sendGroupMessage)
+	mux.HandleFunc("GET /hub/v1/groups/{groupId}/charter", server.getGroupCharter)
+	mux.HandleFunc("PUT /hub/v1/groups/{groupId}/charter", server.putGroupCharter)
+	mux.HandleFunc("GET /hub/v1/groups/{groupId}/charter/revisions", server.listGroupCharterRevisions)
+	mux.HandleFunc("POST /hub/v1/groups/{groupId}/charter/rollback", server.rollbackGroupCharter)
 	mux.HandleFunc("POST /hub/v1/admin/registration", server.setRegistration)
 	mux.HandleFunc("GET /hub/v1/admin/agents", server.adminListAgents)
 	mux.HandleFunc("GET /hub/v1/admin/circles", server.adminListCircles)
@@ -262,6 +266,18 @@ type groupMessageRequest struct {
 	ContextID      string `json:"contextId"`
 	IdempotencyKey string `json:"idempotencyKey"`
 	Message        string `json:"message"`
+}
+
+type groupCharterRequest struct {
+	Content         string `json:"content"`
+	ExpectedVersion int64  `json:"expectedVersion"`
+	IdempotencyKey  string `json:"idempotencyKey"`
+}
+
+type groupCharterRollbackRequest struct {
+	TargetVersion   int64  `json:"targetVersion"`
+	ExpectedVersion int64  `json:"expectedVersion"`
+	IdempotencyKey  string `json:"idempotencyKey"`
 }
 
 type circleRotateKeyRequest struct {
@@ -943,6 +959,78 @@ func (server *HTTPServer) groupHistory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"groupId": r.PathValue("groupId"), "messages": messages, "nextId": next})
 }
 
+func (server *HTTPServer) getGroupCharter(w http.ResponseWriter, r *http.Request) {
+	agentID, token, ok := server.agentCredentials(w, r, "")
+	if !ok {
+		return
+	}
+	charter, err := server.service.GetGroupCharter(r.Context(), agentID, token, r.PathValue("groupId"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "private, no-store")
+	writeJSON(w, http.StatusOK, charter)
+}
+
+func (server *HTTPServer) listGroupCharterRevisions(w http.ResponseWriter, r *http.Request) {
+	agentID, token, ok := server.agentCredentials(w, r, "")
+	if !ok {
+		return
+	}
+	revisions, err := server.service.ListGroupCharterRevisions(r.Context(), agentID, token, r.PathValue("groupId"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "private, no-store")
+	writeJSON(w, http.StatusOK, map[string]any{"groupId": r.PathValue("groupId"), "revisions": revisions})
+}
+
+func (server *HTTPServer) putGroupCharter(w http.ResponseWriter, r *http.Request) {
+	agentID, token, ok := server.agentCredentials(w, r, "")
+	if !ok {
+		return
+	}
+	var request groupCharterRequest
+	if !decodeJSON(w, r, server.maxBodyBytes, &request) {
+		return
+	}
+	charter, duplicate, err := server.service.PutGroupCharter(r.Context(), agentID, token, r.PathValue("groupId"), hub.GroupCharterInput{Content: request.Content, ExpectedVersion: request.ExpectedVersion, IdempotencyKey: request.IdempotencyKey})
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "private, no-store")
+	status := http.StatusOK
+	if !duplicate {
+		status = http.StatusCreated
+	}
+	writeJSON(w, status, charter)
+}
+
+func (server *HTTPServer) rollbackGroupCharter(w http.ResponseWriter, r *http.Request) {
+	agentID, token, ok := server.agentCredentials(w, r, "")
+	if !ok {
+		return
+	}
+	var request groupCharterRollbackRequest
+	if !decodeJSON(w, r, server.maxBodyBytes, &request) {
+		return
+	}
+	charter, duplicate, err := server.service.RollbackGroupCharter(r.Context(), agentID, token, r.PathValue("groupId"), request.ExpectedVersion, request.TargetVersion, request.IdempotencyKey)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "private, no-store")
+	status := http.StatusOK
+	if !duplicate {
+		status = http.StatusCreated
+	}
+	writeJSON(w, status, charter)
+}
+
 func (server *HTTPServer) sendGroupMessage(w http.ResponseWriter, r *http.Request) {
 	agentID, token, ok := server.agentCredentials(w, r, "")
 	if !ok {
@@ -1381,6 +1469,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "INVITATION_INVALID", "invitation is invalid")
 	case errors.Is(err, store.ErrInvalidState):
 		writeError(w, http.StatusConflict, "INVALID_STATE", "resource state does not allow this operation")
+	case errors.Is(err, store.ErrConflict):
+		writeError(w, http.StatusConflict, "CONFLICT", "resource was changed concurrently")
 	case errors.Is(err, store.ErrForbidden):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "operation is not permitted")
 	case errors.Is(err, ErrAgentUnavailable):

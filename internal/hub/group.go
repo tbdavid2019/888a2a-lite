@@ -50,14 +50,18 @@ const (
 )
 
 type Group struct {
-	HubID        string     `json:"hubId"`
-	CircleID     string     `json:"circleId,omitempty"`
-	GroupID      string     `json:"groupId"`
-	Name         string     `json:"name"`
-	State        GroupState `json:"state"`
-	OwnerAgentID string     `json:"ownerAgentId"`
-	CreatedAt    time.Time  `json:"createdAt"`
-	ArchivedAt   *time.Time `json:"archivedAt,omitempty"`
+	HubID            string     `json:"hubId"`
+	CircleID         string     `json:"circleId,omitempty"`
+	GroupID          string     `json:"groupId"`
+	Name             string     `json:"name"`
+	State            GroupState `json:"state"`
+	OwnerAgentID     string     `json:"ownerAgentId"`
+	CharterVersion   int64      `json:"charterVersion"`
+	HasCharter       bool       `json:"hasCharter"`
+	ContentHash      string     `json:"contentHash,omitempty"`
+	CharterUpdatedAt *time.Time `json:"charterUpdatedAt,omitempty"`
+	CreatedAt        time.Time  `json:"createdAt"`
+	ArchivedAt       *time.Time `json:"archivedAt,omitempty"`
 }
 
 type GroupMember struct {
