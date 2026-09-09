@@ -43,14 +43,14 @@
 
 ## 7. Security and compatibility verification
 
-- [ ] 7.1 Add public/private/dynamic Multi-Circle tests for group discovery, Group Card, send, stream, subscribe, cancel and member updates; verify cross-circle responses mask group/task existence and create no state.
-- [ ] 7.2 Add authorization matrix tests for requester, same-circle non-requester, group member, removed member, operator and expired/revoked Agent; verify Group Card, Parent Task, Member Delivery and result visibility are separately enforced.
-- [ ] 7.3 Add race tests for membership snapshot, fan-out capacity, ACK/cancel, duplicate Message, concurrent Member updates, group archive and circle disable; verify SQLite transactions are all-or-nothing and terminal states are monotonic.
-- [ ] 7.4 Add standard content/error tests for extension negotiation, `application/a2a+json`, `A2A-Version`, malformed metadata, unsupported Part, bounded pagination, invalid tenant and standard error reasons; verify P2P behavior remains unchanged.
+- [x] 7.1 Add public/private/dynamic Multi-Circle tests for group discovery, Group Card, send, stream, subscribe, cancel and member updates; verify cross-circle responses mask group/task existence and create no state.
+- [x] 7.2 Add authorization matrix tests for requester, same-circle non-requester, group member, removed member, operator and expired/revoked Agent; verify Group Card, Parent Task, Member Delivery and result visibility are separately enforced.
+- [x] 7.3 Add race tests for membership snapshot, fan-out capacity, ACK/cancel, duplicate Message, concurrent Member updates, group archive and circle disable; verify SQLite transactions are all-or-nothing and terminal states are monotonic.
+- [x] 7.4 Add standard content/error tests for extension negotiation, `application/a2a+json`, `A2A-Version`, malformed metadata, unsupported Part, bounded pagination, invalid tenant and standard error reasons; verify P2P behavior remains unchanged.
 
 ## 8. Official interoperability and rollout
 
 - [x] 8.1 Add an extension-aware client fixture that discovers `/a2a/v1/groups`, reads a Group Card, sends `A2A-Extensions: ...` to `group:<groupId>`, subscribes and parses Parent/Member progress; verify the fixture does not patch serializers.
-- [ ] 8.2 Run the unmodified official A2A SDK against the standard core flow and the extension-aware fixture against group flow; verify the version, schema and result are recorded in CI and no unsupported-client behavior is claimed as core compatibility.
+- [x] 8.2 Run the unmodified official A2A SDK against the standard core flow and the extension-aware fixture against group flow; verify the version, schema and result are recorded in CI and no unsupported-client behavior is claimed as core compatibility.
 - [x] 8.3 Document Group Extension discovery, tenant routing, reply policies, member outcomes, cancellation, Multi-Circle rules and the explicit Buzz scope boundary in README, `llms.txt` and the client Skill; verify examples use valid extension headers and no secrets.
-- [ ] 8.4 Update Docker/CI/deployment feature flags and run the required remote smoke test on `david@10.9.0.11`; verify standard P2P, legacy `/hub/v1/groups`, and Group Extension flows before production enablement.
+- [x] 8.4 Update Docker/CI/deployment feature flags and run the required remote smoke test on `david@10.9.0.11`; verify standard P2P, legacy `/hub/v1/groups`, and Group Extension flows before production enablement.
