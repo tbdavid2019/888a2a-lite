@@ -8,6 +8,10 @@
   - 每個 UI 程序產生獨立 session/CSRF token，mutation 僅接受 loopback、同源、JSON 請求，並使用 constant-time token 比對、大小限制、欄位白名單與 `no-store` 回應。
   - 新增 `/api/runtimes/custom` 與 `/api/runtimes/select`，限制絕對 executable、bounded argv、環境變數名稱參照，拒絕 shell operator 與秘密值。
   - Runtime 設定以 schema version 1、原子替換及 `0600` 權限寫入；desired backend 與目前 active process 狀態分開呈現，並同步更新 source/embedded Bridge。
+- 第三階段完成 Groups 人機群聊第一個端到端切片：
+  - Local UI 以既有 Human Agent principal 讀取同圈 standard Group discovery、roster 與 standard Task history，並以獨立 SQLite `local_groups`／`group_messages` scope 持久化，與 P2P history 分離。
+  - 新增 Groups 導覽、群組 timeline、safe roster mention autocomplete；無 mention 使用 `ACK_ONLY`，有 mention 僅送出綁定 Agent ID 的 `MENTIONED_ONLY` metadata。
+  - `/api/groups/{groupId}/messages` 僅透過 standard Group Gateway、`group:<groupId>` tenant、extension metadata、`returnImmediately` 與 idempotency 發送，並保存 pending／Parent Task／結果狀態。
 
 - 完成 `a2a-standard-compatibility` 全量部署與 CI/CD 雙主機上線：
   - 通過 GitHub Actions 四大檢核（Go checks、Python bridge checks、A2A source and SDK gate、Container build）。

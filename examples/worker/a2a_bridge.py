@@ -364,6 +364,73 @@ class HubClient:
             data = json.loads(resp.read().decode("utf-8"))
             return data.get("agents", [])
 
+    def _standard_headers(self, content_type="application/a2a+json"):
+        headers = self._headers()
+        headers["A2A-Extensions"] = "https://a2a.david888.com/extensions/groups/v1"
+        headers["A2A-Version"] = "1.0"
+        headers["Content-Type"] = content_type
+        return headers
+
+    def list_standard_groups(self, page_size=100):
+        """List groups visible to this existing Hub Agent principal."""
+        url = f"{self.hub_url}/a2a/v1/groups?pageSize={max(1, min(int(page_size), 100))}"
+        req = urllib.request.Request(url, headers=self._standard_headers())
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            return data.get("groups", [])
+
+    def get_standard_group_card(self, group_id):
+        url = f"{self.hub_url}/a2a/v1/groups/{urllib.parse.quote(group_id, safe='')}/card"
+        req = urllib.request.Request(url, headers=self._standard_headers())
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
+    def get_group_roster(self, group_id):
+        """Read the membership roster through the authenticated Hub principal."""
+        url = f"{self.hub_url}/hub/v1/groups/{urllib.parse.quote(group_id, safe='')}/roster"
+        req = urllib.request.Request(url, headers=self._headers())
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            return data.get("members", data.get("roster", []))
+
+    def list_standard_group_tasks(self, group_id, page_size=100):
+        tenant = urllib.parse.quote(f"group:{group_id}", safe=":")
+        url = f"{self.hub_url}/a2a/v1/{tenant}/tasks?pageSize={max(1, min(int(page_size), 100))}"
+        req = urllib.request.Request(url, headers=self._standard_headers())
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            return data.get("tasks", [])
+
+    def send_standard_group_message(self, group_id, message, mentions=None, context_id=None, message_id=None, idempotency_key=None):
+        """Send a Human message through the standard Group Gateway only."""
+        mentions = list(mentions or [])
+        policy = "MENTIONED_ONLY" if mentions else "ACK_ONLY"
+        message_id = message_id or f"human-{uuid.uuid4()}"
+        context_id = context_id or f"group-context-{uuid.uuid4()}"
+        extension_metadata = {"replyPolicy": policy}
+        if mentions:
+            extension_metadata["mentions"] = mentions
+        body = {
+            "tenant": f"group:{group_id}",
+            "message": {
+                "messageId": message_id,
+                "contextId": context_id,
+                "role": "ROLE_USER",
+                "parts": [{"text": message}],
+                "metadata": {"https://a2a.david888.com/extensions/groups/v1": extension_metadata},
+            },
+            "configuration": {"returnImmediately": True},
+        }
+        headers = self._standard_headers()
+        headers["X-Idempotency-Key"] = idempotency_key or f"a2a-ui:{message_id}"
+        req = urllib.request.Request(
+            f"{self.hub_url}/a2a/v1/message:send",
+            data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
+            headers=headers,
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
     def status(self):
         """Query Hub health status and mode."""
         url = f"{self.hub_url}/hub/v1/status"
@@ -1289,6 +1356,16 @@ CLIENT_HTML = """<!DOCTYPE html>
     .search-bar input { width: 100%; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; outline: none; transition: border-color .15s; }
     .search-bar input:focus { border-color: var(--accent); }
     .peer-list { flex: 1 1 auto; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+    .groups-panel { border-top: 1px solid var(--line); padding: 10px 14px; background: #fff; max-height: 190px; overflow-y: auto; }
+    .groups-panel-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+    .groups-panel h3 { font-size: 12px; color: var(--ink); }
+    .group-card { padding: 7px 8px; margin-top: 5px; border: 1px solid var(--line); border-radius: 7px; cursor: pointer; background: #fff; }
+    .group-card:hover, .group-card.active { border-color: var(--accent); background: var(--accent-light); }
+    .group-card-name { font-size: 12px; font-weight: 700; }
+    .group-card-meta { font-size: 10px; color: var(--muted); margin-top: 3px; }
+    .mention-list { position: absolute; left: 20px; right: 110px; bottom: 75px; max-height: 150px; overflow-y: auto; background: #fff; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 20px rgba(15,23,42,.12); z-index: 3; }
+    .mention-option { display:block; width:100%; text-align:left; border:0; background:#fff; padding:8px 10px; cursor:pointer; font-size:12px; }
+    .mention-option:hover { background: var(--accent-light); }
     .runtime-panel { border-top: 1px solid var(--line); padding: 12px 14px; background: #f8fafc; max-height: 230px; overflow-y: auto; }
     .runtime-panel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
     .runtime-panel h3 { font-size: 12px; color: var(--ink); }
@@ -1359,6 +1436,13 @@ CLIENT_HTML = """<!DOCTYPE html>
       <div id="peer-list" class="peer-list">
         <div style="padding:20px;text-align:center;color:var(--muted);font-size:13px">正在獲取 Agent 名單...</div>
       </div>
+      <section class="groups-panel" aria-labelledby="groups-title">
+        <div class="groups-panel-header">
+          <h3 id="groups-title">Groups 人機群組</h3>
+          <button id="refresh-groups" class="runtime-refresh" type="button">↻</button>
+        </div>
+        <div id="group-list" aria-live="polite"><div style="font-size:11px;color:var(--muted)">正在取得同圈群組...</div></div>
+      </section>
       <section class="runtime-panel" aria-labelledby="runtime-title">
         <div class="runtime-panel-header">
           <h3 id="runtime-title">本機 Agent Runtimes</h3>
@@ -1396,6 +1480,7 @@ CLIENT_HTML = """<!DOCTYPE html>
         <textarea id="chat-input" placeholder="輸入訊息或任務指令... (Enter 發送，Shift+Enter 換行)" disabled></textarea>
         <button id="chat-send" class="send-btn" type="submit" disabled>發送任務</button>
       </form>
+      <div id="mention-list" class="mention-list" hidden></div>
     </main>
   </div>
 
@@ -1406,6 +1491,10 @@ CLIENT_HTML = """<!DOCTYPE html>
     let peers = [];
     let conversations = [];
     let activePeer = null;
+    let groups = [];
+    let activeGroup = null;
+    let groupHistory = {};
+    let groupMentions = [];
     let conversationHistory = {};
 
     function escapeHtml(str) {
@@ -1446,6 +1535,115 @@ CLIENT_HTML = """<!DOCTYPE html>
       } catch (err) {
         console.error("Failed to load conversations", err);
       }
+    }
+
+    async function loadGroups() {
+      try {
+        const res = await fetch("/api/groups", { cache: "no-store" });
+        if (res.ok) {
+          const data = await res.json();
+          groups = data.groups || [];
+          renderGroups();
+        }
+      } catch (err) {
+        console.error("Failed to load groups", err);
+      }
+    }
+
+    function renderGroups() {
+      const list = $("group-list");
+      if (!groups.length) {
+        list.innerHTML = '<div style="font-size:11px;color:var(--muted);padding:4px 0">尚無可用的同圈群組</div>';
+        return;
+      }
+      list.innerHTML = groups.map(group => `
+        <div class="group-card ${activeGroup?.groupId === group.groupId ? 'active' : ''}" data-group-id="${escapeHtml(group.groupId)}">
+          <div class="group-card-name">▦ ${escapeHtml(group.name || group.groupId)}</div>
+          <div class="group-card-meta">${Number(group.memberCount || (group.roster || []).length)} 位成員 · standard Gateway</div>
+        </div>
+      `).join("");
+      list.querySelectorAll(".group-card").forEach(el => el.addEventListener("click", () => {
+        const group = groups.find(item => item.groupId === el.dataset.groupId);
+        if (group) selectGroup(group);
+      }));
+    }
+
+    async function selectGroup(group) {
+      activeGroup = group;
+      activePeer = null;
+      groupMentions = [];
+      $("target-name").textContent = `▦ ${group.name || group.groupId}`;
+      $("target-id").textContent = `(group:${group.groupId})`;
+      $("target-badge").textContent = "GROUP";
+      $("target-badge").className = "status-pill ONLINE";
+      $("target-badge").style.display = "inline-block";
+      $("target-caps").textContent = "standard Group Gateway · mentions 支援";
+      $("chat-input").disabled = false;
+      $("chat-send").disabled = false;
+      $("chat-send").textContent = "發送群組訊息";
+      renderGroups();
+      await loadGroupHistory(group.groupId);
+      $("chat-input").focus();
+    }
+
+    async function loadGroupHistory(groupId) {
+      try {
+        const res = await fetch(`/api/groups/${encodeURIComponent(groupId)}/messages`, { cache: "no-store" });
+        if (res.ok) {
+          const data = await res.json();
+          groupHistory[groupId] = data.messages || [];
+        }
+      } catch (err) {
+        console.error("Failed to load group history", err);
+      }
+      renderGroupChat();
+    }
+
+    function renderGroupChat() {
+      if (!activeGroup) return;
+      const history = groupHistory[activeGroup.groupId] || [];
+      const stream = $("chat-stream");
+      if (!history.length) {
+        stream.innerHTML = `<div class="chat-empty"><div class="chat-empty-icon">▦</div><h3>${escapeHtml(activeGroup.name || activeGroup.groupId)}</h3><p style="margin-top:6px">群組尚無本機同步紀錄。輸入訊息即可透過 standard Gateway 發送。</p></div>`;
+        return;
+      }
+      stream.innerHTML = history.map(item => `
+        <div class="bubble ${item.senderType === 'HUMAN' ? 'user' : 'agent'}">
+          <div style="font-weight:700;font-size:12px;margin-bottom:4px">${escapeHtml(item.senderName || item.senderId || 'Agent')}</div>
+          <div>${escapeHtml(item.message)}</div>
+          <div class="bubble-meta"><span>${formatTime(item.timestamp)}</span><span>${escapeHtml(item.state || '')} · ${escapeHtml(item.replyPolicy || '')}</span></div>
+        </div>
+      `).join("");
+      stream.scrollTop = stream.scrollHeight;
+    }
+
+    function renderMentionSuggestions() {
+      const list = $("mention-list");
+      if (!activeGroup) { list.hidden = true; return; }
+      const value = $("chat-input").value;
+      const match = value.match(/(?:^|\s)@([A-Za-z0-9_-]{0,64})$/);
+      if (!match) { list.hidden = true; return; }
+      const query = match[1].toLowerCase();
+      const roster = (activeGroup.roster || []).filter(member => member.state === "ACTIVE" || !member.state);
+      const candidates = roster.filter(member => {
+        const agent = member.agent || {};
+        return String(member.agentId || '').toLowerCase().includes(query) || String(agent.displayName || '').toLowerCase().includes(query);
+      }).slice(0, 8);
+      if (!candidates.length) { list.hidden = true; return; }
+      list.innerHTML = candidates.map(member => {
+        const agent = member.agent || {};
+        const name = agent.displayName || member.agentId;
+        const suffix = name === member.agentId ? '' : ` · ${String(member.agentId).slice(-8)}`;
+        return `<button type="button" class="mention-option" data-agent-id="${escapeHtml(member.agentId)}" data-display-name="${escapeHtml(name)}">@${escapeHtml(name)}${escapeHtml(suffix)}</button>`;
+      }).join("");
+      list.hidden = false;
+      list.querySelectorAll(".mention-option").forEach(button => button.addEventListener("click", () => {
+        const current = $("chat-input").value;
+        $("chat-input").value = current.replace(/(?:^|\s)@[A-Za-z0-9_-]{0,64}$/, matchText => `${matchText.slice(0, 1)}@${button.dataset.displayName} `);
+        groupMentions = [...new Set([...groupMentions, button.dataset.agentId])].slice(0, 16);
+        list.hidden = true;
+        $("chat-input").focus();
+      }));
     }
 
     async function loadPeers() {
@@ -1518,6 +1716,8 @@ CLIENT_HTML = """<!DOCTYPE html>
 
     async function selectPeer(peer) {
       activePeer = peer;
+      activeGroup = null;
+      groupMentions = [];
       $("target-name").textContent = peer.displayName || peer.agentId;
       $("target-id").textContent = `(${peer.agentId})`;
       $("target-badge").textContent = peer.state;
@@ -1526,6 +1726,7 @@ CLIENT_HTML = """<!DOCTYPE html>
       $("target-caps").textContent = (peer.capabilities || []).join(", ");
       $("chat-input").disabled = false;
       $("chat-send").disabled = false;
+      $("chat-send").textContent = "發送任務";
       renderPeers();
 
       // Hydrate conversation history from SQLite WAL via /api/history
@@ -1685,28 +1886,70 @@ CLIENT_HTML = """<!DOCTYPE html>
       }
     }
 
+    async function sendGroupMessage(text) {
+      if (!activeGroup || !text.trim()) return;
+      const group = activeGroup;
+      const message = text.trim();
+      const mentions = groupMentions.slice(0, 16);
+      groupMentions = [];
+      $("chat-input").value = "";
+      $("chat-send").disabled = true;
+      const tempId = "human-" + Date.now() + "-" + Math.random().toString(36).substring(2, 8);
+      const pending = { id: tempId, groupId: group.groupId, senderId: myInfo?.agentId || "", senderName: myInfo?.displayName || "Human", senderType: "HUMAN", message, timestamp: new Date().toISOString(), state: "PENDING", replyPolicy: mentions.length ? "MENTIONED_ONLY" : "ACK_ONLY", mentions };
+      if (!groupHistory[group.groupId]) groupHistory[group.groupId] = [];
+      groupHistory[group.groupId].push(pending);
+      renderGroupChat();
+      try {
+        const res = await fetch(`/api/groups/${encodeURIComponent(group.groupId)}/messages`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Local-UI-Token": LOCAL_UI_TOKEN },
+          body: JSON.stringify({ message, mentions, messageId: tempId })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok) {
+          pending.state = "FAILED";
+          renderGroupChat();
+          alert(data.error || "群組訊息發送失敗");
+        } else {
+          await loadGroupHistory(group.groupId);
+        }
+      } catch (err) {
+        pending.state = "FAILED";
+        renderGroupChat();
+        alert("群組訊息發送發生例外錯誤：" + err.message);
+      } finally {
+        $("chat-send").disabled = false;
+        $("chat-input").focus();
+      }
+    }
+
     $("chat-form").addEventListener("submit", (e) => {
       e.preventDefault();
-      sendMessage($("chat-input").value);
+      if (activeGroup) sendGroupMessage($("chat-input").value);
+      else sendMessage($("chat-input").value);
     });
 
     $("chat-input").addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
-        sendMessage($("chat-input").value);
+        if (activeGroup) sendGroupMessage($("chat-input").value);
+        else sendMessage($("chat-input").value);
       }
     });
+
+    $("chat-input").addEventListener("input", renderMentionSuggestions);
 
     $("refresh-peers").addEventListener("click", loadPeers);
     $("peer-search").addEventListener("input", renderPeers);
 
     document.querySelectorAll(".quick-btn").forEach(btn => {
       btn.addEventListener("click", () => {
-        if (!activePeer) {
-          alert("請先從左側選擇一位對話 Agent！");
+        if (!activePeer && !activeGroup) {
+          alert("請先從左側選擇一位對話 Agent 或 Group！");
           return;
         }
-        sendMessage(btn.getAttribute("data-text"));
+        if (activeGroup) sendGroupMessage(btn.getAttribute("data-text"));
+        else sendMessage(btn.getAttribute("data-text"));
       });
     });
 
@@ -1715,6 +1958,14 @@ CLIENT_HTML = """<!DOCTYPE html>
       ev.onmessage = (e) => {
         try {
           const evt = JSON.parse(e.data);
+          if (evt.type === "group_message" && evt.groupId) {
+            if (!groupHistory[evt.groupId]) groupHistory[evt.groupId] = [];
+            const idx = groupHistory[evt.groupId].findIndex(item => item.id === evt.id);
+            if (idx >= 0) groupHistory[evt.groupId][idx] = { ...groupHistory[evt.groupId][idx], ...evt };
+            else if (evt.message) groupHistory[evt.groupId].push(evt);
+            if (activeGroup?.groupId === evt.groupId) renderGroupChat();
+            return;
+          }
           const peer = evt.peerId;
           if (!conversationHistory[peer]) conversationHistory[peer] = [];
           const idx = conversationHistory[peer].findIndex(m => m.id === evt.id || (evt.previousId && m.id === evt.previousId));
@@ -1737,6 +1988,7 @@ CLIENT_HTML = """<!DOCTYPE html>
       await loadMe();
       await loadConversations();
       await loadPeers();
+      await loadGroups();
       await loadRuntimes();
       connectEvents();
       setInterval(loadPeers, 4000);
@@ -1748,6 +2000,7 @@ CLIENT_HTML = """<!DOCTYPE html>
     }
 
     $("refresh-runtimes").addEventListener("click", loadRuntimes);
+    $("refresh-groups").addEventListener("click", loadGroups);
 
     init();
   </script>
@@ -1764,6 +2017,63 @@ def message_timestamp_order(value):
         return parsed.astimezone(timezone.utc).timestamp()
     except (TypeError, ValueError, OverflowError):
         return 0.0
+
+
+def a2a_message_text(message):
+    if not isinstance(message, dict):
+        return ""
+    texts = []
+    for part in message.get("parts", []):
+        if isinstance(part, dict) and isinstance(part.get("text"), str):
+            texts.append(part["text"])
+    return "\n".join(texts).strip()
+
+
+def standard_task_group_messages(group_id, task, human_agent_id, human_name):
+    """Project a standard parent Task into safe, deduplicated local timeline rows."""
+    if not isinstance(task, dict) or not task.get("id"):
+        return []
+    task_id = str(task["id"])
+    status = task.get("status") if isinstance(task.get("status"), dict) else {}
+    state = status.get("state", "TASK_STATE_SUBMITTED")
+    timestamp = status.get("timestamp") or datetime.now(timezone.utc).isoformat()
+    history = task.get("history") if isinstance(task.get("history"), list) else []
+    first = history[0] if history and isinstance(history[0], dict) else task.get("message", {})
+    metadata = first.get("metadata", {}) if isinstance(first, dict) and isinstance(first.get("metadata"), dict) else {}
+    extension = metadata.get("https://a2a.david888.com/extensions/groups/v1", {})
+    extension = extension if isinstance(extension, dict) else {}
+    mentions = extension.get("mentions", [])
+    mentions = mentions if isinstance(mentions, list) else []
+    result = [{
+        "id": (first.get("messageId") if isinstance(first, dict) and first.get("messageId") else f"{task_id}:human"),
+        "parentTaskId": task_id,
+        "senderId": human_agent_id,
+        "senderName": human_name,
+        "senderType": "HUMAN",
+        "message": a2a_message_text(first),
+        "timestamp": first.get("timestamp", timestamp) if isinstance(first, dict) else timestamp,
+        "state": state,
+        "replyPolicy": extension.get("replyPolicy", "ACK_ONLY"),
+        "mentions": mentions,
+        "revision": 1,
+    }]
+    status_message = status.get("message")
+    result_text = a2a_message_text(status_message)
+    if result_text:
+        result.append({
+            "id": f"{task_id}:result",
+            "parentTaskId": task_id,
+            "senderId": "",
+            "senderName": "Agent result",
+            "senderType": "AGENT",
+            "message": result_text,
+            "timestamp": timestamp,
+            "state": state,
+            "replyPolicy": result[0]["replyPolicy"],
+            "mentions": result[0]["mentions"],
+            "revision": 2,
+        })
+    return [item for item in result if item["message"]]
 
 
 class LocalChatStore:
@@ -1823,7 +2133,82 @@ class LocalChatStore:
                     db.execute("UPDATE conversations SET last_order = ? WHERE peer_id = ?", (message_timestamp_order(row[1]), row[0]))
             db.execute("CREATE INDEX IF NOT EXISTS idx_messages_peer_created ON messages(peer_id, created_at, sequence)")
             db.execute("CREATE INDEX IF NOT EXISTS idx_messages_outbox ON messages(is_outgoing, state, next_retry_at)")
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS local_groups (
+                    group_id TEXT PRIMARY KEY,
+                    circle_id TEXT NOT NULL DEFAULT '',
+                    name TEXT NOT NULL,
+                    member_count INTEGER NOT NULL DEFAULT 0,
+                    state TEXT NOT NULL DEFAULT 'ACTIVE',
+                    updated_at REAL NOT NULL
+                )
+            """)
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS group_messages (
+                    group_id TEXT NOT NULL,
+                    message_id TEXT NOT NULL,
+                    circle_id TEXT NOT NULL DEFAULT '',
+                    parent_task_id TEXT NOT NULL DEFAULT '',
+                    sender_id TEXT NOT NULL DEFAULT '',
+                    sender_name TEXT NOT NULL DEFAULT '',
+                    sender_type TEXT NOT NULL DEFAULT 'AGENT',
+                    message TEXT NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    state TEXT NOT NULL DEFAULT 'SENT',
+                    reply_policy TEXT NOT NULL DEFAULT 'ACK_ONLY',
+                    mentions TEXT NOT NULL DEFAULT '[]',
+                    sequence INTEGER,
+                    revision INTEGER NOT NULL DEFAULT 0,
+                    idempotency_key TEXT NOT NULL DEFAULT '',
+                    sort_timestamp REAL NOT NULL DEFAULT 0,
+                    created_at REAL NOT NULL,
+                    PRIMARY KEY (group_id, message_id)
+                )
+            """)
+            db.execute("CREATE INDEX IF NOT EXISTS idx_group_messages_scope ON group_messages(group_id, sort_timestamp, created_at)")
         os.chmod(self.path, 0o600)
+
+    def save_group(self, group):
+        with self.lock, self._db() as db:
+            db.execute("""
+                INSERT INTO local_groups(group_id, circle_id, name, member_count, state, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(group_id) DO UPDATE SET
+                    circle_id=excluded.circle_id, name=excluded.name,
+                    member_count=excluded.member_count, state=excluded.state,
+                    updated_at=excluded.updated_at
+            """, (group.get("groupId", ""), group.get("circleId", ""), group.get("name", ""), int(group.get("memberCount", 0)), group.get("state", "ACTIVE"), time.time()))
+
+    def get_groups(self):
+        with self.lock, self._db() as db:
+            rows = db.execute("SELECT group_id, circle_id, name, member_count, state, updated_at FROM local_groups ORDER BY updated_at DESC").fetchall()
+            return [{"groupId": row["group_id"], "circleId": row["circle_id"], "name": row["name"], "memberCount": row["member_count"], "state": row["state"], "updatedAt": row["updated_at"]} for row in rows]
+
+    def save_group_message(self, group_id, item):
+        message_id = str(item.get("id") or item.get("messageId") or uuid.uuid4())
+        timestamp = item.get("timestamp") or datetime.now(timezone.utc).isoformat()
+        mentions = item.get("mentions", [])
+        with self.lock, self._db() as db:
+            db.execute("""
+                INSERT INTO group_messages(group_id, message_id, circle_id, parent_task_id, sender_id, sender_name, sender_type, message, timestamp, state, reply_policy, mentions, sequence, revision, idempotency_key, sort_timestamp, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(group_id, message_id) DO UPDATE SET
+                    parent_task_id=excluded.parent_task_id, sender_id=excluded.sender_id,
+                    sender_name=excluded.sender_name, sender_type=excluded.sender_type,
+                    message=excluded.message, timestamp=excluded.timestamp,
+                    state=excluded.state, reply_policy=excluded.reply_policy,
+                    mentions=excluded.mentions, sequence=COALESCE(excluded.sequence, group_messages.sequence),
+                    revision=excluded.revision, idempotency_key=excluded.idempotency_key
+            """, (group_id, message_id, item.get("circleId", ""), item.get("parentTaskId", ""), item.get("senderId", ""), item.get("senderName", ""), item.get("senderType", "AGENT"), item.get("message", ""), timestamp, item.get("state", "SENT"), item.get("replyPolicy", "ACK_ONLY"), json.dumps(mentions, ensure_ascii=False), item.get("sequence"), int(item.get("revision", 0)), item.get("idempotencyKey", ""), message_timestamp_order(timestamp), time.time()))
+
+    def get_group_messages(self, group_id, limit=200):
+        limit = max(1, min(int(limit), 200))
+        with self.lock, self._db() as db:
+            rows = db.execute("SELECT * FROM group_messages WHERE group_id = ? ORDER BY sort_timestamp ASC, created_at ASC, message_id ASC LIMIT ?", (group_id, limit)).fetchall()
+            result = []
+            for row in rows:
+                result.append({"id": row["message_id"], "groupId": row["group_id"], "circleId": row["circle_id"], "parentTaskId": row["parent_task_id"], "senderId": row["sender_id"], "senderName": row["sender_name"], "senderType": row["sender_type"], "message": row["message"], "timestamp": row["timestamp"], "state": row["state"], "replyPolicy": row["reply_policy"], "mentions": json.loads(row["mentions"] or "[]"), "sequence": row["sequence"], "revision": row["revision"], "idempotencyKey": row["idempotency_key"]})
+            return result
 
     def _connect(self):
         db = sqlite3.connect(self.path, timeout=30)
@@ -2030,6 +2415,18 @@ class LocalUIServer(http.server.ThreadingHTTPServer):
                 except Exception:
                     pass
 
+    def append_group_message(self, group_id, msg):
+        self.chat_store.save_group_message(group_id, msg)
+        event = dict(msg)
+        event["groupId"] = group_id
+        event["type"] = "group_message"
+        with self.lock:
+            for q in list(self.subscribers):
+                try:
+                    q.put_nowait(event)
+                except Exception:
+                    pass
+
     def update_message_state(self, peer_id, msg_id, state, previous_id=None):
         retry_after = 2 if state == "FAILED" else 0
         self.chat_store.update_message_state(msg_id, state, retry_after=retry_after)
@@ -2140,6 +2537,35 @@ class LocalUIHandler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+        elif parsed.path == "/api/groups":
+            try:
+                groups = self._refresh_groups()
+                self._write_json(200, {"groups": groups, "source": "hub"})
+            except Exception:
+                circle_id = getattr(self.server.hub_client, "circle_id", None)
+                cached = self.server.chat_store.get_groups()
+                if circle_id:
+                    cached = [group for group in cached if group.get("circleId") == circle_id]
+                else:
+                    cached = []
+                self._write_json(200, {"groups": cached, "source": "local", "offline": True})
+        elif parsed.path.startswith("/api/groups/") and parsed.path.endswith("/messages"):
+            group_id = urllib.parse.unquote(parsed.path[len("/api/groups/"):-len("/messages")]).strip("/")
+            if not group_id or "/" in group_id:
+                self._write_local_error(404, "group not found")
+                return
+            try:
+                groups = self._refresh_groups()
+                if not any(group.get("groupId") == group_id for group in groups):
+                    self._write_local_error(404, "group not found")
+                    return
+                tasks = self.server.hub_client.list_standard_group_tasks(group_id)
+                for task in tasks:
+                    for item in standard_task_group_messages(group_id, task, self.server.hub_client.agent_id, self.server.user_name):
+                        self.server.chat_store.save_group_message(group_id, item)
+                self._write_json(200, {"groupId": group_id, "messages": self.server.chat_store.get_group_messages(group_id, limit=200)})
+            except Exception:
+                self._write_local_error(503, "group history is unavailable")
         elif parsed.path == "/api/peers":
             try:
                 agents = self.server.hub_client.list_agents()
@@ -2250,9 +2676,83 @@ class LocalUIHandler(http.server.BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
+    def _write_json(self, status, value):
+        body = json.dumps(value, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _refresh_groups(self):
+        groups = []
+        for reference in self.server.hub_client.list_standard_groups(page_size=100):
+            group_id = reference.get("groupId") if isinstance(reference, dict) else None
+            if not isinstance(group_id, str) or not group_id or "/" in group_id:
+                continue
+            group = dict(reference)
+            group["state"] = "ACTIVE"
+            group["circleId"] = getattr(self.server.hub_client, "circle_id", "") or ""
+            try:
+                group["roster"] = self.server.hub_client.get_group_roster(group_id)
+            except Exception:
+                group["roster"] = []
+            try:
+                card = self.server.hub_client.get_standard_group_card(group_id)
+                interfaces = card.get("supportedInterfaces", []) if isinstance(card, dict) else []
+                if not any(isinstance(item, dict) and item.get("tenant") == f"group:{group_id}" for item in interfaces):
+                    continue
+            except Exception:
+                continue
+            self.server.chat_store.save_group(group)
+            groups.append(group)
+        return groups
+
     def do_POST(self):
         parsed = urllib.parse.urlparse(self.path)
         if not self._validate_local_mutation():
+            return
+        if parsed.path.startswith("/api/groups/") and parsed.path.endswith("/messages"):
+            group_id = urllib.parse.unquote(parsed.path[len("/api/groups/"):-len("/messages")]).strip("/")
+            payload = self._read_json_body()
+            if payload is None:
+                return
+            allowed = {"message", "mentions", "messageId", "contextId"}
+            if not group_id or "/" in group_id or not isinstance(payload, dict) or set(payload) - allowed:
+                self._write_local_error(400, "group message is invalid")
+                return
+            message = payload.get("message")
+            mentions = payload.get("mentions", [])
+            if not isinstance(message, str) or not message.strip() or len(message.encode("utf-8")) > MAX_LOCAL_REQUEST_BYTES:
+                self._write_local_error(400, "group message is invalid")
+                return
+            if not isinstance(mentions, list) or len(mentions) > 16 or any(not isinstance(value, str) or not value.strip() or len(value) > 128 or any(char in value for char in "\r\n") for value in mentions):
+                self._write_local_error(400, "group mentions are invalid")
+                return
+            if any(field in payload and not isinstance(payload[field], str) for field in ("messageId", "contextId")):
+                self._write_local_error(400, "group message identifiers are invalid")
+                return
+            try:
+                groups = self._refresh_groups()
+                group = next((item for item in groups if item.get("groupId") == group_id), None)
+                if group is None:
+                    self._write_local_error(404, "group not found")
+                    return
+                message_id = payload.get("messageId", "").strip() or f"human-{uuid.uuid4()}"
+                pending = {"id": message_id, "parentTaskId": "", "senderId": self.server.hub_client.agent_id, "senderName": self.server.user_name, "senderType": "HUMAN", "message": message.strip(), "timestamp": datetime.now(timezone.utc).isoformat(), "state": "PENDING", "replyPolicy": "MENTIONED_ONLY" if mentions else "ACK_ONLY", "mentions": mentions, "idempotencyKey": f"a2a-ui:{message_id}", "revision": 0}
+                self.server.append_group_message(group_id, pending)
+                response = self.server.hub_client.send_standard_group_message(group_id, pending["message"], mentions=mentions, context_id=payload.get("contextId") or None, message_id=message_id, idempotency_key=pending["idempotencyKey"])
+                task = response.get("task", response) if isinstance(response, dict) else {}
+                for item in standard_task_group_messages(group_id, task, self.server.hub_client.agent_id, self.server.user_name):
+                    self.server.append_group_message(group_id, item)
+                self._write_json(200, {"ok": True, "parentTaskId": task.get("id", ""), "task": task, "state": (task.get("status") or {}).get("state", "TASK_STATE_SUBMITTED")})
+            except Exception:
+                failed = dict(pending) if "pending" in locals() else {"id": f"failed-{uuid.uuid4()}", "message": message.strip(), "senderId": self.server.hub_client.agent_id, "senderName": self.server.user_name, "senderType": "HUMAN", "timestamp": datetime.now(timezone.utc).isoformat()}
+                failed["state"] = "FAILED"
+                self.server.append_group_message(group_id, failed)
+                self._write_local_error(502, "group delivery failed; local message remains pending or failed")
             return
         if parsed.path == "/api/runtimes/custom":
             payload = self._read_json_body()

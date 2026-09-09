@@ -138,6 +138,102 @@ class DurableBridgeTests(unittest.TestCase):
                 server.shutdown()
                 server.server_close()
 
+    def test_group_history_is_durable_scoped_and_deduplicated(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = bridge.LocalChatStore(os.path.join(directory, "chat.db"))
+            store.save_group({"groupId": "g-1", "circleId": "public", "name": "Crew", "memberCount": 2})
+            message = {"id": "parent-1:human", "parentTaskId": "parent-1", "senderId": "human-1", "senderName": "Human", "senderType": "HUMAN", "message": "hello", "timestamp": "2026-09-09T10:00:00+00:00", "replyPolicy": "ACK_ONLY", "mentions": [], "state": "TASK_STATE_SUBMITTED", "revision": 1}
+            store.save_group_message("g-1", message)
+            store.save_group_message("g-1", {**message, "message": "hello again", "revision": 2})
+            self.assertEqual(len(store.get_groups()), 1)
+            self.assertEqual(len(store.get_group_messages("g-1")), 1)
+            self.assertEqual(store.get_group_messages("g-1")[0]["message"], "hello again")
+            self.assertEqual(store.get_group_messages("g-2"), [])
+
+    def test_standard_group_client_uses_gateway_metadata_and_extension(self):
+        class Response:
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+            def read(self): return b'{"task":{"id":"parent-1","status":{"state":"TASK_STATE_SUBMITTED"}}}'
+
+        client = bridge.HubClient("https://hub.example", agent_id="human-1", token="token-1", circle_id="public")
+        with mock.patch.object(bridge.urllib.request, "urlopen", return_value=Response()) as opener:
+            result = client.send_standard_group_message("g-1", "hello", mentions=["agent-2"], message_id="message-1", idempotency_key="idem-1")
+        request = opener.call_args.args[0]
+        body = json.loads(request.data.decode("utf-8"))
+        self.assertEqual(result["task"]["id"], "parent-1")
+        self.assertEqual(request.full_url, "https://hub.example/a2a/v1/message:send")
+        self.assertEqual(request.get_header("A2a-extensions"), "https://a2a.david888.com/extensions/groups/v1")
+        self.assertEqual(request.get_header("A2a-version"), "1.0")
+        self.assertEqual(body["tenant"], "group:g-1")
+        metadata = body["message"]["metadata"]["https://a2a.david888.com/extensions/groups/v1"]
+        self.assertEqual(metadata, {"replyPolicy": "MENTIONED_ONLY", "mentions": ["agent-2"]})
+        self.assertEqual(body["configuration"]["returnImmediately"], True)
+
+    def test_standard_task_projection_preserves_human_and_agent_timeline(self):
+        task = {
+            "id": "parent-1",
+            "status": {"state": "TASK_STATE_COMPLETED", "timestamp": "2026-09-09T10:01:00+00:00", "message": {"parts": [{"text": "done"}]}},
+            "history": [{"messageId": "message-1", "metadata": {"https://a2a.david888.com/extensions/groups/v1": {"replyPolicy": "MENTIONED_ONLY", "mentions": ["agent-2"]}}, "parts": [{"text": "hello"}]}],
+        }
+        rows = bridge.standard_task_group_messages("g-1", task, "human-1", "Human")
+        self.assertEqual([row["id"] for row in rows], ["message-1", "parent-1:result"])
+        self.assertEqual(rows[0]["senderType"], "HUMAN")
+        self.assertEqual(rows[0]["replyPolicy"], "MENTIONED_ONLY")
+        self.assertEqual(rows[1]["senderType"], "AGENT")
+
+    def test_local_group_facade_hydrates_and_sends_standard_task(self):
+        class MockHub:
+            agent_id = "human-1"
+            token = "hub-token"
+            circle_id = "public"
+            hub_url = "https://a2a.test.com"
+
+            def __init__(self):
+                self.tasks = []
+                self.calls = []
+
+            def list_standard_groups(self, page_size=100):
+                return [{"groupId": "g-1", "name": "Crew", "memberCount": 2}]
+
+            def get_group_roster(self, group_id):
+                return [{"groupId": group_id, "agentId": "agent-2", "state": "ACTIVE", "agent": {"displayName": "Bot"}}]
+
+            def get_standard_group_card(self, group_id):
+                return {"supportedInterfaces": [{"tenant": f"group:{group_id}"}]}
+
+            def list_standard_group_tasks(self, group_id, page_size=100):
+                return self.tasks
+
+            def send_standard_group_message(self, group_id, message, mentions=None, **kwargs):
+                self.calls.append({"groupId": group_id, "message": message, "mentions": mentions, **kwargs})
+                task = {"id": "parent-1", "status": {"state": "TASK_STATE_SUBMITTED"}, "history": [{"messageId": kwargs["message_id"], "parts": [{"text": message}], "metadata": {"https://a2a.david888.com/extensions/groups/v1": {"replyPolicy": "MENTIONED_ONLY" if mentions else "ACK_ONLY", "mentions": mentions or []}}}]}
+                self.tasks = [task]
+                return {"task": task}
+
+        hub = MockHub()
+        with tempfile.TemporaryDirectory() as directory:
+            server = bridge.LocalUIServer(("127.0.0.1", 0), bridge.LocalUIHandler, hub, "Human", chat_db_path=os.path.join(directory, "chat.db"), runtime_config_path=os.path.join(directory, "runtime.json"))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            base_url = f"http://127.0.0.1:{server.server_port}"
+            headers = {"Content-Type": "application/json", "X-Local-UI-Token": server.local_ui_token, "Origin": base_url}
+            try:
+                with urllib.request.urlopen(f"{base_url}/api/groups") as response:
+                    groups = json.loads(response.read().decode("utf-8"))["groups"]
+                self.assertEqual(groups[0]["groupId"], "g-1")
+                request = urllib.request.Request(f"{base_url}/api/groups/g-1/messages", data=json.dumps({"message": "@Bot please check", "mentions": ["agent-2"], "messageId": "message-1"}).encode("utf-8"), headers=headers)
+                with urllib.request.urlopen(request) as response:
+                    self.assertEqual(response.status, 200)
+                self.assertEqual(hub.calls[0]["mentions"], ["agent-2"])
+                with urllib.request.urlopen(f"{base_url}/api/groups/g-1/messages") as response:
+                    messages = json.loads(response.read().decode("utf-8"))["messages"]
+                self.assertEqual(messages[0]["parentTaskId"], "parent-1")
+                self.assertEqual(messages[0]["replyPolicy"], "MENTIONED_ONLY")
+            finally:
+                server.shutdown()
+                server.server_close()
+
     def test_default_credentials_are_separated_by_hub_and_circle_key(self):
         public_path = bridge.default_credential_path("https://hub-a", "Agent")
         private_a = bridge.default_credential_path("https://hub-a", "Agent", "key-a")

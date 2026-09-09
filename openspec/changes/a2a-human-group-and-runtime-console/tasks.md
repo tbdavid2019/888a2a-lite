@@ -28,18 +28,18 @@
 
 ## 5. Human Agent and group data layer
 
-- [ ] 5.1 Load Human Agent ID/Token and expose only safe local identity metadata; verify group APIs use the existing Hub Agent principal and cannot bypass membership with a local session.
-- [ ] 5.2 Add scoped local group tables/migrations for hub/circle/group/parent/member task/message/sequence/revision/sender type/policy/mentions/state/idempotency; verify P2P history and group history use separate cursors and old data remains readable.
-- [ ] 5.3 Implement bounded `GET /api/groups` and `GET /api/groups/{id}/messages` using same-circle Hub discovery/Card and durable local hydration; verify archived, removed, expired, revoked, and cross-circle groups are hidden.
-- [ ] 5.4 Add group timeline models for Human and Agent senders, Parent/Member Task progress, empty completion, failure metadata, and ordered results; verify duplicate SSE events do not duplicate bubbles.
+- [x] 5.1 Load Human Agent ID/Token and expose only safe local identity metadata; verify group APIs use the existing Hub Agent principal and cannot bypass membership with a local session.
+- [x] 5.2 Add scoped local group tables/migrations for hub/circle/group/parent/member task/message/sequence/revision/sender type/policy/mentions/state/idempotency; verify P2P history and group history use separate cursors and old data remains readable.
+- [x] 5.3 Implement bounded `GET /api/groups` and `GET /api/groups/{id}/messages` using same-circle Hub discovery/Card and durable local hydration; verify archived, removed, expired, revoked, and cross-circle groups are hidden.
+- [x] 5.4 Add group timeline models for Human and Agent senders, Parent/Member Task progress, empty completion, failure metadata, and ordered results; verify duplicate SSE events do not duplicate bubbles.
 
 ## 6. Human group workspace and mentions
 
-- [ ] 6.1 Add Groups navigation, active group switching, roster display, bounded history loading, and reconnect state to `CLIENT_HTML`; verify group state does not leak into P2P conversations.
-- [ ] 6.2 Implement mention autocomplete from the active group roster with unique Agent ID binding, duplicate display-name disambiguation, HTML escaping, and bounded mention count; verify display names never become routing or authorization keys.
-- [ ] 6.3 Implement client policy mapping: no mention → `ACK_ONLY` with empty mentions; one or more mentions → `MENTIONED_ONLY` with exact Agent IDs; verify local validation and Hub validation reject non-members.
-- [ ] 6.4 Implement `POST /api/groups/{id}/messages` as a standard Group Gateway facade using `tenant: group:<groupId>`, `A2A-Extensions`, extension metadata, `returnImmediately`, and idempotency; verify it never sends policy-bearing messages through legacy `/hub/v1/groups/{id}/messages`.
-- [ ] 6.5 Persist the local pending message before dispatch and reconcile Parent Task ID/status/result; verify HTTP timeout remains pending/failed according to contract and is never displayed as completed without a confirmed result.
+- [x] 6.1 Add Groups navigation, active group switching, roster display, bounded history loading, and reconnect state to `CLIENT_HTML`; verify group state does not leak into P2P conversations.
+- [x] 6.2 Implement mention autocomplete from the active group roster with unique Agent ID binding, duplicate display-name disambiguation, HTML escaping, and bounded mention count; verify display names never become routing or authorization keys.
+- [x] 6.3 Implement client policy mapping: no mention → `ACK_ONLY` with empty mentions; one or more mentions → `MENTIONED_ONLY` with exact Agent IDs; verify local validation and Hub validation reject non-members.
+- [x] 6.4 Implement `POST /api/groups/{id}/messages` as a standard Group Gateway facade using `tenant: group:<groupId>`, `A2A-Extensions`, extension metadata, `returnImmediately`, and idempotency; verify it never sends policy-bearing messages through legacy `/hub/v1/groups/{id}/messages`.
+- [x] 6.5 Persist the local pending message before dispatch and reconcile Parent Task ID/status/result; verify HTTP timeout remains pending/failed according to contract and is never displayed as completed without a confirmed result.
 
 ## 7. Bridge delivery and Task stream integration
 
