@@ -583,12 +583,7 @@ func isAuthorizedMeetingTrigger(member hub.GroupMember, agent hub.RegisteredAgen
 	if member.Role == hub.GroupRoleOwner || member.Role == hub.GroupRoleAdmin {
 		return true
 	}
-	for _, tag := range agent.Tags {
-		if strings.EqualFold(tag, "human") || strings.EqualFold(tag, "user") || strings.EqualFold(tag, "dispatcher") {
-			return true
-		}
-	}
-	if strings.HasPrefix(strings.ToLower(agent.AgentID), "human-") || strings.HasPrefix(strings.ToLower(agent.Name), "human") {
+	if strings.HasPrefix(strings.ToLower(agent.AgentID), "human-") || strings.Contains(strings.ToLower(agent.DisplayName), "human") || strings.Contains(strings.ToLower(agent.DisplayName), "user") {
 		return true
 	}
 	return false
@@ -685,7 +680,7 @@ func (service *Service) TriggerMeetingSession(ctx context.Context, agentID, toke
 		Message:          string(payloadBytes),
 		GroupID:          groupID,
 		Trust:            "GOVERNANCE_COMMAND",
-		State:            hub.TaskStatePending,
+		State:            hub.DeliveryStatePending,
 		CreatedAt:        now,
 	}
 	enqueuedItem, _, enqueueErr := service.store.Inbox().Enqueue(ctx, inboxItem)
@@ -760,7 +755,7 @@ func (service *Service) GetMeetingSession(ctx context.Context, agentID, token, g
 		return hub.MeetingSession{}, err
 	}
 	if session.GroupID != groupID {
-		return hub.MeetingSession{}, ErrNotFound
+		return hub.MeetingSession{}, store.ErrNotFound
 	}
 	return session, nil
 }

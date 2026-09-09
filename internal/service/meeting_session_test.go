@@ -41,16 +41,13 @@ func TestMeetingSessionTriggerAuthorizationAndIdempotency(t *testing.T) {
 	}
 	handler := NewHTTPServer(New(sqlite.NewRepository(database), cfg)).Handler()
 
-	register := func(name, key string, tags ...string) registeredTestAgent {
+	register := func(name, key string) registeredTestAgent {
 		payload := map[string]any{
 			"displayName":                name,
 			"providerFamily":             "test",
 			"transportId":                "http-json",
 			"capabilities":               []string{"text/plain", a2a.ExecutionCapability},
 			"registrationIdempotencyKey": key,
-		}
-		if len(tags) > 0 {
-			payload["tags"] = tags
 		}
 		response := doJSON(t, handler, http.MethodPost, "/hub/v1/agents/register", "", "", payload)
 		if response.Code != http.StatusCreated {
