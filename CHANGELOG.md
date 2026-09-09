@@ -8,6 +8,7 @@
   - `agent_group` 新增 Charter 狀態與版本 metadata，並以 `group_charter_revision` 保存 hub/circle/group scope 的不可變歷史。
   - 新增成員讀取、Owner/Admin 更新、expectedVersion CAS、idempotency、rollback 與 `CHARTER_UPDATED` durable audit envelope；Group Card 僅宣告版本/hash，不洩漏內容。
   - Charter 僅接受 bounded UTF-8 Markdown subset，拒絕 raw HTML、event handler、credential-like content 與未受控外部資源。
+- Bridge 已加入 Hub/Circle/Group scoped Charter cache 與安全 Prompt context：快取使用 `0600`、symlink protection、hash/version 驗證與 atomic replace；離線 optional Charter 標記 stale，required Charter 無法驗證時停止治理執行，且 Charter 內容不會取得 shell、credential、ACL 或 export 權限。
 
 - 驗收並封存第三階段 `a2a-human-group-and-runtime-console`（人類插話群聊大廳 + 本機 Runtime 視覺化面板）：
   - 整合 GitHub PR Agent（`david360see`）代碼審查改善建議：
