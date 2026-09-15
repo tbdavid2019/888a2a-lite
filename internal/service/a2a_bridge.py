@@ -2605,7 +2605,7 @@ CLIENT_HTML = """<!DOCTYPE html>
       }));
     }
 
-    async function selectGroup(group) {
+    async function selectGroup(group, updateHistory = true) {
       activeGroup = group;
       activePeer = null;
       groupMentions = [];
@@ -2619,6 +2619,15 @@ CLIENT_HTML = """<!DOCTYPE html>
       $("chat-send").disabled = false;
       $("chat-send").textContent = "發送群組訊息";
       renderGroups();
+      renderPeers();
+
+      if (updateHistory && window.history && window.history.pushState) {
+        const targetPath = `/group/${encodeURIComponent(group.groupId)}`;
+        if (window.location.pathname !== targetPath) {
+          window.history.pushState({ type: "group", groupId: group.groupId }, "", targetPath);
+        }
+      }
+
       await loadGroupHistory(group.groupId);
       $("chat-input").focus();
     }
@@ -2755,24 +2764,46 @@ CLIENT_HTML = """<!DOCTYPE html>
       });
     }
 
-    async function selectPeer(peer) {
+    async function selectPeer(peer, updateHistory = true) {
       activePeer = peer;
       activeGroup = null;
       groupMentions = [];
       $("target-name").textContent = peer.displayName || peer.agentId;
       $("target-id").textContent = `(${peer.agentId})`;
-      $("target-badge").textContent = peer.state;
-      $("target-badge").className = `status-pill ${peer.state}`;
+      $("target-badge").textContent = peer.state || "ONLINE";
+      $("target-badge").className = `status-pill ${peer.state || "ONLINE"}`;
       $("target-badge").style.display = "inline-block";
       $("target-caps").textContent = (peer.capabilities || []).join(", ");
       $("chat-input").disabled = false;
       $("chat-send").disabled = false;
       $("chat-send").textContent = "發送任務";
       renderPeers();
+      renderGroups();
+
+      if (updateHistory && window.history && window.history.pushState) {
+        const targetPath = `/chat/${encodeURIComponent(peer.agentId)}`;
+        if (window.location.pathname !== targetPath) {
+          window.history.pushState({ type: "chat", peerId: peer.agentId }, "", targetPath);
+        }
+      }
 
       // Hydrate conversation history from SQLite WAL via /api/history
       await loadHistory(peer.agentId);
       $("chat-input").focus();
+    }
+
+    function selectRuntimes(updateHistory = true) {
+      const panel = document.querySelector(".runtime-panel");
+      if (panel) {
+        panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        panel.style.outline = "2px solid var(--accent)";
+        setTimeout(() => { panel.style.outline = "none"; }, 1500);
+      }
+      if (updateHistory && window.history && window.history.pushState) {
+        if (window.location.pathname !== "/runtimes") {
+          window.history.pushState({ type: "runtimes" }, "", "/runtimes");
+        }
+      }
     }
 
     async function loadHistory(peerId) {
@@ -3025,6 +3056,65 @@ CLIENT_HTML = """<!DOCTYPE html>
       };
     }
 
+    async function resolveRoute(updateHistory = false) {
+      const pathname = window.location.pathname;
+      const hash = window.location.hash;
+
+      let targetPeerId = null;
+      if (pathname.startsWith("/chat/")) {
+        targetPeerId = decodeURIComponent(pathname.slice(6)).trim();
+      } else if (hash.startsWith("#/chat/")) {
+        targetPeerId = decodeURIComponent(hash.slice(7)).trim();
+      } else if (hash.startsWith("#chat=")) {
+        targetPeerId = decodeURIComponent(hash.slice(6)).trim();
+      }
+
+      if (targetPeerId) {
+        let peer = peers.find(p => p.agentId === targetPeerId);
+        if (!peer) {
+          const conv = conversations.find(c => c.peerId === targetPeerId);
+          peer = {
+            agentId: targetPeerId,
+            displayName: conv?.displayName || targetPeerId,
+            state: "OFFLINE",
+            capabilities: []
+          };
+        }
+        await selectPeer(peer, updateHistory);
+        return;
+      }
+
+      let targetGroupId = null;
+      if (pathname.startsWith("/group/")) {
+        targetGroupId = decodeURIComponent(pathname.slice(7)).trim();
+      } else if (hash.startsWith("#/group/")) {
+        targetGroupId = decodeURIComponent(hash.slice(8)).trim();
+      } else if (hash.startsWith("#group=")) {
+        targetGroupId = decodeURIComponent(hash.slice(7)).trim();
+      }
+
+      if (targetGroupId) {
+        let group = groups.find(g => g.groupId === targetGroupId);
+        if (!group) {
+          group = { groupId: targetGroupId, name: targetGroupId, roster: [] };
+        }
+        await selectGroup(group, updateHistory);
+        return;
+      }
+
+      if (pathname === "/runtimes" || hash === "#/runtimes" || hash === "#runtimes") {
+        selectRuntimes(updateHistory);
+        return;
+      }
+
+      if (!activePeer && !activeGroup) {
+        const defaultPeer = peers.find(p => p.agentId === conversations[0]?.peerId) || 
+                            peers.find(p => p.state === "ONLINE") || 
+                            peers[0];
+        if (defaultPeer) await selectPeer(defaultPeer, false);
+      }
+    }
+
     async function init() {
       await loadMe();
       await loadConversations();
@@ -3034,14 +3124,18 @@ CLIENT_HTML = """<!DOCTYPE html>
       connectEvents();
       setInterval(loadPeers, 4000);
       setInterval(loadRuntimes, 10000);
-      const defaultPeer = peers.find(p => p.agentId === conversations[0]?.peerId) || 
-                          peers.find(p => p.state === "ONLINE") || 
-                          peers[0];
-      if (defaultPeer) await selectPeer(defaultPeer);
+      await resolveRoute(false);
     }
 
+    window.addEventListener("popstate", () => resolveRoute(false));
     $("refresh-runtimes").addEventListener("click", loadRuntimes);
     $("refresh-groups").addEventListener("click", loadGroups);
+    const runtimeTitle = $("runtime-title");
+    if (runtimeTitle) {
+      runtimeTitle.style.cursor = "pointer";
+      runtimeTitle.title = "Canonical Route /runtimes";
+      runtimeTitle.addEventListener("click", () => selectRuntimes(true));
+    }
 
     init();
   </script>
@@ -3574,7 +3668,12 @@ class LocalUIHandler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
-        if parsed.path in ("/", "/index.html"):
+        is_spa_route = (
+            parsed.path in ("/", "/index.html", "/runtimes", "/chat", "/group", "/groups")
+            or parsed.path.startswith("/chat/")
+            or parsed.path.startswith("/group/")
+        )
+        if is_spa_route:
             content = CLIENT_HTML.replace("{{LOCAL_UI_TOKEN}}", self.server.local_ui_token).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")

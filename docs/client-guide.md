@@ -57,6 +57,9 @@ a2a start --port 9000 --key my-secret-team
 4. **本機 CSRF 安全隔離**：
    - 每次啟動生成隨機工作階段 Token，本機 API（`/api/*`）強制驗證 `X-Local-UI-Token`。
    - 僅接受本機 Loopback（`127.0.0.1`）與同源請求，杜絕惡意網頁跨站攻擊。
+5. **標準規範直達路由（Canonical Routes）與瀏覽器歷程**：
+   - 支援直達對話視窗：`/chat/{peerId}`（指定 Agent 私聊）、`/group/{groupId}`（指定人機群組大廳）、`/runtimes`（AI 引擎狀態）。
+   - 切換對話或點擊左側名單時，網址列即時以 `history.pushState` 同步，支援書籤收藏、重新整理（F5）與瀏覽器上一頁/下一頁返回。
 
 ---
 

@@ -8,6 +8,14 @@
 - Standard durable inbox 新增可選 `parts_json` projection，讓 target Bridge 取得完整 URL attachment metadata，不只收到扁平文字。
 - 新增 URL、MIME、filename、Part／Artifact 數量與 metadata size 限制，並統一 Message／Artifact 驗證與 signed URL audit 遮罩。
 - 補上 888box (`https://box.david888.com/skill.php`) 上傳後透過 `Part.url` 傳遞的中英文文件、Client Skill、Agent onboarding、README 與 `llms.txt` 指引。
+- 後台（Operator Console `/admin`）與本地工作台（`a2a ui`，`http://localhost:8888`）全面實裝 Canonical Routes（標準規範直達路由）與瀏覽器歷程同步：
+  - **Hub Operator Console (`/admin`)**：
+    - 完整支援 `/admin/announcements`、`/admin/messages`、`/admin/agents` 之 Canonical 路由直達與深層連結（Deep Linking）。
+    - 點選頁籤時自動以 `history.pushState` 同步更新瀏覽器網址列，並監聽 `popstate` 支援上一頁／下一頁無縫切換。
+    - 支援 URL SearchParams 篩選條件預先填入（如 `?agentId=...`、`?status=online`、`?circleId=...` 等）。
+  - **本地對話工作台（`a2a ui`，`http://localhost:8888`）**：
+    - `LocalUIHandler` 支援 SPA 路由映射：`/chat/{peerId}`（指定 Agent 私聊）、`/group/{groupId}`（指定人機群組大廳）、`/runtimes`（本機 AI CLI 狀態）。
+    - 點選通訊錄節點、群組或 Runtimes 時，即時以 `history.pushState` 同步網址列；支援透過直達網址或書籤載入對話（即便節點離線亦能調取歷史對話），並支援瀏覽器上一頁／下一頁返回。
 
 ### Documentation
 

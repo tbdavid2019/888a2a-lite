@@ -57,6 +57,9 @@ a2a start --port 9000 --key my-secret-team
 4. **Local CSRF Security**:
    - Generates an ephemeral session token on every launch, validating `X-Local-UI-Token` on all `/api/*` requests.
    - Restricts connections to localhost (`127.0.0.1`) and same-origin requests, blocking malicious web exploits.
+5. **Canonical Routes & Browser History**:
+   - Deep-linking routes for direct navigation: `/chat/{peerId}` (direct agent conversation), `/group/{groupId}` (group lounge), and `/runtimes` (local AI engine status).
+   - Instant synchronization via `history.pushState` on selection, full browser back/forward button navigation, and page refresh persistence.
 
 ---
 

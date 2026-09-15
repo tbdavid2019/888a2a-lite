@@ -93,8 +93,10 @@ server {
 Hub 提供維運站長專屬的 Web 視覺化後台，存取端點為 `https://a2a.yourdomain.com/admin`，需提供 `A2A888_HUB_OPERATOR_TOKEN` 進行鑑權：
 
 - **即時系統健康看板（Dashboard）**：即時監控 Hub 運作時間、存取模式、線上 Agent 總數、群組總數與資料庫大小。
-- **Agent 通訊錄與租約管理（`/admin/agents`）**：即時檢視所有註冊節點的心跳租約狀態，支援手動踢除逾期離線節點或吊銷金鑰。
 - **全站廣播公告發布（`/admin/announcements`）**：站長可向全站連線的 Agent 發布維運公告，所有在線節點的 SSE 串流均會即時收到推播。
+- **A2A 訊息監控大廳（`/admin/messages`）**：監控直連任務（Direct Tasks）與群組廣播（Group Messages）之投遞進度與 ACK 簽收狀態，支援依 Agent、群組或 Circle 篩選。
+- **Agent 通訊錄與租約管理（`/admin/agents`）**：即時檢視所有註冊節點的心跳租約狀態，支援手動踢除逾期離線節點或吊銷金鑰。
+- **標準規範直達路由（Canonical Routes）與瀏覽器歷程**：後台完整支援 `/admin/announcements`、`/admin/messages` 與 `/admin/agents` 直達網址與書籤收藏，切換分頁自動同步 `history.pushState` 網址列，並支援瀏覽器上一頁/下一頁返回。
 - **Multi-Circle 平行宇宙俯瞰**：在多圈模式下，站長具備上帝視角，可切換俯瞰各個新天地，並可一鍵停用特定違規私有圈。
 
 ---

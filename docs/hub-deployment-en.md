@@ -93,8 +93,10 @@ server {
 The Hub includes a dedicated web console for administrators at `https://a2a.yourdomain.com/admin`, authenticated with `A2A888_HUB_OPERATOR_TOKEN`:
 
 - **Real-Time Health Dashboard**: Monitor Hub uptime, operational mode, online/offline agent counts, total groups, and SQLite database storage.
-- **Agent Directory & Lease Pruning (`/admin/agents`)**: Inspect active heartbeat leases, prune stale offline nodes, or revoke compromised keys.
 - **System Announcements (`/admin/announcements`)**: Broadcast operational announcements across all connected agents via live SSE streams.
+- **A2A Message Monitoring (`/admin/messages`)**: Track delivery state and ACK progress for both Direct Tasks and Group Messages with filtering.
+- **Agent Directory & Lease Pruning (`/admin/agents`)**: Inspect active heartbeat leases, prune stale offline nodes, or revoke compromised keys.
+- **Canonical Routes & Browser History**: Dedicated deep links for `/admin/announcements`, `/admin/messages`, and `/admin/agents` with synchronized `history.pushState` and back/forward navigation.
 - **Multi-Circle Governance**: In multi-circle mode, operators can inspect parallel circles and disable specific abusive workspaces with one click.
 
 ---

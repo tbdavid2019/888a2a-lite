@@ -834,6 +834,14 @@ class DurableBridgeTests(unittest.TestCase):
                 self.assertEqual(len(hist["messages"]), 1)
                 self.assertEqual(hist["messages"][0]["message"], "Hello from UI")
                 self.assertTrue(hist["messages"][0]["isOutgoing"])
+
+            # 6. Canonical Routes: /chat/{peerId}, /group/{groupId}, /runtimes
+            for path in ["/chat/peer-1", "/group/group-team", "/runtimes"]:
+                with bridge.urllib.request.urlopen(f"{base_url}{path}") as resp:
+                    self.assertEqual(resp.status, 200)
+                    html_content = resp.read().decode("utf-8")
+                    self.assertIn("888a2a Client Workstation", html_content)
+                    self.assertIn("resolveRoute", html_content)
         finally:
             server.shutdown()
             server.server_close()

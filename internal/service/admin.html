@@ -289,7 +289,12 @@
   };
   const dateText = (value) => value ? new Date(value).toLocaleString() : "—";
   const escapeHtml = (str) => String(str || "").replace(/[&<>'"]/g, tag => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[tag]));
-  const switchTab = (tabName) => {
+  const getTabPath = (tabName) => {
+    if (tabName === "agents") return "/admin/agents";
+    if (tabName === "messages") return "/admin/messages";
+    return "/admin/announcements";
+  };
+  const switchTab = (tabName, updateHistory = true) => {
     activeTab = tabName;
     $("tab-announcements").className = `tab ${tabName === "announcements" ? "active" : ""}`;
     $("tab-messages").className = `tab ${tabName === "messages" ? "active" : ""}`;
@@ -297,11 +302,19 @@
     $("view-announcements").className = `view ${tabName === "announcements" ? "active" : ""}`;
     $("view-messages").className = `view ${tabName === "messages" ? "active" : ""}`;
     $("view-agents").className = `view ${tabName === "agents" ? "active" : ""}`;
+    if (updateHistory && window.history && window.history.pushState) {
+      const targetPath = getTabPath(tabName);
+      if (window.location.pathname !== targetPath) {
+        window.history.pushState({ tab: tabName }, "", targetPath + window.location.search);
+      }
+    }
     if (operatorToken) {
       if (tabName === "messages") {
         loadMessages().catch((e) => status(e.message, "error"));
       } else if (tabName === "agents") {
         loadAgents().catch((e) => status(e.message, "error"));
+      } else if (tabName === "announcements") {
+        loadAnnouncements().catch((e) => status(e.message, "error"));
       }
     }
   };
@@ -632,11 +645,33 @@
   $("saveDraft").addEventListener("click", async () => { try { await api("/hub/v1/admin/announcements", { method: "POST", body: JSON.stringify({ ...input(), status: "DRAFT" }) }); setForm(null); status("草稿已儲存。", "success"); await loadAnnouncements(); } catch (error) { status(error.message, "error"); } });
   $("editor").addEventListener("submit", async (event) => { event.preventDefault(); try { const body = input(); if (editingId) { await api(`/hub/v1/admin/announcements/${editingId}`, { method: "PATCH", body: JSON.stringify(body) }); status("草稿已更新。", "success"); } else if (revisionSourceId) { await api(`/hub/v1/admin/announcements/${revisionSourceId}/revision`, { method: "POST", body: JSON.stringify(body) }); status("revision 草稿已建立。", "success"); } else { await api("/hub/v1/admin/announcements", { method: "POST", body: JSON.stringify(body) }); status("公告已發布。", "success"); } setForm(null); await loadAnnouncements(); } catch (error) { status(error.message, "error"); } });
 
-  if (window.location.pathname.includes("/admin/agents") || window.location.hash === "#agents") {
-    switchTab("agents");
-  } else if (window.location.pathname.includes("/admin/messages") || window.location.hash === "#messages") {
-    switchTab("messages");
-  }
+  const resolveRoute = (updateHistory = false) => {
+    const path = window.location.pathname;
+    const hash = window.location.hash;
+    if (path.includes("/admin/agents") || hash === "#agents") {
+      switchTab("agents", updateHistory);
+    } else if (path.includes("/admin/messages") || hash === "#messages") {
+      switchTab("messages", updateHistory);
+    } else {
+      switchTab("announcements", updateHistory);
+    }
+  };
+
+  try {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("type") && $("filter-type")) $("filter-type").value = params.get("type");
+    if (params.has("agentId") && $("filter-agent")) $("filter-agent").value = params.get("agentId");
+    if (params.has("groupId") && $("filter-group")) $("filter-group").value = params.get("groupId");
+    if (params.has("circleId") && $("filter-circle")) $("filter-circle").value = params.get("circleId");
+    if (params.has("status") && $("agent-filter-status")) $("agent-filter-status").value = params.get("status");
+    if (params.has("q") && $("agent-filter-search")) $("agent-filter-search").value = params.get("q");
+  } catch (_) {}
+
+  window.addEventListener("popstate", () => {
+    resolveRoute(false);
+  });
+
+  resolveRoute(false);
 })();
 </script>
 </body>

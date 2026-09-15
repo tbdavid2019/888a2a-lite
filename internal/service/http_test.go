@@ -234,10 +234,14 @@ func TestHTTPThreeAgentDeliveryAndAuthorizationBoundaries(t *testing.T) {
 		t.Fatalf("agent count = %d, want 3", agentListResp.Total)
 	}
 
-	// Admin UI: /admin, /admin/messages, and /admin/agents should serve html
+	// Admin UI: /admin, /admin/announcements, /admin/messages, and /admin/agents should serve html
 	adminUI := doJSON(t, handler, http.MethodGet, "/admin", "", "", nil)
 	if adminUI.Code != http.StatusOK || !strings.Contains(adminUI.Body.String(), "888a2a-lite 管理後台") {
 		t.Fatalf("admin UI status/body = %d/%s", adminUI.Code, adminUI.Body.String())
+	}
+	adminAnnounceUI := doJSON(t, handler, http.MethodGet, "/admin/announcements", "", "", nil)
+	if adminAnnounceUI.Code != http.StatusOK || !strings.Contains(adminAnnounceUI.Body.String(), "888a2a-lite 管理後台") {
+		t.Fatalf("admin announce UI status/body = %d/%s", adminAnnounceUI.Code, adminAnnounceUI.Body.String())
 	}
 	adminMsgUI := doJSON(t, handler, http.MethodGet, "/admin/messages", "", "", nil)
 	if adminMsgUI.Code != http.StatusOK || !strings.Contains(adminMsgUI.Body.String(), "A2A 訊息監控") {
