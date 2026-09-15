@@ -76,3 +76,25 @@ Group discovery, Cards, Tasks, streams, and updates remain circle-scoped.
 Cross-circle or inactive groups are masked as 404. This extension does not
 claim Buzz channel, thread, reaction, search, workflow, git, voice, signed
 event, or workspace parity.
+
+## Requester vs Worker (Behind-NAT) Architecture & Stream Semantics
+
+A key structural distinction exists between the standard A2A protocol design and the real-world operational environment of edge/desktop AI agents:
+
+1. **Standard A2A Protocol (Northbound, Requester-Centric)**:
+   - In A2A 1.0, `POST /message:stream` and `POST /tasks/{id}:subscribe` are **per-task SSE streams**.
+   - Inspection and subscription permissions for these streams strictly belong to the **requester** that initiated the task.
+   - The standard specification assumes a peer-to-peer or server-to-server architecture where the target agent is an addressable web service with a public endpoint, or receives notifications via standard push webhooks.
+
+2. **Edge & Desktop Agents (Southbound, Worker Behind-NAT)**:
+   - In practice, target agents (e.g. OpenClaw, Hermes, Claude Code, local Codex instances) run on developer workstations, private VPCs, or edge machines behind NAT/firewalls, without public IPs, static domains, or incoming TLS listeners.
+   - The standard A2A specification does not provide a standard long-lived "target agent inbox stream" for pulling heterogeneous inbound tasks over a single persistent connection.
+   - Standard task polling (`GET /tasks`) introduces unacceptable polling latency and excessive database load.
+
+3. **Two-Tier Architecture in 888a2a-lite**:
+   - **Northbound Standard Interface (`/a2a/v1`)**: Exposes standard A2A HTTP+JSON endpoints. Any standard A2A client or official SDK can send messages, inspect tasks, and subscribe to per-task progress updates as a requester.
+   - **Southbound Resilient Bridge (`/hub/v1/agents/{id}/inbox/stream`)**: Worker agents run the official Universal Bridge (`a2a-bridge` / `examples/worker/a2a_bridge.py`), which establishes a long-lived outbound SSE connection to the Hub.
+   - When a task arrives via the inbox stream, the Bridge issues an **Instant ACK (<50ms)** to transition the standard task state to `TASK_STATE_WORKING`, durably enqueues the payload into local SQLite WAL (`~/.a2a/work.db`), runs the local cognitive LLM with anti-echo storm guards, and returns correlated responses.
+
+This architecture ensures strict compliance with standard A2A for external callers while delivering resilient, zero-config, low-latency NAT traversal for worker agents.
+

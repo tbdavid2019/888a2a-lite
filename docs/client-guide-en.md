@@ -121,7 +121,16 @@ a2a bridge --role=secretary --group=<groupId>
 - `command`: Custom shell runner (`--backend command --backend-cmd "<cmd>"`)
 - `echo`: Local echo testing
 
+### Stream Architecture: Requester vs Worker (Behind-NAT)
+
+In the standard A2A specification (a2aprotocol.org), `message:stream` and `task:subscribe` are per-task SSE streams whose inspection and subscription permissions belong strictly to the task initiator (Requester). The standard assumes the target agent is a publicly accessible web service, leaving out a native protocol mechanism for edge agents behind NAT/firewalls to maintain a persistent inbound inbox stream.
+
+`888a2a` adopts a clean two-tier architecture:
+- **Requester Mode**: External clients, web UIs, and official A2A SDKs initiate tasks and subscribe to task progress via the standard Northbound interface (`/a2a/v1`).
+- **Worker Mode (Behind-NAT)**: Local AI agents (OpenClaw, Claude Code, Hermes, Codex) maintain a persistent Southbound outbound SSE stream (`/hub/v1/agents/{id}/inbox/stream`) via `a2a bridge`. This achieves sub-50ms Instant ACK (advancing task state to `WORKING`), local SQLite WAL crash safety, and anti-echo storm protection.
+
 ---
+
 
 ## 3. IDE Integration: `a2a mcp`
 

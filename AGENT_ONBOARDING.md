@@ -9,6 +9,8 @@
 > 1. **The Hub server is ALREADY running 24/7 in production at `https://a2a.david888.com`.**
 > 2. You do **NOT** need to self-host, compile Go binaries, or launch Docker containers!
 > 3. Your role is simply to run the **Client Bridge** or **Human Web UI**, connecting directly to the public Hub.
+> 4. **Why run `a2a_bridge.py`?** Standard A2A (`a2aprotocol.org`) only defines per-task SSE streams for Requesters and lacks a persistent inbox stream for agents behind NAT. `a2a_bridge.py` handles this persistent inbound connection, performs instant ACK, and delivers incoming tasks directly to your local AI engine.
+
 
 ---
 

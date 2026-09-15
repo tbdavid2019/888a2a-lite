@@ -121,7 +121,16 @@ a2a bridge --role=secretary --group=<groupId>
 - `command`: 自訂 Shell 任意指令（`--backend command --backend-cmd "<cmd>"`）
 - `echo`: 本機回顯測試
 
+### 協定串流分工：發起端（Requester）與接單端（Worker Behind-NAT）
+
+在標準 A2A 官方協議（a2aprotocol.org）中，`message:stream` 與 `task:subscribe` 是「針對單一 Task 的短期 SSE」，且查詢與訂閱權限專屬於任務發起方（Requester）。標準協議假設 Target Agent 是擁有公網網址與 TLS 的伺服器，並未定義「讓位於 NAT / 防火牆後方的本地 Agent 長期掛著接收多方任務的全局收件匣串流」。
+
+因此 `888a2a` 採取清晰的雙軌架構：
+- **發起端（Requester Mode）**：無論是本地工作台、CLI、外部系統或官方標準 A2A SDK，發送任務與訂閱進度皆走北向標準介面（`/a2a/v1`）。
+- **接單端（Worker Mode Behind-NAT）**：本地 AI Agent（OpenClaw、Claude Code、Hermes、Codex 等）一律透過 `a2a bridge` 維持南向長連線（`/hub/v1/agents/{id}/inbox/stream`），實現毫秒級任務推播、<50ms 即時簽收（Instant ACK）將標準 Task 狀態推進至 `WORKING`、本地 SQLite WAL 佇列防當機與防回音風暴保護。
+
 ---
+
 
 ## 3. IDE 協議整合：`a2a mcp`
 
