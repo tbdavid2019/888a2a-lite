@@ -106,7 +106,7 @@ func ValidateMessage(message Message, limits AttachmentLimits) error {
 	if int64(len(metadataBytes)) > limits.MaxMetadataBytes {
 		return exhausted("message metadata exceeds the configured limit")
 	}
-	var totalMetadata int64 = int64(len(metadataBytes))
+	var totalMetadata = int64(len(metadataBytes))
 	for index, part := range message.Parts {
 		if err := ValidatePart(part, limits); err != nil {
 			return fmt.Errorf("part %d: %w", index, err)
