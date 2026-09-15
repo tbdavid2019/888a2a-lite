@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+local.md
 *.credentials.json
 *.token
 

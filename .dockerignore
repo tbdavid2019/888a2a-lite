@@ -5,5 +5,6 @@
 .agents
 .env
 .env.*
+local.md
 *.db
 data/
