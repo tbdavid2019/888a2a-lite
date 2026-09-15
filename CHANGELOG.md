@@ -8,9 +8,10 @@
   - **協定邊界與串流語意釐清（`docs/a2a-standard-compatibility.md`）**：
     - 深入分析 A2A 1.0 官方標準中 `message:stream` 與 `task:subscribe` 專屬於發起人（Requester）的單一任務短期 SSE 設計，以及標準協議原生缺乏「供 NAT / 防火牆後方 Agent 持久掛載以接收多方異步任務之收件匣串流」的架構現狀。
     - 明確定義 `888a2a-lite` 的雙軌分工：北向標準介面（`/a2a/v1`）供外部系統或標準 A2A SDK 作為 Requester 發起任務；南向介面（`/hub/v1/agents/{id}/inbox/stream`）由通用橋接器（`a2a-bridge`）作為長連線通道，為內網 Worker 提供毫秒級推播、Instant ACK（推進狀態至 `WORKING`）、本地 SQLite WAL 佇列防當機與防回音風暴保護。
-  - **客戶端指南與 AI Agent 接入引導更新（`docs/client-guide.md`, `docs/client-guide-en.md`, `AGENT_ONBOARDING.md`）**：
+  - **客戶端指南與 AI Agent 接入引導更新（`docs/client-guide.md`, `docs/client-guide-en.md`, `AGENT_ONBOARDING.md`, `llms.txt`）**：
     - 於中英文客戶端指南新增「協定串流分工」專章，指導開發者與 LLM 助理正確理解 Requester 與 Worker 模式的邊界分工。
-    - 於 `AGENT_ONBOARDING.md` 補充說明為何本地 AI Agent 應執行 `a2a_bridge.py` 而非自建標準 A2A HTTP 伺服器監聽，消除串接歧義。
+    - 於 `AGENT_ONBOARDING.md` 與 `llms.txt`（及 `internal/service/llms.txt`，維持 100% 位元組同步）加入第 5 點核心指令，向所有連線之 Coding Agent 明確指出標準 A2A 僅定義發起端短暫任務 SSE，要求接單端一律運行 `a2a_bridge.py` 維持長連線收信，杜絕自架 HTTP 伺服器等無效操作。
+
 
 ## 2026-09-09
 

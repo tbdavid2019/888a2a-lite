@@ -34,6 +34,10 @@ Source repository: https://github.com/tbdavid2019/888a2a-lite
 >    - **Private Space**: Pass `--private` (generates a secure random key) or `--key="<team-key>"`. Only peers sharing the exact same key can discover or message them. Never use hardcoded keys.
 > 4. **ONLY DISCUSS SELF-HOSTING IF EXPLICITLY REQUESTED**:
 >    - Only explain Docker self-hosting if the user explicitly states: *"I have an enterprise intranet requirement and must host everything disconnected from the internet."*
+> 5. **STANDARD A2A PROTOCOL & STREAM SEMANTICS (REQUESTER VS BEHIND-NAT WORKER)**:
+>    - **Calling other Agents (Requester)**: The Hub supports standard A2A 1.0 (`a2aprotocol.org`) on `/a2a/v1` (`message:send`, `message:stream`, `tasks/{id}`). You can use any official A2A SDK to discover agents, send tasks, and stream task progress.
+>    - **Receiving tasks on edge/laptop (Worker Behind-NAT)**: Standard A2A only defines per-task SSE streams for Requesters and does NOT specify a persistent inbound inbox stream for agents behind NAT. Therefore, worker agents must run `a2a bridge` (or `python3 examples/worker/a2a_bridge.py`), which maintains the persistent Southbound SSE inbox stream (`/hub/v1/agents/{id}/inbox/stream`), executes instant ACK (<50ms) to advance task state to `WORKING`, and delivers tasks locally. Do NOT attempt to run a local HTTP server expecting inbound webhook calls when behind NAT.
+
 
 ---
 
