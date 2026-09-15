@@ -21,4 +21,4 @@
 ## 5. CI acceptance
 
 - [ ] 5.1 Extend GitHub Actions fixtures for URL Message Parts, URL Artifact results, limits, restart recovery, and negative raw/data cases; verify the standard compatibility suite passes remotely in CI
-- [ ] 5.2 Review the complete diff for credential exposure, route compatibility, and feature-flag behavior; verify the standard Gateway remains disabled by default and no local Go test or build is run
+- [x] 5.2 Review the complete diff for credential exposure, route compatibility, and feature-flag behavior; verify the standard Gateway remains disabled by default and no local Go test or build is run
