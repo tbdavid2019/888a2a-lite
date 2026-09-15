@@ -45,6 +45,8 @@ func TestHandlerServesLLMSTxtAtRoot(t *testing.T) {
 		"http://example.com/hub/v1",
 		"- **Active Hub Mode**: `PUBLIC`",
 		"No authentication headers required in PUBLIC mode",
+		"Part.url",
+		"box.david888.com/skill.php",
 	} {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("llms.txt does not contain %q", expected)

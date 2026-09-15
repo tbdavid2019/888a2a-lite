@@ -27,12 +27,17 @@ func TestStandardTaskPersistsAcrossRestartAndCorrelatesUpdates(t *testing.T) {
 	if err := repository.CreateAgent(ctx, testAgent("standard-target", now)); err != nil {
 		t.Fatalf("target: %v", err)
 	}
-	message := a2a.Message{MessageID: "standard-message-1", Role: "ROLE_USER", Parts: []a2a.Part{a2a.TextPart("hello")}}
+	attachmentURL := "https://box.david888.com/storage/asset.pdf"
+	message := a2a.Message{MessageID: "standard-message-1", Role: "ROLE_USER", Parts: []a2a.Part{a2a.TextPart("hello"), {URL: &attachmentURL, Filename: "asset.pdf", MediaType: "application/pdf"}}}
 	task := a2a.TaskRecord{HubID: "public", ID: "standard-task-1", CircleID: "public", RequesterAgentID: "standard-sender", TargetAgentID: "standard-target", ContextID: "standard-context", MessageID: message.MessageID, TurnID: "turn-1", Revision: 1, State: a2a.TaskStateSubmitted, Message: message, History: []a2a.Message{message}, ContentDigest: "digest-1", CreatedAt: now, UpdatedAt: now}
-	item := hub.InboxItem{HubID: "public", CircleID: "public", TargetAgentID: task.TargetAgentID, RequesterAgentID: task.RequesterAgentID, TaskID: task.ID, ContextID: task.ContextID, IdempotencyKey: "a2a:" + message.MessageID, Message: "hello", Protocol: "A2A/1.0", MessageID: message.MessageID, TurnID: task.TurnID, TaskRevision: task.Revision, CreatedAt: now}
+	item := hub.InboxItem{HubID: "public", CircleID: "public", TargetAgentID: task.TargetAgentID, RequesterAgentID: task.RequesterAgentID, TaskID: task.ID, ContextID: task.ContextID, IdempotencyKey: "a2a:" + message.MessageID, Message: "hello", Parts: append([]a2a.Part(nil), message.Parts...), Protocol: "A2A/1.0", MessageID: message.MessageID, TurnID: task.TurnID, TaskRevision: task.Revision, CreatedAt: now}
 	created, duplicate, err := repository.CreateTaskWithDelivery(ctx, task, item)
 	if err != nil || duplicate || created.MailboxSequence == 0 {
 		t.Fatalf("create = %+v duplicate=%v err=%v", created, duplicate, err)
+	}
+	inbox, err := repository.Poll(ctx, task.TargetAgentID, 0, 10)
+	if err != nil || len(inbox) != 1 || len(inbox[0].Parts) != 2 || inbox[0].Parts[1].URL == nil || *inbox[0].Parts[1].URL != attachmentURL {
+		t.Fatalf("created inbox parts = %+v err=%v", inbox, err)
 	}
 	duplicateTask, duplicate, err := repository.CreateTaskWithDelivery(ctx, task, item)
 	if err != nil || !duplicate || duplicateTask.ID != task.ID {
@@ -50,6 +55,10 @@ func TestStandardTaskPersistsAcrossRestartAndCorrelatesUpdates(t *testing.T) {
 	recovered, err := repository.FindTask(ctx, "public", "public", task.RequesterAgentID, task.ID)
 	if err != nil || recovered.MailboxSequence != created.MailboxSequence || recovered.Message.MessageID != message.MessageID {
 		t.Fatalf("recovered = %+v err=%v", recovered, err)
+	}
+	inbox, err = repository.Poll(ctx, task.TargetAgentID, 0, 10)
+	if err != nil || len(inbox) != 1 || inbox[0].Parts[1].Filename != "asset.pdf" {
+		t.Fatalf("recovered inbox parts = %+v err=%v", inbox, err)
 	}
 	replyText := "hello back"
 	reply := &a2a.Message{MessageID: "reply-1", ContextID: task.ContextID, TaskID: task.ID, Role: "ROLE_AGENT", Parts: []a2a.Part{a2a.TextPart(replyText)}}

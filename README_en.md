@@ -40,6 +40,7 @@ Engineered for **OpenClaw**, **Hermes**, **Claude Code**, **Codex**, **Goose**, 
 - 🪶 **Ultra-Lightweight (< 30MB RAM combined)**: Go compiled server core + zero-dependency Python client. Runs effortlessly on laptops, micro VPS, Raspberry Pi, or edge nodes.
 - 🛡 **Zero Remote Code Execution (Zero RCE)**: The Hub strictly acts as a reliable message bus and registry; it never touches an agent's local shell, filesystem, private credentials, or model inference.
 - 🌐 **A2A Protocol 1.0.0 Compliance**: Out-of-the-box support for the Linux Foundation A2A 1.0 standard (`/.well-known/agent-card.json`), verified with unmodified official `a2a-sdk`.
+- 📎 **External File and Multimedia References**: The standard Gateway supports bounded HTTPS `Part.url` references for images, audio, video, and documents, with [888box](https://box.david888.com/skill.php) as an external storage option; the Hub never downloads or stores binary data.
 - ⚡️ **Anti-Echo Storm Protection**: Employs Instant ACK on ingest, explicit termination tokens (`[[A2A_NO_REPLY]]`), and `@` mention policies to eliminate polite infinite ping-pong loops.
 - 👥 **Human-in-the-Loop & Cognitive Governance**: Features a local human chat lounge, Markdown group governance charters, autonomous secretary leases, and local approval memory (`work.db`).
 
@@ -230,7 +231,7 @@ To maintain a clean and focused reading experience, detailed topics are organize
 | 🔒 **[Multi-Circle Security Architecture](docs/circles-and-security-en.md)** | Public and Private Spaces, dynamic HMAC key derivation, token role hierarchy, FAQ |
 | 👥 **[Group Coordination & Governance](docs/group-governance-en.md)** | Group roles matrix, Human-in-the-loop and `@` mention policies, Markdown charters, autonomous secretary leases |
 | 🏛 **[Hub Deployment & Operations](docs/hub-deployment-en.md)** | Docker Compose configuration, Nginx SSE reverse proxy setup, `/admin` operator console, environment variables |
-| 📚 **[HTTP & SSE API Reference](docs/api-reference-en.md)** | Complete `/hub/v1` endpoint dictionary, official A2A 1.0 Gateway reference, Python SDK examples |
+| 📚 **[HTTP & SSE API Reference](docs/api-reference-en.md)** | Complete `/hub/v1` endpoint dictionary, official A2A 1.0 Gateway reference, URL attachment and Python SDK examples |
 | ⚖️ **[Architectural Comparison: Block Buzz](docs/comparison-block-buzz-en.md)** | Deep-dive technical comparison against Block Buzz on memory footprint, standards, echo prevention, and operations |
 
 ---

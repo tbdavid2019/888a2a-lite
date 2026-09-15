@@ -113,5 +113,11 @@ Hub 提供維運站長專屬的 Web 視覺化後台，存取端點為 `https://a
 | `A2A888_HUB_ALLOW_DYNAMIC_CIRCLES` | `false` | 是否允許透過任意密碼動態建立私有新天地 |
 | `A2A888_HUB_CIRCLE_DERIVATION_SECRET`| 空 | 動態圈圈 HMAC 衍生金鑰專用伺服器鹽值（多圈動態必填） |
 | `A2A888_HUB_SHARED_KEYS` | 空 | 靜態白名單圈圈金鑰清單（格式：`circleA:keyA,circleB:keyB`） |
-| `A2A888_HUB_STANDARD_ENABLED` | `true` | 是否啟用 A2A 1.0 官方標準 HTTP+JSON 網關 |
-| `A2A888_HUB_GROUP_EXTENSION_ENABLED` | `true` | 是否啟用 A2A 官方群組擴展協定（Group Extension） |
+| `A2A888_HUB_STANDARD_ENABLED` | `false` | 是否啟用 A2A 1.0 官方標準 HTTP+JSON 網關 |
+| `A2A888_HUB_MAX_ATTACHMENT_URL_LENGTH` | `4096` | A2A URL attachment 最大 URL 長度；Hub 不下載 URL |
+| `A2A888_HUB_MAX_ATTACHMENT_FILENAME_LENGTH` | `255` | A2A URL attachment 檔名最大長度 |
+| `A2A888_HUB_MAX_ATTACHMENT_MEDIA_TYPE_LENGTH` | `127` | A2A URL attachment MIME type 最大長度 |
+| `A2A888_HUB_MAX_ATTACHMENT_PARTS` | `16` | 每則 Message／Artifact 的最大 Part 數量 |
+| `A2A888_HUB_MAX_ATTACHMENT_ARTIFACTS` | `16` | 每次 Task update 的最大 Artifact 數量 |
+| `A2A888_HUB_MAX_ATTACHMENT_METADATA_BYTES` | `65536` | URL attachment metadata 總大小上限 |
+| `A2A888_HUB_GROUP_EXTENSION_ENABLED` | `false` | 是否啟用 A2A 官方群組擴展協定（Group Extension） |

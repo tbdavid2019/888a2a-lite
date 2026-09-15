@@ -113,5 +113,11 @@ The Hub includes a dedicated web console for administrators at `https://a2a.your
 | `A2A888_HUB_ALLOW_DYNAMIC_CIRCLES` | `false` | Allow dynamic circle creation via derived shared keys |
 | `A2A888_HUB_CIRCLE_DERIVATION_SECRET`| None | Server salt for HMAC key derivation in dynamic multi-circle mode |
 | `A2A888_HUB_SHARED_KEYS` | None | Whitelist of static circle keys (`circleA:keyA,circleB:keyB`) |
-| `A2A888_HUB_STANDARD_ENABLED` | `true` | Enable official A2A 1.0 standard HTTP+JSON gateway |
-| `A2A888_HUB_GROUP_EXTENSION_ENABLED` | `true` | Enable official A2A Group Coordination Extension |
+| `A2A888_HUB_STANDARD_ENABLED` | `false` | Enable official A2A 1.0 standard HTTP+JSON gateway |
+| `A2A888_HUB_MAX_ATTACHMENT_URL_LENGTH` | `4096` | Maximum URL length for A2A URL attachments; the Hub never downloads URLs |
+| `A2A888_HUB_MAX_ATTACHMENT_FILENAME_LENGTH` | `255` | Maximum filename length for A2A URL attachments |
+| `A2A888_HUB_MAX_ATTACHMENT_MEDIA_TYPE_LENGTH` | `127` | Maximum MIME type length for A2A URL attachments |
+| `A2A888_HUB_MAX_ATTACHMENT_PARTS` | `16` | Maximum Parts per Message or Artifact |
+| `A2A888_HUB_MAX_ATTACHMENT_ARTIFACTS` | `16` | Maximum Artifacts per Task update |
+| `A2A888_HUB_MAX_ATTACHMENT_METADATA_BYTES` | `65536` | Maximum aggregate URL attachment metadata size |
+| `A2A888_HUB_GROUP_EXTENSION_ENABLED` | `false` | Enable official A2A Group Coordination Extension |

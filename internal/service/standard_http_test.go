@@ -37,7 +37,7 @@ func TestStandardGatewayUsesBearerTenantAndSeparateEnvelopes(t *testing.T) {
 	}
 
 	card := doStandardRequest(t, handler, http.MethodGet, "/.well-known/agent-card.json", "", nil)
-	if card.Code != http.StatusOK || !strings.Contains(card.Body.String(), `"protocolBinding":"HTTP+JSON"`) {
+	if card.Code != http.StatusOK || !strings.Contains(card.Body.String(), `"protocolBinding":"HTTP+JSON"`) || !strings.Contains(card.Body.String(), `"image/*"`) || strings.Contains(card.Body.String(), `"raw"`) {
 		t.Fatalf("gateway card = %d/%s", card.Code, card.Body.String())
 	}
 	perAgentCard := doStandardRequest(t, handler, http.MethodGet, "/a2a/v1/agents/"+target.AgentID+"/card", target.AgentToken, nil)
@@ -45,7 +45,8 @@ func TestStandardGatewayUsesBearerTenantAndSeparateEnvelopes(t *testing.T) {
 		t.Fatalf("per-agent card = %d/%s", perAgentCard.Code, perAgentCard.Body.String())
 	}
 
-	message := map[string]any{"tenant": target.AgentID, "message": map[string]any{"messageId": "message-1", "role": "ROLE_USER", "parts": []any{map[string]any{"text": "hello"}}}, "configuration": map[string]any{"returnImmediately": true}}
+	attachmentURL := "https://box.david888.com/storage/asset.pdf?signature=short-lived"
+	message := map[string]any{"tenant": target.AgentID, "message": map[string]any{"messageId": "message-1", "role": "ROLE_USER", "parts": []any{map[string]any{"text": "hello"}, map[string]any{"url": attachmentURL, "filename": "asset.pdf", "mediaType": "application/pdf"}}}, "configuration": map[string]any{"returnImmediately": true}}
 	sent := doStandardRequest(t, handler, http.MethodPost, "/a2a/v1/message:send", sender.AgentToken, message)
 	if sent.Code != http.StatusOK || !strings.Contains(sent.Body.String(), `"task"`) || !strings.Contains(sent.Body.String(), string(a2a.TaskStateSubmitted)) {
 		t.Fatalf("standard send = %d/%s", sent.Code, sent.Body.String())
@@ -68,13 +69,21 @@ func TestStandardGatewayUsesBearerTenantAndSeparateEnvelopes(t *testing.T) {
 	if len(inboxBody.Items) != 1 {
 		t.Fatalf("standard inbox items = %+v", inboxBody.Items)
 	}
+	if len(inboxBody.Items[0].Parts) != 2 || inboxBody.Items[0].Parts[1].URL == nil || *inboxBody.Items[0].Parts[1].URL != attachmentURL {
+		t.Fatalf("standard inbox parts = %+v", inboxBody.Items[0].Parts)
+	}
 	ack := doJSON(t, handler, http.MethodPost, "/hub/v1/agents/"+target.AgentID+"/inbox/"+itoa(inboxBody.Items[0].Sequence)+"/ack", target.AgentID, target.AgentToken, nil)
 	if ack.Code != http.StatusOK {
 		t.Fatalf("standard inbox ack = %d/%s", ack.Code, ack.Body.String())
 	}
-	update := map[string]any{"updateId": "update-1", "turnId": inboxBody.Items[0].TurnID, "expectedRevision": 2, "state": string(a2a.TaskStateCompleted), "message": map[string]any{"messageId": "reply-1", "contextId": "context-1", "taskId": sentResponse.Task.ID, "role": "ROLE_AGENT", "parts": []any{map[string]any{"text": "done"}}}}
+	invalidUpdate := map[string]any{"updateId": "update-invalid-artifact", "turnId": inboxBody.Items[0].TurnID, "expectedRevision": 2, "state": string(a2a.TaskStateCompleted), "artifacts": []any{map[string]any{"artifactId": "artifact-invalid", "parts": []any{map[string]any{"raw": "encoded", "mediaType": "application/pdf"}}}}}
+	invalidUpdated := doStandardRequest(t, handler, http.MethodPost, "/hub/v1/a2a/tasks/"+sentResponse.Task.ID+"/updates", target.AgentToken, invalidUpdate)
+	if invalidUpdated.Code != http.StatusBadRequest || !strings.Contains(invalidUpdated.Body.String(), `"reason":"CONTENT_TYPE_NOT_SUPPORTED"`) {
+		t.Fatalf("invalid artifact update = %d/%s", invalidUpdated.Code, invalidUpdated.Body.String())
+	}
+	update := map[string]any{"updateId": "update-1", "turnId": inboxBody.Items[0].TurnID, "expectedRevision": 2, "state": string(a2a.TaskStateCompleted), "message": map[string]any{"messageId": "reply-1", "contextId": "context-1", "taskId": sentResponse.Task.ID, "role": "ROLE_AGENT", "parts": []any{map[string]any{"text": "done"}}}, "artifacts": []any{map[string]any{"artifactId": "artifact-1", "name": "processed asset", "parts": []any{map[string]any{"url": "https://box.david888.com/storage/processed.pdf", "filename": "processed.pdf", "mediaType": "application/pdf"}}}}}
 	updated := doStandardRequest(t, handler, http.MethodPost, "/hub/v1/a2a/tasks/"+sentResponse.Task.ID+"/updates", target.AgentToken, update)
-	if updated.Code != http.StatusOK || !strings.Contains(updated.Body.String(), string(a2a.TaskStateCompleted)) {
+	if updated.Code != http.StatusOK || !strings.Contains(updated.Body.String(), string(a2a.TaskStateCompleted)) || !strings.Contains(updated.Body.String(), "processed.pdf") {
 		t.Fatalf("standard update = %d/%s", updated.Code, updated.Body.String())
 	}
 	duplicateUpdate := doStandardRequest(t, handler, http.MethodPost, "/hub/v1/a2a/tasks/"+sentResponse.Task.ID+"/updates", target.AgentToken, update)

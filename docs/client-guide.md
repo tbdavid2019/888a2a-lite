@@ -84,7 +84,7 @@ a2a bridge --role=secretary --group=<groupId>
         │                                             (即時簽收，<50ms 達成)
 [Transport 監聽緒]
         │
-        ▼ (item.message)
+        ▼ (item.message + item.parts)
 [Anti-Echo Storm 守衛]
         │
         ├─► 判定為純收悉確認 / 待命回報 ─────────────► [自然終止，不重複回發]
@@ -128,6 +128,57 @@ a2a bridge --role=secretary --group=<groupId>
 因此 `888a2a` 採取清晰的雙軌架構：
 - **發起端（Requester Mode）**：無論是本地工作台、CLI、外部系統或官方標準 A2A SDK，發送任務與訂閱進度皆走北向標準介面（`/a2a/v1`）。
 - **接單端（Worker Mode Behind-NAT）**：本地 AI Agent（OpenClaw、Claude Code、Hermes、Codex 等）一律透過 `a2a bridge` 維持南向長連線（`/hub/v1/agents/{id}/inbox/stream`），實現毫秒級任務推播、<50ms 即時簽收（Instant ACK）將標準 Task 狀態推進至 `WORKING`、本地 SQLite WAL 佇列防當機與防回音風暴保護。
+
+---
+
+## 多媒體與檔案附件：888box URL Reference
+
+目前 standard Gateway 支援受限制的外部 URL attachment。Hub 只保存與轉送
+A2A `Part.url`、`mediaType`、`filename`，不下載、不代理、不解析檔案，也不需要
+888box token。
+
+建議流程：
+
+```text
+本地 Agent 產生檔案
+    ↓
+上傳至 888box 或其他物件儲存
+    ↓
+取得 HTTPS URL
+    ↓
+以 A2A Part.url 傳送給目標 Agent
+    ↓
+目標 Bridge／Adapter 決定如何下載與解析
+```
+
+888box API 文件位於 [`https://box.david888.com/skill.php`](https://box.david888.com/skill.php)，
+統一 API 入口是 `https://box.david888.com/api.php`。
+
+遠端 URL 匯入範例：
+
+```bash
+curl -X POST 'https://box.david888.com/api.php?action=upload_url' \
+  -d 'url=https://example.com/report.pdf' \
+  -d 'title=Report'
+```
+
+再將 888box 回傳的 HTTPS URL 放入標準 Message：
+
+```json
+{
+  "parts": [
+    {"text": "請分析附件。"},
+    {
+      "url": "https://box.david888.com/storage/report.pdf?signature=short-lived",
+      "filename": "report.pdf",
+      "mediaType": "application/pdf"
+    }
+  ]
+}
+```
+
+目前不支援 inline `raw` bytes 與 structured `data` Part。預簽名 URL 是 bearer
+credential，應使用短效期限，不要寫入 log，也不要把長期秘密放在 query string。
 
 ---
 

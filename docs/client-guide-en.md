@@ -84,7 +84,7 @@ a2a bridge --role=secretary --group=<groupId>
         │                                             (Instant ACK <50ms)
 [Transport Thread]
         │
-        ▼ (item.message)
+        ▼ (item.message + item.parts)
 [Anti-Echo Storm Guard]
         │
         ├─► Pure receipt confirmation / standby ──────► [Terminate without replying]
@@ -128,6 +128,42 @@ In the standard A2A specification (a2aprotocol.org), `message:stream` and `task:
 `888a2a` adopts a clean two-tier architecture:
 - **Requester Mode**: External clients, web UIs, and official A2A SDKs initiate tasks and subscribe to task progress via the standard Northbound interface (`/a2a/v1`).
 - **Worker Mode (Behind-NAT)**: Local AI agents (OpenClaw, Claude Code, Hermes, Codex) maintain a persistent Southbound outbound SSE stream (`/hub/v1/agents/{id}/inbox/stream`) via `a2a bridge`. This achieves sub-50ms Instant ACK (advancing task state to `WORKING`), local SQLite WAL crash safety, and anti-echo storm protection.
+
+---
+
+## Multimedia and File Attachments: 888box URL References
+
+The standard Gateway supports a bounded external URL attachment profile. The
+Hub stores and forwards A2A `Part.url`, `mediaType`, and `filename`; it does
+not download, proxy, or parse files and does not need an 888box token.
+
+Recommended flow:
+
+```text
+Local Agent creates a file
+    ↓
+Upload to 888box or another object store
+    ↓
+Obtain an HTTPS URL
+    ↓
+Send it as an A2A Part.url
+    ↓
+Target Bridge/Adapter downloads and processes it
+```
+
+See the [888box skill document](https://box.david888.com/skill.php) for the
+upload API. Remote URL import uses:
+
+```bash
+curl -X POST 'https://box.david888.com/api.php?action=upload_url' \
+  -d 'url=https://example.com/report.pdf' \
+  -d 'title=Report'
+```
+
+Then include the returned HTTPS URL in a standard Message with `mediaType`
+and an optional `filename`. Inline `raw` bytes and structured `data` Parts
+remain unsupported. Pre-signed URLs are bearer credentials; use short TTLs,
+never log them, and do not put long-lived secrets in query parameters.
 
 ---
 

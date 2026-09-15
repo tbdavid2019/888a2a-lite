@@ -2,6 +2,13 @@
 
 ## 2026-09-15
 
+### Added
+
+- 新增受限 A2A URL attachment profile：standard Message 與 Executor Artifact 支援 HTTPS `Part.url`、`mediaType` 與選填 `filename`；inline `raw` 與 structured `data` 維持關閉。
+- Standard durable inbox 新增可選 `parts_json` projection，讓 target Bridge 取得完整 URL attachment metadata，不只收到扁平文字。
+- 新增 URL、MIME、filename、Part／Artifact 數量與 metadata size 限制，並統一 Message／Artifact 驗證與 signed URL audit 遮罩。
+- 補上 888box (`https://box.david888.com/skill.php`) 上傳後透過 `Part.url` 傳遞的中英文文件、Client Skill、Agent onboarding、README 與 `llms.txt` 指引。
+
 ### Documentation
 
 - 補完標準 A2A 協定限制與發起端（Requester）vs 接單端（Worker Behind-NAT）串流分工架構指南（Stream Semantics & NAT Traversal）：

@@ -176,7 +176,7 @@ func (service *Service) CreateStandardGroupTask(ctx context.Context, requester h
 	if err != nil {
 		return a2a.TaskRecord{}, false, err
 	}
-	text, err := validateStandardMessage(request.Message)
+	text, err := service.validateStandardMessage(request.Message)
 	if err != nil {
 		return a2a.TaskRecord{}, false, err
 	}
@@ -263,7 +263,7 @@ func (service *Service) CreateStandardGroupTask(ctx context.Context, requester h
 		}
 		turnID := fmt.Sprintf("a2a-turn-%d-%d", now.UnixNano(), index)
 		children = append(children, a2a.TaskRecord{HubID: requester.HubID, ID: memberTaskID, CircleID: requester.CircleID, RequesterAgentID: requester.AgentID, TargetAgentID: member.AgentID, ContextID: contextID, MessageID: childMessage.MessageID, TurnID: turnID, Revision: 1, State: a2a.TaskStateSubmitted, Message: childMessage, History: []a2a.Message{childMessage}, ContentDigest: childDigest, ExecutionDeadline: now.Add(5 * time.Minute), RetryBudget: 3, CreatedAt: now, UpdatedAt: now})
-		items = append(items, hub.InboxItem{HubID: requester.HubID, CircleID: requester.CircleID, TargetAgentID: member.AgentID, RequesterAgentID: requester.AgentID, TaskID: memberTaskID, ContextID: contextID, IdempotencyKey: "a2a:group:" + parentID + ":" + member.AgentID, Message: text, GroupID: groupID, Protocol: "A2A/1.0", MessageID: childMessage.MessageID, TurnID: turnID, TaskRevision: 1, ParentTaskID: parentID, MemberTaskID: memberTaskID, ReplyPolicy: metadata.ReplyPolicy, Mentions: metadata.Mentions, CreatedAt: now})
+		items = append(items, hub.InboxItem{HubID: requester.HubID, CircleID: requester.CircleID, TargetAgentID: member.AgentID, RequesterAgentID: requester.AgentID, TaskID: memberTaskID, ContextID: contextID, IdempotencyKey: "a2a:group:" + parentID + ":" + member.AgentID, Message: text, Parts: append([]a2a.Part(nil), childMessage.Parts...), GroupID: groupID, Protocol: "A2A/1.0", MessageID: childMessage.MessageID, TurnID: turnID, TaskRevision: 1, ParentTaskID: parentID, MemberTaskID: memberTaskID, ReplyPolicy: metadata.ReplyPolicy, Mentions: metadata.Mentions, CreatedAt: now})
 		links = append(links, a2a.GroupTaskMember{GroupID: groupID, CircleID: requester.CircleID, TargetAgentID: member.AgentID, ReplyPolicy: metadata.ReplyPolicy, Mentions: metadata.Mentions, Ordinal: index, CreatedAt: now})
 	}
 	created, duplicate, err := service.store.StandardTasks().CreateGroupTask(ctx, parent, children, items, links, service.config.MaxConcurrentTasks, service.maxGroupFanout())

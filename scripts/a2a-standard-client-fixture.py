@@ -45,6 +45,20 @@ def main() -> int:
     status, sent = request(f"{interface}/message:send", token, message)
     assert status == 200 and sent.get("task", {}).get("id")
     task_id = sent["task"]["id"]
+    attachment_url = "https://box.david888.com/storage/a2a-fixture.pdf"
+    attachment_message = {"tenant": tenant, "message": {"messageId": "fixture-message-attachment-1", "role": "ROLE_USER", "parts": [{"text": "A2A attachment fixture"}, {"url": attachment_url, "filename": "a2a-fixture.pdf", "mediaType": "application/pdf"}]}, "configuration": {"returnImmediately": True}}
+    status, attachment_sent = request(f"{interface}/message:send", token, attachment_message)
+    assert status == 200 and attachment_sent.get("task", {}).get("id")
+    attachment_task = request(f"{interface}/tasks/{urllib.parse.quote(attachment_sent['task']['id'], safe='')}?includeArtifacts=true", token)[1]
+    assert attachment_task["history"][0]["parts"][1]["url"] == attachment_url
+
+    invalid_message = {"tenant": tenant, "message": {"messageId": "fixture-message-raw-1", "role": "ROLE_USER", "parts": [{"raw": "aW52YWxpZA==", "mediaType": "application/pdf"}]}, "configuration": {"returnImmediately": True}}
+    try:
+        request(f"{interface}/message:send", token, invalid_message)
+    except urllib.error.HTTPError as error:
+        assert error.code == 400
+    else:
+        raise AssertionError("raw Part was accepted")
     status, task = request(f"{interface}/tasks/{urllib.parse.quote(task_id, safe='')}", token)
     assert status == 200 and task["id"] == task_id
     status, listed = request(f"{interface}/tasks", token)

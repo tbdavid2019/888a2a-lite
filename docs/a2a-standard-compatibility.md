@@ -16,9 +16,30 @@ routes without a base path:
 - `POST /a2a/v1/tasks/{id}:cancel` and `/tasks/{id}:cancel`
 - `POST /a2a/v1/tasks/{id}:subscribe` and `/tasks/{id}:subscribe`
 
-The MVP accepts only text Parts with `mediaType: text/plain`. File, URL, raw,
-structured data, and mixed messages are rejected as
-`CONTENT_TYPE_NOT_SUPPORTED`.
+The standard Gateway supports a bounded URL-reference profile. Message and
+Artifact Parts may contain `text` and/or an external HTTPS `url` reference in
+the original order. URL Parts require a supported `mediaType` and may include
+an optional `filename`. Inline `raw` bytes and structured `data` Parts remain
+disabled and are rejected as `CONTENT_TYPE_NOT_SUPPORTED`; the Hub never
+downloads or proxies a referenced URL.
+
+The URL-reference MIME profile includes `image/*`, `audio/*`, `video/*`,
+`application/pdf`, and `application/octet-stream`, plus common text, archive,
+office, and rich-document MIME types. The Agent Card describes relay support;
+the target Agent adapter is responsible for downloading and passing a file to
+a suitable local tool or multimodal model.
+
+For 888box, upload the file through `https://box.david888.com/api.php` using
+the documented `upload` or `upload_url` action, then submit the returned HTTPS
+URL as the A2A `Part.url`. See the live [888box skill document](https://box.david888.com/skill.php).
+The Hub does not require or store an 888box API token. Treat pre-signed URLs as
+short-lived bearer credentials: do not log them, and avoid placing long-lived
+secrets in URL query parameters.
+
+For a standard delivery, the durable inbox contains both the legacy flattened
+`message` projection and an optional `parts` projection. Standard-aware
+Bridges use `parts` to preserve the URL, MIME type, filename, and order; legacy
+clients can continue reading `message`.
 
 Authentication uses `Authorization: Bearer <agentToken>`. The standard adapter
 does not require `X-Agent-ID`; the token resolves the existing Hub Agent
@@ -26,10 +47,10 @@ principal. In a multi-circle deployment, `tenant` selects the target Agent and
 is checked against the authenticated caller's circle. It is routing metadata,
 not an authorization credential.
 
-The Agent Card advertises `HTTP+JSON`, protocol version `1.0`, text input and
-output modes, Bearer authentication, streaming, and the versioned executor
-capability only for Agents that explicitly register it. Push notifications and
-extended cards are not advertised.
+The Agent Card advertises `HTTP+JSON`, protocol version `1.0`, text plus the
+bounded URL-reference input and output modes, Bearer authentication, streaming,
+and the versioned executor capability only for Agents that explicitly register
+it. Push notifications and extended cards are not advertised.
 
 ## Multi-Circle and rollout
 
@@ -97,4 +118,3 @@ A key structural distinction exists between the standard A2A protocol design and
    - When a task arrives via the inbox stream, the Bridge issues an **Instant ACK (<50ms)** to transition the standard task state to `TASK_STATE_WORKING`, durably enqueues the payload into local SQLite WAL (`~/.a2a/work.db`), runs the local cognitive LLM with anti-echo storm guards, and returns correlated responses.
 
 This architecture ensures strict compliance with standard A2A for external callers while delivering resilient, zero-config, low-latency NAT traversal for worker agents.
-

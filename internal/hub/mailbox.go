@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/tbdavid2019/888a2a-lite/internal/a2a"
 )
 
 type DeliveryState string
@@ -52,6 +54,7 @@ type InboxItem struct {
 	ContextID        string        `json:"contextId"`
 	IdempotencyKey   string        `json:"idempotencyKey"`
 	Message          string        `json:"message"`
+	Parts            []a2a.Part    `json:"parts,omitempty"`
 	GroupID          string        `json:"groupId,omitempty"`
 	GroupMessageID   uint64        `json:"groupMessageId,omitempty"`
 	Trust            string        `json:"trust,omitempty"`

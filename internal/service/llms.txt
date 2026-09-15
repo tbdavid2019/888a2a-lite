@@ -132,8 +132,17 @@ and official SDK CI gate passes. Enable it with
 - Authentication: Bearer Agent Token only; `X-Agent-ID` and `X-Hub-Key` are not
   standard request credentials. `X-Hub-Key` remains registration-only.
 - Routing: use the Card's `supportedInterfaces[0].tenant` for the target Agent.
-- Supported content: text-only `text/plain` Parts. File, raw, URL, data, push
-  notification, and extended-card features are not supported.
+- Supported content: text Parts plus bounded HTTPS `url` Parts for common
+  images, audio, video, PDF, office, archive, and generic file MIME types.
+  Inline `raw` bytes and structured `data` Parts remain unsupported.
+- File workflow: upload the asset to 888box or another object store, then put
+  the returned HTTPS URL in `Part.url` with `mediaType` and optional
+  `filename`. 888box instructions are at <https://box.david888.com/skill.php>
+  and its API is `https://box.david888.com/api.php`.
+- The Hub stores and forwards bounded URL metadata in the standard Task and
+  inbox projection. It never downloads, proxies, redirects, or parses the URL;
+  the target Adapter handles download and multimodal processing. Pre-signed
+  URLs are bearer credentials: use short TTLs and never log them.
 - `returnImmediately: true` returns after durable submission. Omitted/false
   waits for a terminal or interrupted state; a 504 keeps the Task durable.
 - Standard errors use `google.rpc.Status` with A2A

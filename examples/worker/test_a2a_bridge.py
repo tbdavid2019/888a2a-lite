@@ -600,20 +600,41 @@ class DurableBridgeTests(unittest.TestCase):
                 return {"task": {"id": task_id}}
 
         class Backend:
-            def execute(self, *args): return "standard result"
+            def execute(self, message, *args):
+                self.message = message
+                return "standard result"
 
         with tempfile.TemporaryDirectory() as directory:
             queue = bridge.DurableWorkQueue(os.path.join(directory, "queue.db"), scope="hub/executor")
-            queue.enqueue({"sequence": 9, "taskId": "a2a-task-9", "protocol": "A2A/1.0", "turnId": "turn-1", "taskRevision": 1, "requesterAgentId": "requester", "contextId": "context-1", "message": "do work"})
+            queue.enqueue({"sequence": 9, "taskId": "a2a-task-9", "protocol": "A2A/1.0", "turnId": "turn-1", "taskRevision": 1, "requesterAgentId": "requester", "contextId": "context-1", "message": "do work", "parts": [{"text": "do work"}, {"url": "https://box.david888.com/storage/input.pdf", "filename": "input.pdf", "mediaType": "application/pdf"}]})
             hub = Hub()
+            backend = Backend()
             row = queue.next()
-            bridge.process_queued_task(hub, Backend(), queue, row, "Executor")
+            bridge.process_queued_task(hub, backend, queue, row, "Executor")
             self.assertEqual(hub.task_id, "a2a-task-9")
             self.assertEqual(hub.update["state"], "TASK_STATE_COMPLETED")
             self.assertEqual(hub.update["expectedRevision"], 2)
             self.assertIn("message", hub.update)
+            self.assertIn("input.pdf", backend.message)
             with queue._db() as db:
                 self.assertEqual(db.execute("SELECT state FROM work WHERE sequence=9").fetchone()[0], "done")
+
+    def test_standard_item_prompt_preserves_url_attachment_metadata(self):
+        prompt = bridge.standard_item_prompt({
+            "message": "Please inspect this file",
+            "parts": [{"text": "Please inspect this file"}, {"url": "https://box.david888.com/storage/report.pdf", "filename": "report.pdf", "mediaType": "application/pdf"}],
+        })
+        self.assertIn("Please inspect this file", prompt)
+        self.assertIn("report.pdf", prompt)
+        self.assertIn("https://box.david888.com/storage/report.pdf", prompt)
+
+    def test_a2a_message_text_preserves_url_attachment_metadata(self):
+        text = bridge.a2a_message_text({
+            "parts": [{"text": "result"}, {"url": "https://box.david888.com/storage/result.png", "filename": "result.png", "mediaType": "image/png"}],
+        })
+        self.assertIn("result", text)
+        self.assertIn("result.png", text)
+        self.assertIn("https://box.david888.com/storage/result.png", text)
 
     def test_standard_no_reply_reports_empty_completion(self):
         class Hub:

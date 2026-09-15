@@ -2,7 +2,10 @@
 // It intentionally contains no Hub persistence or transport implementation.
 package a2a
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 const (
 	ProtocolVersion        = "1.0"
@@ -95,13 +98,13 @@ type Message struct {
 }
 
 type Part struct {
-	Text      *string        `json:"text,omitempty"`
-	Raw       string         `json:"raw,omitempty"`
-	URL       string         `json:"url,omitempty"`
-	Data      any            `json:"data,omitempty"`
-	Metadata  map[string]any `json:"metadata,omitempty"`
-	Filename  string         `json:"filename,omitempty"`
-	MediaType string         `json:"mediaType,omitempty"`
+	Text      *string         `json:"text,omitempty"`
+	Raw       *string         `json:"raw,omitempty"`
+	URL       *string         `json:"url,omitempty"`
+	Data      json.RawMessage `json:"data,omitempty"`
+	Metadata  map[string]any  `json:"metadata,omitempty"`
+	Filename  string          `json:"filename,omitempty"`
+	MediaType string          `json:"mediaType,omitempty"`
 }
 
 type TaskState string

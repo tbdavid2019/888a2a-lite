@@ -465,16 +465,6 @@ func (server *HTTPServer) standardTaskUpdate(w http.ResponseWriter, r *http.Requ
 		writeStandardError(w, &StandardError{HTTPStatus: http.StatusBadRequest, Reason: "INVALID_ARGUMENT", Message: "updateId, turnId, expectedRevision, and state are required"})
 		return
 	}
-	if request.Message != nil {
-		if request.Message.Role != "ROLE_AGENT" {
-			writeStandardError(w, &StandardError{HTTPStatus: http.StatusBadRequest, Reason: "INVALID_ARGUMENT", Message: "update.message.role must be ROLE_AGENT"})
-			return
-		}
-		if _, err := a2a.TextFromParts(request.Message.Parts); err != nil {
-			writeStandardError(w, &StandardError{HTTPStatus: http.StatusBadRequest, Reason: a2a.ReasonContentTypeNotSupported, Message: err.Error()})
-			return
-		}
-	}
 	task, duplicate, err := server.service.ApplyStandardUpdate(r.Context(), a2a.TaskUpdate{HubID: target.HubID, TaskID: r.PathValue("taskId"), TargetAgentID: target.AgentID, UpdateID: request.UpdateID, TurnID: request.TurnID, ExpectedRevision: request.ExpectedRevision, State: request.State, Message: request.Message, Artifacts: request.Artifacts})
 	if err != nil {
 		writeStandardServiceError(w, err)

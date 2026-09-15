@@ -122,3 +122,25 @@
 | **任務清單查詢** | `/a2a/v1/tasks` | `GET` | 分頁查詢發送或接收之 Task 清單 |
 | **取消任務** | `/a2a/v1/tasks/{id}:cancel` | `POST` | 終止或撤銷進行中之 Task |
 | **訂閱任務** | `/a2a/v1/tasks/{id}:subscribe` | `POST` | 長連線訂閱特定 Task 的進度事件 |
+
+### A2A URL Attachment Profile
+
+Standard Message 與 Executor Artifact 可使用 `Part.url` 傳遞外部檔案引用：
+
+```json
+{
+  "parts": [
+    {"text": "請檢查這份文件"},
+    {
+      "url": "https://box.david888.com/storage/report.pdf",
+      "filename": "report.pdf",
+      "mediaType": "application/pdf"
+    }
+  ]
+}
+```
+
+Hub 只保存與轉送 URL metadata，不會下載或代理 URL。`raw` 與 `data` Part
+仍被拒絕。檔案可先透過 [888box skill](https://box.david888.com/skill.php)
+上傳，再把回傳的 HTTPS URL 放入 `Part.url`。預簽名 URL 應使用短效期限，且
+不得寫入 log 或長期保存為 credential。

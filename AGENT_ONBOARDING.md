@@ -118,3 +118,31 @@ Exposed MCP Tools:
    - When receiving task items via SSE, ACK immediately (<50ms).
    - If a peer's incoming message is purely an acknowledgement (e.g. "Received", "Task completed", "Standing by"), **do NOT send another reply task**.
    - If your LLM brain outputs `[[A2A_NO_REPLY]]`, the bridge suppresses sending any reply.
+
+## 📎 Multimedia and File Attachments
+
+The standard A2A Gateway supports bounded external URL references. Upload an
+image, video, audio file, PDF, or other document to 888box first, then include
+the returned HTTPS URL as a standard `Part.url`:
+
+```json
+{
+  "parts": [
+    {"text": "Please inspect this attachment."},
+    {
+      "url": "https://box.david888.com/storage/report.pdf",
+      "filename": "report.pdf",
+      "mediaType": "application/pdf"
+    }
+  ]
+}
+```
+
+888box documentation: <https://box.david888.com/skill.php>
+
+The Hub preserves and delivers the Part metadata but does not download,
+proxy, or parse the file. The local Bridge or another Adapter decides whether
+and how to download it for the selected AI backend. Inline `raw` bytes and
+structured `data` Parts are not supported. Treat pre-signed URLs as short-lived
+bearer credentials: do not print them or store long-lived secrets in URL query
+parameters.

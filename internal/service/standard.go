@@ -109,8 +109,8 @@ func (service *Service) standardCard(baseURL, name, description, tenant string) 
 		Capabilities:         a2a.AgentCapabilities{Streaming: true, PushNotifications: false, ExtendedCard: false},
 		SecuritySchemes:      map[string]a2a.SecurityScheme{"bearerAuth": {HTTPAuthSecurityScheme: &a2a.HTTPAuthSecurityScheme{Scheme: "bearer", BearerFormat: "AgentToken"}}},
 		SecurityRequirements: []a2a.SecurityRequirement{{Schemes: map[string]a2a.StringList{"bearerAuth": {List: []string{}}}}},
-		DefaultInputModes:    []string{"text/plain"}, DefaultOutputModes: []string{"text/plain"},
-		Skills: []a2a.AgentSkill{{ID: "text-relay", Name: "Text relay", Description: "Durable text Message delivery through the Hub", Tags: []string{"text", "relay"}, InputModes: []string{"text/plain"}, OutputModes: []string{"text/plain"}}},
+		DefaultInputModes:    a2a.URLAttachmentInputModes(), DefaultOutputModes: a2a.URLAttachmentInputModes(),
+		Skills: []a2a.AgentSkill{{ID: "text-and-url-relay", Name: "Text and URL attachment relay", Description: "Durable text and external URL reference delivery through the Hub; the target adapter is responsible for downloading and processing attachments", Tags: []string{"text", "file", "media", "relay"}, InputModes: a2a.URLAttachmentInputModes(), OutputModes: a2a.URLAttachmentInputModes()}},
 	}
 	if service.config.GroupExtensionEnabled {
 		card.Capabilities.Extensions = []a2a.AgentExtension{{URI: a2a.GroupExtensionURI, Description: "Virtual group tenant fan-out and member outcome aggregation", Required: false, Params: map[string]any{"tenantPrefix": "group:"}}}
@@ -127,22 +127,33 @@ func messageDigest(message a2a.Message) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
-func validateStandardMessage(message a2a.Message) (string, error) {
+func (service *Service) validateStandardMessage(message a2a.Message) (string, error) {
 	if strings.TrimSpace(message.MessageID) == "" {
 		return "", standardError(400, "INVALID_ARGUMENT", "message.messageId is required")
 	}
 	if message.Role != "ROLE_USER" {
 		return "", standardError(400, "INVALID_ARGUMENT", "message.role must be ROLE_USER")
 	}
-	text, err := a2a.TextFromParts(message.Parts)
-	if err != nil {
-		return "", standardError(400, a2a.ReasonContentTypeNotSupported, err.Error())
+	if err := a2a.ValidateMessage(message, service.config.AttachmentLimits); err != nil {
+		return "", standardValidationError(err)
 	}
-	return text, nil
+	return a2a.TextForDelivery(message.Parts), nil
+}
+
+func standardValidationError(err error) error {
+	var validationErr *a2a.ValidationError
+	if errors.As(err, &validationErr) {
+		status := 400
+		if validationErr.Reason == a2a.ReasonResourceExhausted {
+			status = 413
+		}
+		return standardError(status, validationErr.Reason, validationErr.Message)
+	}
+	return err
 }
 
 func (service *Service) CreateStandardTask(ctx context.Context, requester hub.RegisteredAgent, request a2a.SendMessageRequest) (a2a.TaskRecord, bool, error) {
-	text, err := validateStandardMessage(request.Message)
+	text, err := service.validateStandardMessage(request.Message)
 	if err != nil {
 		return a2a.TaskRecord{}, false, err
 	}
@@ -199,7 +210,7 @@ func (service *Service) CreateStandardTask(ctx context.Context, requester hub.Re
 		resumed.ExecutionDeadline = now.Add(5 * time.Minute)
 		resumed.RetryBudget = 3
 		resumed.UpdatedAt = now
-		item := hub.InboxItem{HubID: requester.HubID, CircleID: requester.CircleID, TargetAgentID: targetID, RequesterAgentID: requester.AgentID, TaskID: existing.ID, ContextID: existing.ContextID, IdempotencyKey: "a2a:" + request.Message.MessageID, Message: text, State: hub.DeliveryStatePending, CreatedAt: now, Protocol: "A2A/1.0", MessageID: request.Message.MessageID, TurnID: turnID, TaskRevision: resumed.Revision}
+		item := hub.InboxItem{HubID: requester.HubID, CircleID: requester.CircleID, TargetAgentID: targetID, RequesterAgentID: requester.AgentID, TaskID: existing.ID, ContextID: existing.ContextID, IdempotencyKey: "a2a:" + request.Message.MessageID, Message: text, Parts: append([]a2a.Part(nil), request.Message.Parts...), State: hub.DeliveryStatePending, CreatedAt: now, Protocol: "A2A/1.0", MessageID: request.Message.MessageID, TurnID: turnID, TaskRevision: resumed.Revision}
 		resumed, duplicate, err := service.store.StandardTasks().ResumeTaskWithDelivery(ctx, resumed, existing.Revision, item)
 		if err != nil {
 			if errors.Is(err, store.ErrConflict) {
@@ -225,7 +236,7 @@ func (service *Service) CreateStandardTask(ctx context.Context, requester hub.Re
 	turnID := fmt.Sprintf("a2a-turn-%d", service.now().UnixNano())
 	now := service.now().UTC()
 	task := a2a.TaskRecord{HubID: requester.HubID, ID: taskID, CircleID: requester.CircleID, RequesterAgentID: requester.AgentID, TargetAgentID: targetID, ContextID: contextID, MessageID: request.Message.MessageID, TurnID: turnID, Revision: 1, State: a2a.TaskStateSubmitted, Message: request.Message, History: []a2a.Message{request.Message}, ContentDigest: digest, ExecutionDeadline: now.Add(5 * time.Minute), RetryBudget: 3, CreatedAt: now, UpdatedAt: now}
-	item := hub.InboxItem{HubID: requester.HubID, CircleID: requester.CircleID, TargetAgentID: targetID, RequesterAgentID: requester.AgentID, TaskID: taskID, ContextID: contextID, IdempotencyKey: "a2a:" + request.Message.MessageID, Message: text, State: hub.DeliveryStatePending, CreatedAt: now, Protocol: "A2A/1.0", MessageID: request.Message.MessageID, TurnID: turnID, TaskRevision: 1}
+	item := hub.InboxItem{HubID: requester.HubID, CircleID: requester.CircleID, TargetAgentID: targetID, RequesterAgentID: requester.AgentID, TaskID: taskID, ContextID: contextID, IdempotencyKey: "a2a:" + request.Message.MessageID, Message: text, Parts: append([]a2a.Part(nil), request.Message.Parts...), State: hub.DeliveryStatePending, CreatedAt: now, Protocol: "A2A/1.0", MessageID: request.Message.MessageID, TurnID: turnID, TaskRevision: 1}
 	created, duplicate, err := service.store.StandardTasks().CreateTaskWithDelivery(ctx, task, item)
 	if err != nil {
 		if errors.Is(err, store.ErrConflict) {
@@ -295,6 +306,17 @@ func (service *Service) CancelStandardTask(ctx context.Context, requester hub.Re
 }
 
 func (service *Service) ApplyStandardUpdate(ctx context.Context, update a2a.TaskUpdate) (a2a.TaskRecord, bool, error) {
+	if update.Message != nil {
+		if update.Message.Role != "ROLE_AGENT" {
+			return a2a.TaskRecord{}, false, standardError(400, "INVALID_ARGUMENT", "update.message.role must be ROLE_AGENT")
+		}
+		if err := a2a.ValidateMessage(*update.Message, service.config.AttachmentLimits); err != nil {
+			return a2a.TaskRecord{}, false, standardValidationError(err)
+		}
+	}
+	if err := a2a.ValidateArtifacts(update.Artifacts, service.config.AttachmentLimits); err != nil {
+		return a2a.TaskRecord{}, false, standardValidationError(err)
+	}
 	task, duplicate, err := service.store.StandardTasks().ApplyUpdate(ctx, update)
 	if errors.Is(err, store.ErrNotFound) {
 		return a2a.TaskRecord{}, false, standardError(404, "TASK_NOT_FOUND", "task not found")

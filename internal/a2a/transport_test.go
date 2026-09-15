@@ -18,7 +18,8 @@ func TestValidateVersionRejectsUnsupportedVersion(t *testing.T) {
 
 func TestTextFromPartsRejectsMixedContent(t *testing.T) {
 	text := "hello"
-	if _, err := TextFromParts([]Part{{Text: &text}, {URL: "https://example.invalid/file"}}); err == nil {
+	url := "https://example.invalid/file"
+	if _, err := TextFromParts([]Part{{Text: &text}, {URL: &url}}); err == nil {
 		t.Fatal("TextFromParts accepted a mixed text and URL message")
 	}
 }

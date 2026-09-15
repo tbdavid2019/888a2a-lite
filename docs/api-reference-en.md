@@ -122,3 +122,27 @@ Activated with `A2A888_HUB_STANDARD_ENABLED=true`:
 | **List Tasks** | `/a2a/v1/tasks` | `GET` | Paginated task history |
 | **Cancel Task** | `/a2a/v1/tasks/{id}:cancel` | `POST` | Cancel in-flight task |
 | **Subscribe Task** | `/a2a/v1/tasks/{id}:subscribe` | `POST` | Subscribe to live task updates |
+
+### A2A URL Attachment Profile
+
+Standard Messages and Executor Artifacts may use `Part.url` for external file
+references:
+
+```json
+{
+  "parts": [
+    {"text": "Please inspect this document"},
+    {
+      "url": "https://box.david888.com/storage/report.pdf",
+      "filename": "report.pdf",
+      "mediaType": "application/pdf"
+    }
+  ]
+}
+```
+
+The Hub stores and forwards bounded URL metadata, but never downloads or
+proxies the URL. `raw` and `data` Parts remain unsupported. Files may be
+uploaded through the [888box skill](https://box.david888.com/skill.php), then
+the returned HTTPS URL can be placed in `Part.url`. Treat pre-signed URLs as
+short-lived bearer credentials and never log them.

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -56,6 +57,7 @@ type AgentPrincipal struct {
 }
 
 func New(database store.Store, cfg config.Config) *Service {
+	cfg = cfg.Normalize()
 	operatorHash := ""
 	if cfg.OperatorToken != "" {
 		operatorHash = hub.HashToken(cfg.OperatorToken)
@@ -711,13 +713,19 @@ func (service *Service) BuildSystemCard(baseURL string) hub.HubSystemCard {
 		AnnouncementFeedURL:  baseURL + "/hub/v1/announcements",
 		GroupBaseURL:         baseURL + "/hub/v1/groups",
 		Limits: map[string]int64{
-			"maxRegisteredAgents": int64(service.config.MaxRegisteredAgents),
-			"maxTasksPerMinute":   int64(service.config.MaxTasksPerMinute),
-			"maxConcurrentTasks":  int64(service.config.MaxConcurrentTasks),
-			"maxPayloadBytes":     service.config.MaxPayloadBytes,
-			"maxGroupMembers":     int64(service.maxGroupMembers()),
-			"maxGroupFanout":      int64(service.maxGroupFanout()),
-			"maxGroupHistoryPage": int64(service.maxGroupHistoryPage()),
+			"maxRegisteredAgents":          int64(service.config.MaxRegisteredAgents),
+			"maxTasksPerMinute":            int64(service.config.MaxTasksPerMinute),
+			"maxConcurrentTasks":           int64(service.config.MaxConcurrentTasks),
+			"maxPayloadBytes":              service.config.MaxPayloadBytes,
+			"maxGroupMembers":              int64(service.maxGroupMembers()),
+			"maxGroupFanout":               int64(service.maxGroupFanout()),
+			"maxGroupHistoryPage":          int64(service.maxGroupHistoryPage()),
+			"maxAttachmentURLLength":       int64(service.config.AttachmentLimits.MaxURLLength),
+			"maxAttachmentFilenameLength":  int64(service.config.AttachmentLimits.MaxFilenameLength),
+			"maxAttachmentMediaTypeLength": int64(service.config.AttachmentLimits.MaxMediaTypeLength),
+			"maxAttachmentParts":           int64(service.config.AttachmentLimits.MaxParts),
+			"maxAttachmentArtifacts":       int64(service.config.AttachmentLimits.MaxArtifacts),
+			"maxAttachmentMetadataBytes":   service.config.AttachmentLimits.MaxMetadataBytes,
 		},
 		Extensions: []hub.SystemCardExtension{
 			{URI: hub.AnnouncementExtensionURI, Required: false},
@@ -933,8 +941,42 @@ func (service *Service) audit(ctx context.Context, event hub.Event) {
 			event.CircleID = circle.PublicID
 		}
 	}
+	event.Details = redactAuditDetails(event.Details)
 	if err := service.store.Events().AppendEvent(ctx, event); err != nil {
 		log.Printf("audit event failed type=%s", event.Type)
+	}
+}
+
+func redactAuditDetails(details map[string]any) map[string]any {
+	if details == nil {
+		return nil
+	}
+	redacted := make(map[string]any, len(details))
+	for key, value := range details {
+		redacted[key] = redactAuditValue(value)
+	}
+	return redacted
+}
+
+func redactAuditValue(value any) any {
+	switch typed := value.(type) {
+	case string:
+		parsed, err := url.Parse(typed)
+		if err == nil && (parsed.Scheme == "https" || parsed.Scheme == "http") && parsed.RawQuery != "" {
+			parsed.RawQuery = "redacted"
+			return parsed.String()
+		}
+		return typed
+	case map[string]any:
+		return redactAuditDetails(typed)
+	case []any:
+		redacted := make([]any, len(typed))
+		for index, item := range typed {
+			redacted[index] = redactAuditValue(item)
+		}
+		return redacted
+	default:
+		return value
 	}
 }
 

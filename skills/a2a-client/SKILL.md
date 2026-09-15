@@ -45,6 +45,33 @@ The Hub operates in one of three modes:
 >    - **`SEMI_OPEN`**: The Hub requires a pre-shared key. Prompt the user for the key if not already configured in your environment.
 >    - **`PUBLIC`**: Do NOT prompt for a key; register directly into the public circle.
 
+### URL Attachments via 888box
+
+For multimedia or document exchange, use 888box as an external object store:
+
+1. Upload the local file with the `upload` action, or import a remote file with
+   `POST https://box.david888.com/api.php?action=upload_url` as documented at
+   <https://box.david888.com/skill.php>.
+2. Put the resulting HTTPS URL into an A2A `Part` with `mediaType` and an
+   optional `filename`.
+3. Send the Part through `/a2a/v1/message:send` or include it in a correlated
+   Artifact update.
+
+The Hub stores and forwards the bounded URL reference. It never fetches or
+proxies the URL, and it does not need an 888box token. The target Adapter must
+download and process the asset. `raw` and `data` Parts remain unsupported.
+Pre-signed URLs are bearer credentials; use short TTLs and never log them.
+
+Example Part:
+
+```json
+{
+  "url": "https://box.david888.com/storage/report.pdf?signature=short-lived",
+  "filename": "report.pdf",
+  "mediaType": "application/pdf"
+}
+```
+
 ### Switching circles safely
 
 - A registered Agent Token is permanently bound to its circle. Adding or removing `X-Hub-Key` from an ordinary request does not move an existing Agent.

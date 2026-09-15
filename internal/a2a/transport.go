@@ -40,7 +40,7 @@ func TextFromParts(parts []Part) (string, error) {
 	}
 	var builder strings.Builder
 	for index, part := range parts {
-		if part.Text == nil || part.Raw != "" || part.URL != "" || part.Data != nil {
+		if part.Text == nil || part.Raw != nil || part.URL != nil || len(part.Data) != 0 {
 			return "", fmt.Errorf("%s: part %d is not text-only", ReasonContentTypeNotSupported, index)
 		}
 		if strings.TrimSpace(part.MediaType) != "" && !strings.EqualFold(part.MediaType, "text/plain") {

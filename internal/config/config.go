@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tbdavid2019/888a2a-lite/internal/a2a"
 	"github.com/tbdavid2019/888a2a-lite/internal/circle"
 )
 
@@ -44,6 +45,7 @@ type Config struct {
 	MaxGroupHistoryPage    int
 	RegistrationPerMinute  int
 	StandardWaitTimeout    time.Duration
+	AttachmentLimits       a2a.AttachmentLimits
 	StandardGatewayEnabled bool
 	GroupExtensionEnabled  bool
 	OperatorToken          string
@@ -72,6 +74,7 @@ func Load() (Config, error) {
 		MaxGroupHistoryPage:    DefaultMaxGroupHistoryPage,
 		RegistrationPerMinute:  DefaultRegistrationPerMinute,
 		StandardWaitTimeout:    DefaultStandardWaitTimeout,
+		AttachmentLimits:       a2a.DefaultAttachmentLimits(),
 		StandardGatewayEnabled: envBool("A2A888_HUB_STANDARD_ENABLED", false),
 		GroupExtensionEnabled:  envBool("A2A888_HUB_GROUP_EXTENSION_ENABLED", false),
 		OperatorToken:          os.Getenv("A2A888_HUB_OPERATOR_TOKEN"),
@@ -106,6 +109,24 @@ func Load() (Config, error) {
 	if config.StandardWaitTimeout, err = envDurationSeconds("A2A888_HUB_STANDARD_WAIT_TIMEOUT_SECONDS", config.StandardWaitTimeout); err != nil {
 		return Config{}, err
 	}
+	if config.AttachmentLimits.MaxURLLength, err = envInt("A2A888_HUB_MAX_ATTACHMENT_URL_LENGTH", config.AttachmentLimits.MaxURLLength); err != nil {
+		return Config{}, err
+	}
+	if config.AttachmentLimits.MaxFilenameLength, err = envInt("A2A888_HUB_MAX_ATTACHMENT_FILENAME_LENGTH", config.AttachmentLimits.MaxFilenameLength); err != nil {
+		return Config{}, err
+	}
+	if config.AttachmentLimits.MaxMediaTypeLength, err = envInt("A2A888_HUB_MAX_ATTACHMENT_MEDIA_TYPE_LENGTH", config.AttachmentLimits.MaxMediaTypeLength); err != nil {
+		return Config{}, err
+	}
+	if config.AttachmentLimits.MaxParts, err = envInt("A2A888_HUB_MAX_ATTACHMENT_PARTS", config.AttachmentLimits.MaxParts); err != nil {
+		return Config{}, err
+	}
+	if config.AttachmentLimits.MaxArtifacts, err = envInt("A2A888_HUB_MAX_ATTACHMENT_ARTIFACTS", config.AttachmentLimits.MaxArtifacts); err != nil {
+		return Config{}, err
+	}
+	if config.AttachmentLimits.MaxMetadataBytes, err = envInt64("A2A888_HUB_MAX_ATTACHMENT_METADATA_BYTES", config.AttachmentLimits.MaxMetadataBytes); err != nil {
+		return Config{}, err
+	}
 	if config.MaxGroupMembers, err = envInt("A2A888_HUB_MAX_GROUP_MEMBERS", config.MaxGroupMembers); err != nil {
 		return Config{}, err
 	}
@@ -122,6 +143,7 @@ func Load() (Config, error) {
 }
 
 func (config Config) Validate() error {
+	config = config.Normalize()
 	mode := strings.ToLower(strings.TrimSpace(config.CircleMode))
 	if mode == "" {
 		mode = circle.ModeSingle
@@ -144,6 +166,9 @@ func (config Config) Validate() error {
 	if config.StandardWaitTimeout < 0 || config.StandardWaitTimeout > 10*time.Minute {
 		return fmt.Errorf("standard wait timeout must be between 1 second and 10 minutes")
 	}
+	if err := config.AttachmentLimits.Validate(); err != nil {
+		return err
+	}
 	if mode != circle.ModeSingle && mode != circle.ModeMulti {
 		return fmt.Errorf("circle mode must be %q or %q", circle.ModeSingle, circle.ModeMulti)
 	}
@@ -151,6 +176,11 @@ func (config Config) Validate() error {
 		return fmt.Errorf("circle configuration is invalid: %w", err)
 	}
 	return nil
+}
+
+func (config Config) Normalize() Config {
+	config.AttachmentLimits = config.AttachmentLimits.Normalize()
+	return config
 }
 
 func hubMaxGroupMembers() int { return 32 }

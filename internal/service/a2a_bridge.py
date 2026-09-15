@@ -2011,6 +2011,7 @@ def process_standard_queued_task(hub_client, backend, queue, row, agent_name, ch
             update = {"updateId": update_id, "turnId": turn_id, "expectedRevision": expected_revision, "state": "TASK_STATE_COMPLETED", "artifacts": []}
         else:
             context = {"contextId": item.get("contextId")}
+            task_message = standard_item_prompt(item)
             if item.get("groupId") and charter_cache:
                 snapshot = charter_cache.refresh(item["groupId"], required=bool(item.get("charterRequired")))
                 context["governance"] = assemble_governance_prompt(item.get("message", ""), snapshot)
@@ -2022,7 +2023,7 @@ def process_standard_queued_task(hub_client, backend, queue, row, agent_name, ch
                     else:
                         queue.retry(seq)
                     return
-            reply_text = backend.execute(item.get("message", ""), item.get("requesterAgentId", ""), context)
+            reply_text = backend.execute(task_message, item.get("requesterAgentId", ""), context)
             if not reply_text:
                 if int(row.get("attempts", 0)) >= 3:
                     update = {"updateId": f"update-{task_id}-{turn_id}-failed", "turnId": turn_id, "expectedRevision": expected_revision, "state": "TASK_STATE_FAILED", "artifacts": []}
@@ -3063,10 +3064,36 @@ def a2a_message_text(message):
     if not isinstance(message, dict):
         return ""
     texts = []
+    attachments = []
     for part in message.get("parts", []):
-        if isinstance(part, dict) and isinstance(part.get("text"), str):
+        if not isinstance(part, dict):
+            continue
+        if isinstance(part.get("text"), str):
             texts.append(part["text"])
-    return "\n".join(texts).strip()
+        if isinstance(part.get("url"), str) and part.get("url"):
+            label = part.get("filename") or part.get("mediaType") or "A2A attachment"
+            attachments.append(f"[{label}] {part['url']}")
+    result = "\n".join(texts).strip()
+    if attachments:
+        result = (result + "\n\n" if result else "") + "A2A attachments:\n" + "\n".join(attachments)
+    return result
+
+
+def standard_item_prompt(item):
+    """Project an inbox item into the text prompt used by local backends."""
+    if not isinstance(item, dict):
+        return ""
+    message = item.get("message") if isinstance(item.get("message"), str) else ""
+    parts = item.get("parts") if isinstance(item.get("parts"), list) else []
+    attachments = []
+    for part in parts:
+        if not isinstance(part, dict) or not isinstance(part.get("url"), str) or not part["url"]:
+            continue
+        label = part.get("filename") or part.get("mediaType") or "A2A attachment"
+        attachments.append(f"[{label}] {part['url']}")
+    if attachments:
+        message = (message.strip() + "\n\n" if message.strip() else "") + "A2A attachments:\n" + "\n".join(attachments)
+    return message.strip()
 
 
 def standard_task_group_messages(group_id, task, human_agent_id, human_name):

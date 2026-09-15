@@ -132,6 +132,7 @@ func (database *DB) migrate(ctx context.Context) error {
 		{table: "inbox_item", name: "member_task_id", ddl: "TEXT NOT NULL DEFAULT ''"},
 		{table: "inbox_item", name: "reply_policy", ddl: "TEXT NOT NULL DEFAULT ''"},
 		{table: "inbox_item", name: "mentions_json", ddl: "TEXT NOT NULL DEFAULT '[]'"},
+		{table: "inbox_item", name: "parts_json", ddl: "TEXT NOT NULL DEFAULT '[]'"},
 	} {
 		if err := ensureColumn(ctx, database.db, column.table, column.name, column.ddl); err != nil {
 			return err
@@ -548,8 +549,9 @@ CREATE TABLE IF NOT EXISTS inbox_item (
     task_id TEXT NOT NULL,
     context_id TEXT NOT NULL,
     idempotency_key TEXT NOT NULL,
-    message TEXT NOT NULL,
-    state TEXT NOT NULL CHECK (state IN ('PENDING', 'ACKNOWLEDGED', 'CANCELED')),
+	message TEXT NOT NULL,
+	parts_json TEXT NOT NULL DEFAULT '[]',
+	state TEXT NOT NULL CHECK (state IN ('PENDING', 'ACKNOWLEDGED', 'CANCELED')),
     created_at TEXT NOT NULL,
     acknowledged_at TEXT,
     canceled_at TEXT,

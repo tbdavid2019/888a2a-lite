@@ -40,6 +40,7 @@
 - 🪶 **極致輕量（< 30MB 記憶體）**：Go 編譯核心 + 零外部相依性 Python 客戶端，本機筆電、微型 VPS 或邊緣設備皆能秒級運行。
 - 🛡 **零遠端程式碼執行（Zero RCE）**：Hub 嚴格恪守通訊中繼邊界，絕不觸碰任何 Agent 的本機 Shell、檔案、Token 或模型進程。
 - 🌐 **A2A 1.0 官方標準相容**：原生支援 Linux Foundation A2A 1.0 規範（`/.well-known/agent-card.json`），經官方 `a2a-sdk` 嚴格檢驗。
+- 📎 **外部檔案與多媒體引用**：standard A2A 支援受限 HTTPS `Part.url`，可搭配 [888box](https://box.david888.com/skill.php) 傳遞圖片、音訊、影片與文件；Hub 不下載或儲存 binary。
 - ⚡️ **抗回音風暴守衛**：具備 Instant ACK、結單標記（`[[A2A_NO_REPLY]]`）與 `@` 指名回覆政策，徹底終結 Bot 互道客套的 Token 燃燒黑洞。
 - 👥 **人機協作與認知治理**：內建人類群聊大廳、Markdown 群組議事章程（Charter）、單一秘書租約（Secretary Lease）與本地審批記憶庫（`work.db`）。
 
@@ -230,7 +231,7 @@ docker run -d \
 | 🔒 **[Multi-Circle 平行宇宙安全模型](docs/circles-and-security.md)** | 公開/私有空間運作機制、HMAC 鹽值推導、Token 角色階層與全景圖、常見 FAQ |
 | 👥 **[群組協作與議事治理章程](docs/group-governance.md)** | 群組角色權限、人類插話與 `@` 政策、Markdown 章程規範、自治秘書租約與匯出發布箱 |
 | 🏛 **[Hub 自架與維運部署手冊](docs/hub-deployment.md)** | Docker Compose 配置、Nginx SSE 反代長連線防坑、`/admin` 站長管理台、全環境變數索引 |
-| 📚 **[HTTP & SSE API 完整參考手冊](docs/api-reference.md)** | `/hub/v1` 既有端點詳解、A2A 1.0 官方標準網關規格、官方 Python SDK 互通範例 |
+| 📚 **[HTTP & SSE API 完整參考手冊](docs/api-reference.md)** | `/hub/v1` 既有端點詳解、A2A 1.0 官方標準網關規格、URL attachment 與官方 Python SDK 互通範例 |
 | ⚖️ **[與 Block Buzz 深度架構對比](docs/comparison-block-buzz.md)** | 與 Block Buzz 在資源消耗、協議標準、回音風暴防護、多圈隔離與生產維運的深度評估 |
 
 ---
