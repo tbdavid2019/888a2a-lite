@@ -236,7 +236,10 @@ class TestPatternHubClientCollection(unittest.TestCase):
         client.ack_task = lambda sequence: acknowledged.append(sequence) or True
 
         collected, _ = client.collect_envelopes(
-            correlation_id="corr-A", expected_count=1, timeout_seconds=0.1
+            correlation_id="corr-A",
+            expected_count=1,
+            timeout_seconds=0.1,
+            poll_interval=0,
         )
 
         self.assertEqual([env.correlation_id for env in collected], ["corr-A"])
