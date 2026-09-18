@@ -1,5 +1,40 @@
 # Changelog
 
+## 2026-09-18
+
+### Added
+
+- 新增多 Agent 高階協作拓撲範例套件（Multi-Agent Collaboration Patterns）：
+  - **結構化 Envelope 規範（`examples/patterns/a2a_envelope.py`）**：
+    - 定義標準協作資料結構，包含 `workflow_id`、`correlation_id`、`flow_type`、`step_id`、`reply_to`、`round`、`max_rounds`、`role`、`required_capabilities`、`terminal` 與 `payload`。
+    - 徹底解耦「傳輸簽收（Hub ACK on Ingest，<50ms）」與「業務完成（LLM Result Task）」，杜絕將 Hub ACK 誤判為任務成功的架構反模式。
+    - 內建 Anti-Echo Storm Guard 防回音風暴守衛：檢查 `terminal: true`、回合超限 (`round > max_rounds`) 及 `[[A2A_NO_REPLY]]` 結尾標記，阻斷多 Agent 互搏之乒乓回音死循環。
+  - **四大經典協作模式可執行示範腳本（Cookbook）**：
+    - **串行流水線接力（`01_pipeline_demo.py`）**：展示發起人 -> 撰寫 Agent -> 審查 Agent -> 終審發布之多階段狀態推進與 Instant ACK。
+    - **並行派工與聚合（`02_parallel_fanout.py`）**：展示 Aggregator 廣播平行子任務給多位專家 Agent，並具備法定人數（Quorum）與超時（Timeout）容錯聚合機制。
+    - **監督者動態路由（`03_supervisor_router.py`）**：展示 Supervisor 透過 `GET /hub/v1/agents` 即時查閱在線 Agent Cards，比對能力標籤（Capabilities）進行動態指派。
+    - **辯論與對抗審查（`04_debate_group.py`）**：展示提案方、質詢方與裁判之嚴格雙回合攻防，結合裁判終審 `terminal: true` 與防回音風暴靜音結案。
+  - **輕量協作輔助客戶端（`examples/patterns/a2a_pattern_client.py`）**：純 Python 標準庫（Zero External Dependencies），提供開箱即用的註冊、Envelope 封裝發送、Instant ACK、Agent 探索與聚合收集。
+  - **單元測試套件（`examples/patterns/test_patterns.py`）**：覆蓋 Envelope 序列化、驗證防呆、步驟狀態推進與防回音風暴觸發邏輯。
+
+### Fixed
+
+- 修正 `a2a_pattern_client.py` 之收件匣訊息遺失問題：`collect_envelopes` 僅在工作流接受訊息後 ACK；非目標 `correlation_id` 或格式損壞的訊息維持 Hub `PENDING`，避免依賴易失的 process-local buffer，保留重啟後的 at-least-once recovery。
+- 修正 `a2a_envelope.py` 錯誤 Envelope 之例外 fallback 漏洞：區分非 JSON 純文字與結構化 Envelope，若帶有 Envelope 標記則強制嚴格驗證並調用 `validate()`，若欄位格式損壞主動拋出 `ValueError`，防止繞過防回音與終止守衛。
+- 修正 `Envelope.next_step()` 在 `round == max_rounds` 過早標記 `terminal` 的問題，保留最後一回合的 Judge handoff 與終局回覆空間。
+- 強化 Envelope 欄位型別與必要欄位驗證，修正多步驟鏈路 `metadata.parent_step` 被舊值覆蓋的問題。
+- 強化聚合器分頁掃描，避免前段外來訊息占滿單頁時永遠找不到後續目標回覆。
+- 修正 CI 流程：於 `.github/workflows/ci.yml` 之 `python-bridge` 工作加入 `py_compile examples/patterns/*.py` 與 `unittest discover -s examples/patterns`，使協作模式測試受 GitHub Actions 守護。
+- 修正 Supervisor 路由漏檢在線狀態問題：`list_agents` 與 `route_task` 全面啟用 `?state=online` 與 `ONLINE` / `ACTIVE` 狀態過濾，杜絕指派任務至 OFFLINE 節點。
+- 修正 Debate 模式回合語義衝突：釐清攻防回合與仲裁交接語義，`is_anti_echo_triggered` 於嚴格超過最大回合數（`round > max_rounds`）時阻斷回信，使雙回合結束後的裁判 handoff 能順暢受理，最終由裁判發布 `terminal: true` 達成無回音結案。
+- 修正 Parallel Demo 偽並行問題：於 `02_parallel_fanout.py` 改採 `concurrent.futures.ThreadPoolExecutor` 驅動所有 Worker 同步並發處理，忠實呈現平行派工與法定人數聚合。
+
+### Documentation
+
+- 新增多 Agent 協作架構中英文專題指南（`docs/collaboration-patterns.md`, `docs/collaboration-patterns-en.md` 與 `examples/patterns/README.md`）：
+  - 闡明 Hub 核心層（傳輸與狀態原語）、Client Workflow 流程層（業務拓撲與回音防護）及 Agent 執行層（LLM 認知）之三層責任劃分。
+  - 詳細列出 Envelope 欄位定義、四大協作模式拓撲圖、Quorum 容錯策略與線上實戰防護指南。
+
 ## 2026-09-15
 
 ### Added

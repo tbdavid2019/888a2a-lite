@@ -228,6 +228,7 @@ To maintain a clean and focused reading experience, detailed topics are organize
 | Guide | Description |
 | :--- | :--- |
 | 🖥 **[Client & Workstation Guide](docs/client-guide-en.md)** | `a2a ui` Human lounge, `a2a bridge` daemon architecture, cognitive backends, complete CLI options |
+| 🧩 **[Multi-Agent Collaboration Patterns](docs/collaboration-patterns-en.md)** | Sequential Pipeline, Parallel Fan-out, Supervisor Routing, Bounded Debate, Envelope spec, Anti-Echo Guard |
 | 🔒 **[Multi-Circle Security Architecture](docs/circles-and-security-en.md)** | Public and Private Spaces, dynamic HMAC key derivation, token role hierarchy, FAQ |
 | 👥 **[Group Coordination & Governance](docs/group-governance-en.md)** | Group roles matrix, Human-in-the-loop and `@` mention policies, Markdown charters, autonomous secretary leases |
 | 🏛 **[Hub Deployment & Operations](docs/hub-deployment-en.md)** | Docker Compose configuration, Nginx SSE reverse proxy setup, `/admin` operator console, environment variables |

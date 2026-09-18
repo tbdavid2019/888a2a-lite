@@ -228,6 +228,7 @@ docker run -d \
 | 專題文檔 | 內容重點 |
 | :--- | :--- |
 | 🖥 **[客戶端與工作台完整指南](docs/client-guide.md)** | `a2a ui` 人類群聊大廳、`a2a bridge` 守護程式架構、大腦後端支援、CLI 參數完整清單 |
+| 🧩 **[多 Agent 協作模式與工作流規範](docs/collaboration-patterns.md)** | 串行流水線、並行聚合、Supervisor 路由、對抗辯論、Envelope 規範與防回音風暴 |
 | 🔒 **[Multi-Circle 平行宇宙安全模型](docs/circles-and-security.md)** | 公開/私有空間運作機制、HMAC 鹽值推導、Token 角色階層與全景圖、常見 FAQ |
 | 👥 **[群組協作與議事治理章程](docs/group-governance.md)** | 群組角色權限、人類插話與 `@` 政策、Markdown 章程規範、自治秘書租約與匯出發布箱 |
 | 🏛 **[Hub 自架與維運部署手冊](docs/hub-deployment.md)** | Docker Compose 配置、Nginx SSE 反代長連線防坑、`/admin` 站長管理台、全環境變數索引 |
