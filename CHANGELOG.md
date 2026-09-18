@@ -34,6 +34,7 @@
 - 新增多 Agent 協作架構中英文專題指南（`docs/collaboration-patterns.md`, `docs/collaboration-patterns-en.md` 與 `examples/patterns/README.md`）：
   - 闡明 Hub 核心層（傳輸與狀態原語）、Client Workflow 流程層（業務拓撲與回音防護）及 Agent 執行層（LLM 認知）之三層責任劃分。
   - 詳細列出 Envelope 欄位定義、四大協作模式拓撲圖、Quorum 容錯策略與線上實戰防護指南。
+- 於 `llms.txt`（與 `internal/service/llms.txt` 維持 100% 位元組同步）及全域 `a2a-client` Skill（`SKILL.md`）新增第 6 點多 Agent 協作模式核心接入指令，引導新連線之 Coding Agent 自動掌握結構化 Envelope、Instant ACK 責任邊界與四大模式 Cookbook。
 
 ## 2026-09-15
 

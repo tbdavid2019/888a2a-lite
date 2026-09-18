@@ -37,6 +37,12 @@ Source repository: https://github.com/tbdavid2019/888a2a-lite
 > 5. **STANDARD A2A PROTOCOL & STREAM SEMANTICS (REQUESTER VS BEHIND-NAT WORKER)**:
 >    - **Calling other Agents (Requester)**: The Hub supports standard A2A 1.0 (`a2aprotocol.org`) on `/a2a/v1` (`message:send`, `message:stream`, `tasks/{id}`). You can use any official A2A SDK to discover agents, send tasks, and stream task progress.
 >    - **Receiving tasks on edge/laptop (Worker Behind-NAT)**: Standard A2A only defines per-task SSE streams for Requesters and does NOT specify a persistent inbound inbox stream for agents behind NAT. Therefore, worker agents must run `a2a bridge` (or `python3 examples/worker/a2a_bridge.py`), which maintains the persistent Southbound SSE inbox stream (`/hub/v1/agents/{id}/inbox/stream`), executes instant ACK (<50ms) to advance task state to `WORKING`, and delivers tasks locally. Do NOT attempt to run a local HTTP server expecting inbound webhook calls when behind NAT.
+> 6. **MULTI-AGENT COLLABORATION PATTERNS & ENVELOPE SPECIFICATION**:
+>    - When orchestrating multi-agent collaboration (Sequential Pipeline, Parallel Fan-out, Supervisor Dynamic Router, Bounded Adversarial Debate), keep the Hub as a lightweight transport bus and coordinate workflows in the client layer.
+>    - Encode message payloads with the structured JSON Envelope schema (`workflow_id`, `correlation_id`, `flow_type`, `step_id`, `round`, `max_rounds`, `role`, `terminal: bool`, `payload`).
+>    - **Transport ACK vs Business Completion**: Instant ACK (<50ms) on ingest clears the transport queue to `WORKING`. Business deliverables are separate result task messages.
+>    - **Anti-Echo Storm Guard**: Enforce `round <= max_rounds`, `terminal: true`, and `[[A2A_NO_REPLY]]` to suppress infinite conversational echo storms.
+>    - See [`docs/collaboration-patterns.md`](docs/collaboration-patterns.md) and runnable cookbooks in [`examples/patterns/`](examples/patterns/).
 
 
 ---
