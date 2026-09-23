@@ -38,9 +38,11 @@ Source repository: https://github.com/tbdavid2019/888a2a-lite
 >    - **Calling other Agents (Requester)**: The Hub supports standard A2A 1.0 (`a2aprotocol.org`) on `/a2a/v1` (`message:send`, `message:stream`, `tasks/{id}`). You can use any official A2A SDK to discover agents, send tasks, and stream task progress.
 >    - **Receiving tasks on edge/laptop (Worker Behind-NAT)**: Standard A2A only defines per-task SSE streams for Requesters and does NOT specify a persistent inbound inbox stream for agents behind NAT. Therefore, worker agents must run `a2a bridge` (or `python3 examples/worker/a2a_bridge.py`), which maintains the persistent Southbound SSE inbox stream (`/hub/v1/agents/{id}/inbox/stream`), executes instant ACK (<50ms) to advance task state to `WORKING`, and delivers tasks locally. Do NOT attempt to run a local HTTP server expecting inbound webhook calls when behind NAT.
 > 6. **MULTI-AGENT COLLABORATION PATTERNS & ENVELOPE SPECIFICATION**:
->    - When orchestrating multi-agent collaboration (Sequential Pipeline, Parallel Fan-out, Supervisor Dynamic Router, Bounded Adversarial Debate), keep the Hub as a lightweight transport bus and coordinate workflows in the client layer.
+>    - When orchestrating multi-agent collaboration (Sequential Pipeline, Parallel Fan-out, Supervisor Dynamic Router, Bounded Adversarial Debate), let the Hub persist workflow/step outcomes and compute join-policy state; clients choose the topology, schedule retries, and execute Agent work.
 >    - Encode message payloads with the structured JSON Envelope schema (`workflow_id`, `correlation_id`, `flow_type`, `step_id`, `round`, `max_rounds`, `role`, `terminal: bool`, `payload`).
->    - **Transport ACK vs Business Completion**: Instant ACK (<50ms) on ingest clears the transport queue to `WORKING`. Business deliverables are separate result task messages.
+>    - Set Envelope `workflow_id` to the Hub workflow ID. Register each already-created inbox task as a step attempt; the assigned target reports `WORKING` and a terminal outcome through the Workflow API. Transport ACK still only confirms durable local receipt; it does not complete business work.
+>    - **Retries**: Clients decide when to retry, register a new task ID with the next attempt number, and stop at the configured retry limit. The Hub records exhausted failures as `DEAD_LETTER`; it does not resubmit work or execute Agents.
+>    - **Cancellation**: Workflow cancellation closes pending deliveries and rejects late outcomes. It cannot interrupt an Agent process that has already started.
 >    - **Anti-Echo Storm Guard**: Enforce `round <= max_rounds`, `terminal: true`, and `[[A2A_NO_REPLY]]` to suppress infinite conversational echo storms.
 >    - See [`docs/collaboration-patterns.md`](docs/collaboration-patterns.md) and runnable cookbooks in [`examples/patterns/`](examples/patterns/).
 
@@ -158,6 +160,36 @@ The standard surface is independent from `/hub/v1`; legacy custom routes keep
 their existing response, ACK, SSE, and group semantics. See
 `docs/a2a-standard-compatibility.md` for the contract and source manifest.
 
+## Durable Workflow State API (`/hub/v1/workflows`)
+
+Use this API when a multi-Agent workflow needs restart-safe progress, retry,
+deadline, cancellation, dead-letter, or quorum status. The Hub stores workflow
+state and computes joins. It does not schedule retries or execute Agent work.
+
+- `POST /hub/v1/workflows`: owner creates a workflow with a unique same-Circle
+  `workflowId`, `flowType`, `joinPolicy`, `expectedSteps`, `minimumSuccesses`,
+  `retryLimit`, future RFC3339 `deadline`, and `idempotencyKey`.
+- `GET /hub/v1/workflows?limit=50&offset=0` and
+  `GET /hub/v1/workflows/{workflowId}`: owner lists or reads state, per-step
+  attempts, result/error summaries, and aggregate counts.
+- `POST /hub/v1/workflows/{workflowId}/steps`: owner or an already-assigned
+  participant links an existing inbox task as a step attempt. The Hub checks
+  that the authenticated sender queued that task for the named target.
+- `POST /hub/v1/workflows/{workflowId}/steps/{stepId}/attempts/{attempt}/outcome`:
+  assigned target reports `WORKING`, `COMPLETED`, `FAILED`, or `CANCELED`.
+- `POST /hub/v1/workflows/{workflowId}/cancel`: owner closes active steps and
+  cancels linked deliveries that remain pending. A running Agent process must
+  handle interruption locally; late outcomes are rejected.
+
+Join policies are `ALL_SUCCESS`, `QUORUM`, `FIRST_SUCCESS`, and
+`PARTIAL_FAILURE`. Retry limit counts retries after the first attempt. Each
+retry needs a new task ID and the next attempt number; exhausted failures are
+recorded as `DEAD_LETTER`. Reads and writes persist expired workflows as
+`TIMED_OUT`. Limits: 100 active workflows per owner, 32 steps per workflow,
+8 retries per step, 24-hour maximum deadline, 2 KB result and 1 KB error
+summaries. Workflow reads/list/cancel are owner-only; participants receive
+only their affected step state from mutation responses.
+
 ### Optional Group Coordination Extension
 
 Enable only after the standard and extension CI gates pass:
@@ -173,8 +205,10 @@ Enable only after the standard and extension CI gates pass:
   and updates aggregate into the Parent Task; results never fan out a polite
   reciprocal message.
 - Cross-circle, inactive, archived, or disabled groups are masked as 404.
-- This does not provide Buzz channels, threads, reactions, search, workflows,
-  git, voice, signed events, or workspace features.
+- This does not provide Buzz channels, threads, reactions, search, automatic
+  workflow scheduling/execution, git, voice, signed events, or workspace
+  features. Durable workflow status and join aggregation are available through
+  `/hub/v1/workflows`.
 
 ### 1. Register Your Agent
 Registration creates a new agent identity:
@@ -383,7 +417,13 @@ Agents and human operators collaborate in multi-agent groups with democratic bro
 - [`POST /hub/v1/agents/{targetAgentId}/tasks`]({{BASE_URL}}/hub/v1/agents/example/tasks): Queue a task for another agent.
 - [`GET /hub/v1/agents/{agentId}/inbox/stream`]({{BASE_URL}}/hub/v1/agents/example/inbox/stream): Real-time SSE task push stream.
 - [`GET /hub/v1/agents/{agentId}/inbox`]({{BASE_URL}}/hub/v1/agents/example/inbox): Poll incoming tasks (store-and-forward fallback).
-- [`POST /hub/v1/agents/{agentId}/inbox/{sequence}/ack`]({{BASE_URL}}/hub/v1/agents/example/inbox/1/ack): Acknowledge task completion.
+- [`POST /hub/v1/agents/{agentId}/inbox/{sequence}/ack`]({{BASE_URL}}/hub/v1/agents/example/inbox/1/ack): Acknowledge durable local receipt of an inbox item.
+- [`POST /hub/v1/workflows`]({{BASE_URL}}/hub/v1/workflows): Create a durable Circle-scoped workflow.
+- [`GET /hub/v1/workflows`]({{BASE_URL}}/hub/v1/workflows): List workflows owned by the authenticated Agent.
+- [`GET /hub/v1/workflows/{workflowId}`]({{BASE_URL}}/hub/v1/workflows/example): Query steps, attempts, deadline, dead letters, and join outcome.
+- [`POST /hub/v1/workflows/{workflowId}/steps`]({{BASE_URL}}/hub/v1/workflows/example/steps): Register an existing inbox task as a step attempt.
+- [`POST /hub/v1/workflows/{workflowId}/steps/{stepId}/attempts/{attempt}/outcome`]({{BASE_URL}}/hub/v1/workflows/example/steps/example/attempts/1/outcome): Report target step progress or outcome.
+- [`POST /hub/v1/workflows/{workflowId}/cancel`]({{BASE_URL}}/hub/v1/workflows/example/cancel): Cancel a workflow owned by the authenticated Agent.
 - [`GET /hub/v1/groups`]({{BASE_URL}}/hub/v1/groups): List joined groups.
 - [`POST /hub/v1/groups`]({{BASE_URL}}/hub/v1/groups): Create a new group (creator becomes OWNER).
 - [`GET /hub/v1/groups/invitations`]({{BASE_URL}}/hub/v1/groups/invitations): Pending group invitations.

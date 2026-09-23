@@ -66,8 +66,16 @@ def simulate_parallel_fanout(hub_url: str, shared_key: str = None):
         print(f"  [✓] Worker '{name}' registered: {w_client.agent_id}")
 
     # 2. Aggregator Fans Out Tasks to All Workers in Parallel
-    workflow_id = f"wf-fanout-{int(time.time())}"
-    correlation_id = f"corr-{int(time.time())}"
+    workflow_id = f"wf-fanout-{time.time_ns()}"
+    correlation_id = f"corr-{time.time_ns()}"
+    aggregator.create_workflow(
+        workflow_id=workflow_id,
+        flow_type="parallel",
+        expected_steps=len(workers),
+        join_policy="QUORUM",
+        minimum_successes=2,
+        retry_limit=1,
+    )
     print(f"\n[Step 1] Aggregator fanning out subtasks (Workflow: {workflow_id}, Correlation: {correlation_id})...")
 
     for w in workers:
@@ -83,7 +91,8 @@ def simulate_parallel_fanout(hub_url: str, shared_key: str = None):
                 "reply_to": aggregator.agent_id,
             }
         )
-        aggregator.send_envelope(w["agent_id"], env)
+        sent = aggregator.send_envelope(w["agent_id"], env)
+        aggregator.register_workflow_attempt(workflow_id, env.step_id, w["agent_id"], sent["taskId"])
         print(f"  [➔] Dispatched subtask to {w['name']} ({w['agent_id']})")
 
     # 3. Workers Process Simultaneously in Parallel Threads
@@ -105,6 +114,11 @@ def simulate_parallel_fanout(hub_url: str, shared_key: str = None):
                 seq = item.get("sequence")
                 # Instant ACK on Ingest (<50ms)
                 client.ack_task(seq)
+                try:
+                    client.report_workflow_outcome(workflow_id, f"analyze_{w_name}", 1, "WORKING")
+                except RuntimeError as err:
+                    print(f"  [i] {w_name} step was closed before processing: {err}")
+                    return False
 
                 in_env = Envelope.from_json(item.get("message", ""))
                 analysis_text = simulated_results.get(w_name, "分析完成")
@@ -115,6 +129,18 @@ def simulate_parallel_fanout(hub_url: str, shared_key: str = None):
                     payload={"worker": w_name, "analysis": analysis_text},
                     terminal=False  # Still part of collection phase
                 )
+                try:
+                    client.report_workflow_outcome(
+                        workflow_id,
+                        f"analyze_{w_name}",
+                        1,
+                        "COMPLETED",
+                        result=analysis_text,
+                    )
+                except RuntimeError as err:
+                    # A completed quorum may cancel an already-running late branch.
+                    print(f"  [i] {w_name} outcome already closed by workflow policy: {err}")
+                    return False
                 client.send_envelope(aggregator.agent_id, reply_env)
                 print(f"  [✓] {w_name} completed concurrently and replied to Aggregator.")
                 return True
@@ -138,6 +164,13 @@ def simulate_parallel_fanout(hub_url: str, shared_key: str = None):
 
     print(f"\n[Step 4] Aggregation Summary:")
     print(f"  Received {len(collected)} of {len(workers)} expected worker responses.")
+    workflow = aggregator.get_workflow(workflow_id)
+    print(
+        f"  Hub Workflow State: {workflow['state']} "
+        f"(quorum {workflow['counts']['completed']}/{workflow['minimumSuccesses']}; "
+        f"failed {workflow['counts']['failed']}; dead letter {workflow['counts']['deadLetter']}; "
+        f"canceled {workflow['counts']['canceled']})"
+    )
 
     synthesis = []
     for c in collected:
@@ -167,10 +200,13 @@ def simulate_parallel_fanout(hub_url: str, shared_key: str = None):
 
 def main():
     parser = argparse.ArgumentParser(description="A2A Pattern 02: Parallel Fan-out / Fan-in")
-    parser.add_argument("--hub", default=os.getenv("A2A888_HUB_URL", "https://a2a.david888.com"), help="Hub URL")
+    parser.add_argument("--hub", default=os.getenv("A2A888_HUB_URL", "http://127.0.0.1:8080"), help="Hub URL")
     parser.add_argument("--key", default=os.getenv("A2A888_HUB_SHARED_KEY"), help="Shared Hub Key (if private circle)")
     parser.add_argument("--demo", action="store_true", help="Run end-to-end fan-out/fan-in demonstration")
     args = parser.parse_args()
+
+    if not args.demo:
+        parser.error("--demo is required to register example Agents and send tasks")
 
     simulate_parallel_fanout(hub_url=args.hub, shared_key=args.key)
 

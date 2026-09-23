@@ -43,6 +43,7 @@
 - 📎 **外部檔案與多媒體引用**：standard A2A 支援受限 HTTPS `Part.url`，可搭配 [888box](https://box.david888.com/skill.php) 傳遞圖片、音訊、影片與文件；Hub 不下載或儲存 binary。
 - ⚡️ **抗回音風暴守衛**：具備 Instant ACK、結單標記（`[[A2A_NO_REPLY]]`）與 `@` 指名回覆政策，徹底終結 Bot 互道客套的 Token 燃燒黑洞。
 - 👥 **人機協作與認知治理**：內建人類群聊大廳、Markdown 群組議事章程（Charter）、單一秘書租約（Secretary Lease）與本地審批記憶庫（`work.db`）。
+- 🔁 **持久化 Workflow 追蹤**：跨 Agent 保存 step attempts、deadline、retry 結果、取消、Dead Letter 與 quorum 狀態；Hub 只記錄與聚合，不執行 Agent 工作。
 
 ---
 

@@ -15,6 +15,7 @@ var (
 	ErrInvalidState = errors.New("store record has an invalid state")
 	ErrForbidden    = errors.New("store operation is forbidden")
 	ErrConflict     = errors.New("store operation conflicts with current state")
+	ErrLimitReached = errors.New("store resource limit reached")
 )
 
 type AgentStore interface {
@@ -57,6 +58,7 @@ type StandardTaskStore interface {
 	CreateTaskWithDelivery(context.Context, a2a.TaskRecord, hub.InboxItem) (a2a.TaskRecord, bool, error)
 	ResumeTaskWithDelivery(context.Context, a2a.TaskRecord, int64, hub.InboxItem) (a2a.TaskRecord, bool, error)
 	FindTask(context.Context, string, string, string, string) (a2a.TaskRecord, error)
+	FindTaskForTarget(context.Context, string, string, string, string) (a2a.TaskRecord, error)
 	FindTaskByMessage(context.Context, string, string, string, string, string) (a2a.TaskRecord, error)
 	ListTasks(context.Context, a2a.TaskFilter) ([]a2a.TaskRecord, int, error)
 	ListTaskEvents(context.Context, string, string, string, string, int64) ([]a2a.TaskEvent, error)
@@ -65,6 +67,15 @@ type StandardTaskStore interface {
 	CreateGroupTask(context.Context, a2a.TaskRecord, []a2a.TaskRecord, []hub.InboxItem, []a2a.GroupTaskMember, int, int) (a2a.TaskRecord, bool, error)
 	ListGroupTaskMembers(context.Context, string, string, string, string) ([]a2a.TaskRecord, error)
 	ExpireStandardTasks(context.Context, time.Time) (int, error)
+}
+
+type WorkflowStore interface {
+	CreateWorkflow(context.Context, hub.Workflow) (hub.Workflow, bool, error)
+	FindWorkflow(context.Context, string, string, string, string, time.Time) (hub.Workflow, error)
+	ListWorkflows(context.Context, string, string, string, time.Time, int, int) ([]hub.Workflow, int, error)
+	RegisterWorkflowAttempt(context.Context, string, string, string, string, hub.WorkflowAttemptRegistration, time.Time) (hub.Workflow, bool, error)
+	ReportWorkflowOutcome(context.Context, string, string, string, hub.WorkflowOutcome, time.Time) (hub.Workflow, bool, error)
+	CancelWorkflow(context.Context, string, string, string, string, time.Time) (hub.Workflow, error)
 }
 
 type EventStore interface {
@@ -152,6 +163,7 @@ type TxStore interface {
 	GroupSecretaries() GroupSecretaryStore
 	MeetingSessions() MeetingSessionStore
 	StandardTasks() StandardTaskStore
+	Workflows() WorkflowStore
 }
 
 type Store interface {

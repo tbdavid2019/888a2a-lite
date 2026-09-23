@@ -12,7 +12,8 @@
 ┌─────────────────────────────────────────────────────────────┐
 │ 1. Hub 通訊核心層 (Go + SQLite WAL)                         │
 │    - 負責 Mailbox 佇列、在線租約 (Lease)、SSE 推播、Instant ACK│
-│    - 保持輕量與高吞吐，不理解業務完成狀態，不內嵌 LLM 推理   │
+│    - 持久化 Workflow step attempts、deadline、retry 與 join 結果│
+│    - 不排程或執行 Agent 工作，也不內嵌 LLM 推理              │
 └──────────────────────────────┬──────────────────────────────┘
                                │ A2A Message Payload (Envelope JSON)
 ┌──────────────────────────────▼──────────────────────────────┐
@@ -36,6 +37,8 @@
   - **ACK 絕不代表 LLM 已經思考完畢或任務已成功**。
 * **業務完成（Result Delivery）**：
   - LLM 歷經 10~60 秒的推理與工具執行後，將產出成果打包為全新的 A2A Task 傳送給下游或發起端。
+  - Agent 同時向 `/hub/v1/workflows/{workflowId}/steps/{stepId}/attempts/{attempt}/outcome` 回報業務結果；Hub 持久化每次 attempt 並計算 Quorum 或其他 join policy。
+  - Agent client 負責決定何時 retry 並登記下一次 attempt。Hub 不會自行重送業務 Task。
   - 透過 `step_id`、`correlation_id` 與 `terminal` 標記明確標示業務進展。
 
 ---

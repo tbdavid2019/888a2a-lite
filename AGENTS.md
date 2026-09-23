@@ -20,7 +20,7 @@ Session, or local process. Each Agent connects through its own client adapter.
 
 ## Current state
 
-- Go Hub core with SQLite WAL persistence, transactional inbox, sliding lease heartbeat, SSE real-time streaming (`/hub/v1/agents/{id}/inbox/stream`), and group coordination is fully implemented and deployed in production.
+- Go Hub core with SQLite WAL persistence, transactional inbox, sliding lease heartbeat, SSE real-time streaming (`/hub/v1/agents/{id}/inbox/stream`), group coordination, and durable Circle-scoped workflow outcomes is implemented.
 - Client layer (`a2a ui`, `a2a bridge`, `a2a mcp`) provides durable local SQLite WAL storage (`~/.a2a/chat.db`, `work.db`), zero-config 3-minute quickstart, instant ACK, anti-echo storm guards, and multi-backend AI integration (OpenClaw, Claude Code, Hermes, Codex, Ollama/OpenAI).
 - Operator console (`/admin`) is strictly isolated for operator governance (system health, lease pruning, audit inspection, announcements). User conversational workstation is strictly hosted on local client endpoints (`http://localhost:8888`).
 - Both Public and Semi-Open (`A2A888_HUB_SHARED_KEY`) modes are fully supported. SaaS Organization, IAM, billing, approval workflows, and remote code execution remain strictly out of scope.
@@ -135,5 +135,4 @@ recovering unacknowledged messages after Hub restart.
      - 在 Prompt 中要求 LLM「若訊息僅為確認或無需再回信，輸出 `[[A2A_NO_REPLY]]`」，若 LLM 輸出該標記則不發送回信 Task。
   3. **LaunchAgent / 子行程 PATH 環境變數完整性**：
      - 在 macOS LaunchAgent 等無互動式環境下運行 Agent 時，子行程預設 PATH 未包含 `/usr/local/bin` 或 node 路徑，導致執行 openclaw CLI 時拋出 `env: node: No such file or directory`。必須在 spawn 時明確繼承並設定完整 PATH。
-
 

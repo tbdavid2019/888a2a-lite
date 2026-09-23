@@ -55,9 +55,16 @@ def simulate_debate(hub_url: str, shared_key: str = None):
     judge.register("Debate-Judge", capabilities=["debate/judge"])
     print(f"  [✓] Judge registered:    {judge.agent_id}")
 
-    workflow_id = f"wf-debate-{int(time.time())}"
-    correlation_id = f"corr-debate-{int(time.time())}"
+    workflow_id = f"wf-debate-{time.time_ns()}"
+    correlation_id = f"corr-debate-{time.time_ns()}"
     max_rounds = 2
+    proposer.create_workflow(
+        workflow_id=workflow_id,
+        flow_type="debate",
+        expected_steps=4,
+        join_policy="ALL_SUCCESS",
+        retry_limit=1,
+    )
 
     # --- ROUND 1: Proposer submits proposal ---
     print(f"\n[Round 1 / {max_rounds}] Proposer presenting initial architecture proposal...")
@@ -77,7 +84,8 @@ def simulate_debate(hub_url: str, shared_key: str = None):
             "judge_id": judge.agent_id,
         }
     )
-    proposer.send_envelope(critic.agent_id, r1_proposal)
+    proposal_task = proposer.send_envelope(critic.agent_id, r1_proposal)
+    proposer.register_workflow_attempt(workflow_id, r1_proposal.step_id, critic.agent_id, proposal_task["taskId"])
 
     # Critic receives, Instant ACKs, critiques
     time.sleep(1.0)
@@ -92,6 +100,7 @@ def simulate_debate(hub_url: str, shared_key: str = None):
 
     c_item = c_items[0]
     critic.ack_task(c_item["sequence"])
+    critic.report_workflow_outcome(workflow_id, "round_1_proposal", 1, "WORKING")
     print("  [✓] Critic sent instant ACK (<50ms)")
 
     c_env = Envelope.from_json(c_item["message"])
@@ -109,7 +118,9 @@ def simulate_debate(hub_url: str, shared_key: str = None):
         terminal=False,
         increment_round=False  # Still in round 1 exchange
     )
-    critic.send_envelope(proposer.agent_id, r1_critique)
+    critic.report_workflow_outcome(workflow_id, "round_1_proposal", 1, "COMPLETED", result=critique_text)
+    critique_task = critic.send_envelope(proposer.agent_id, r1_critique)
+    critic.register_workflow_attempt(workflow_id, r1_critique.step_id, proposer.agent_id, critique_task["taskId"])
     print("  [✓] Critic delivered critique to Proposer.")
 
     # --- ROUND 2: Proposer revises proposal ---
@@ -118,6 +129,7 @@ def simulate_debate(hub_url: str, shared_key: str = None):
     p_items = proposer.poll_inbox()
     if p_items:
         proposer.ack_task(p_items[0]["sequence"])
+        proposer.report_workflow_outcome(workflow_id, "round_1_critique", 1, "WORKING")
         print("  [✓] Proposer sent instant ACK (<50ms)")
 
     rebuttal_text = (
@@ -135,7 +147,9 @@ def simulate_debate(hub_url: str, shared_key: str = None):
         terminal=False,
         payload={"defense": rebuttal_text}
     )
-    proposer.send_envelope(critic.agent_id, r2_defense)
+    proposer.report_workflow_outcome(workflow_id, "round_1_critique", 1, "COMPLETED", result="proposal revised")
+    defense_task = proposer.send_envelope(critic.agent_id, r2_defense)
+    proposer.register_workflow_attempt(workflow_id, r2_defense.step_id, critic.agent_id, defense_task["taskId"])
     print("  [✓] Proposer delivered revised proposal to Critic.")
 
     # Critic receives Round 2 defense, reaches max_rounds, forwards to Judge
@@ -143,6 +157,7 @@ def simulate_debate(hub_url: str, shared_key: str = None):
     c_items2 = critic.poll_inbox()
     if c_items2:
         critic.ack_task(c_items2[0]["sequence"])
+        critic.report_workflow_outcome(workflow_id, "round_2_defense", 1, "WORKING")
         print("  [✓] Critic sent instant ACK (<50ms)")
 
     print(f"\n[Max Rounds Reached] Critic acknowledges revisions and passes case to Judge ({judge.agent_id})...")
@@ -160,7 +175,9 @@ def simulate_debate(hub_url: str, shared_key: str = None):
             "request": "請裁判做出最終定案裁決。"
         }
     )
-    critic.send_envelope(judge.agent_id, handoff_judge)
+    critic.report_workflow_outcome(workflow_id, "round_2_defense", 1, "COMPLETED", result="reviewed revisions")
+    judge_task = critic.send_envelope(judge.agent_id, handoff_judge)
+    critic.register_workflow_attempt(workflow_id, handoff_judge.step_id, judge.agent_id, judge_task["taskId"])
 
     # --- FINAL ARBITRATION: Judge issues verdict with Terminal & Anti-Echo Guard ---
     print("\n[Arbitration] Judge reviewing debate arguments and rendering verdict...")
@@ -168,6 +185,7 @@ def simulate_debate(hub_url: str, shared_key: str = None):
     j_items = judge.poll_inbox()
     if j_items:
         judge.ack_task(j_items[0]["sequence"])
+        judge.report_workflow_outcome(workflow_id, "judge_arbitration", 1, "WORKING")
         print("  [✓] Judge sent instant ACK (<50ms)")
 
     verdict_text = (
@@ -190,6 +208,8 @@ def simulate_debate(hub_url: str, shared_key: str = None):
         payload={"verdict": verdict_text}
     )
 
+    judge.report_workflow_outcome(workflow_id, "judge_arbitration", 1, "COMPLETED", result=verdict_text)
+
     # Broadcast verdict to both Proposer and Critic
     judge.send_envelope(proposer.agent_id, verdict_env)
     judge.send_envelope(critic.agent_id, verdict_env)
@@ -211,16 +231,20 @@ def simulate_debate(hub_url: str, shared_key: str = None):
                 print(f"    Action:                Instant ACK succeeded; auto-reply SUPPRESSED. Zero echo storm.")
 
     print("\n" + "=" * 65)
-    print(" 🎉 [✓] Debate concluded with perfect anti-echo storm protection!")
+    workflow = proposer.get_workflow(workflow_id)
+    print(f" 🎉 [✓] Debate concluded: Hub workflow {workflow['state']} ({workflow['counts']['completed']}/{workflow['counts']['expected']} steps)")
     print("=" * 65)
 
 
 def main():
     parser = argparse.ArgumentParser(description="A2A Pattern 04: Debate / Adversarial")
-    parser.add_argument("--hub", default=os.getenv("A2A888_HUB_URL", "https://a2a.david888.com"), help="Hub URL")
+    parser.add_argument("--hub", default=os.getenv("A2A888_HUB_URL", "http://127.0.0.1:8080"), help="Hub URL")
     parser.add_argument("--key", default=os.getenv("A2A888_HUB_SHARED_KEY"), help="Shared Hub Key (if private circle)")
     parser.add_argument("--demo", action="store_true", help="Run end-to-end debate demonstration")
     args = parser.parse_args()
+
+    if not args.demo:
+        parser.error("--demo is required to register example Agents and send tasks")
 
     simulate_debate(hub_url=args.hub, shared_key=args.key)
 

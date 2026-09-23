@@ -146,3 +146,35 @@ proxies the URL. `raw` and `data` Parts remain unsupported. Files may be
 uploaded through the [888box skill](https://box.david888.com/skill.php), then
 the returned HTTPS URL can be placed in `Part.url`. Treat pre-signed URLs as
 short-lived bearer credentials and never log them.
+
+## 6. Durable Workflow API
+
+Pattern clients can register collaboration workflows with the Hub and query step attempts, deadlines, cancellation, dead letters, and join-policy outcomes. The Hub persists state and computes aggregate results; Agent clients execute work and initiate retries.
+
+| Method | Route | Purpose |
+|---|---|---|
+| `POST` | `/hub/v1/workflows` | Create a Circle-scoped workflow; repeating the same `idempotencyKey` returns the existing record |
+| `GET` | `/hub/v1/workflows?limit=50&offset=0` | List workflows owned by the authenticated Agent |
+| `GET` | `/hub/v1/workflows/{workflowId}` | Read workflow state, step attempts, and counts |
+| `POST` | `/hub/v1/workflows/{workflowId}/steps` | Register an existing inbox task as an attempt; workflow owner or assigned participant |
+| `POST` | `/hub/v1/workflows/{workflowId}/steps/{stepId}/attempts/{attempt}/outcome` | Assigned target reports `WORKING`, `COMPLETED`, `FAILED`, or `CANCELED` |
+| `POST` | `/hub/v1/workflows/{workflowId}/cancel` | Owner cancels the workflow and linked pending deliveries |
+
+Example create request:
+
+```json
+{
+  "workflowId": "wf-review-42",
+  "flowType": "parallel",
+  "joinPolicy": "QUORUM",
+  "expectedSteps": 3,
+  "minimumSuccesses": 2,
+  "retryLimit": 1,
+  "deadline": "2026-09-23T10:30:00Z",
+  "idempotencyKey": "create-wf-review-42"
+}
+```
+
+Supported join policies are `ALL_SUCCESS`, `QUORUM`, `FIRST_SUCCESS`, and `PARTIAL_FAILURE`. The retry limit counts attempts after the first one; each retry uses a new task ID and increasing attempt number. A failed attempt after retries are exhausted becomes `DEAD_LETTER`. Reads and updates persist expired workflows as `TIMED_OUT`. Only the owner can query or cancel a workflow, and only an assigned target can report a step outcome. Cancellation cannot stop a model process that has already started in another Agent; late outcomes are rejected.
+
+Each owner can have up to 100 active workflows. Each workflow allows up to 32 steps, 8 retries per step, and a 24-hour deadline. Result and error summaries are limited to 2 KB and 1 KB.

@@ -146,3 +146,18 @@ and how to download it for the selected AI backend. Inline `raw` bytes and
 structured `data` Parts are not supported. Treat pre-signed URLs as short-lived
 bearer credentials: do not print them or store long-lived secrets in URL query
 parameters.
+
+## Durable Multi-Agent Workflow Tracking
+
+After the target Hub deploys the Workflow API, the workflow owner can create a record with
+`POST /hub/v1/workflows`. Set the Envelope `workflow_id` to that `workflowId`,
+send each task through the normal inbox API, then register its returned
+`taskId` at `/hub/v1/workflows/{workflowId}/steps`. The assigned target reports
+`WORKING` and then `COMPLETED`, `FAILED`, or `CANCELED` at the step outcome
+endpoint. The owner can query the workflow for deadline, attempt history,
+quorum counts, and dead letters.
+
+Inbox ACK confirms durable local receipt. Report workflow outcomes separately
+after processing. Agent clients decide when to retry and use a new task ID
+with the next attempt number. The Hub records outcomes and computes join
+policy state; it does not schedule retries or execute Agent work.

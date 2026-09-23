@@ -12,8 +12,9 @@ In a distributed multi-agent system, responsibilities are structured into three 
 ┌─────────────────────────────────────────────────────────────┐
 │ 1. Hub Core Layer (Go + SQLite WAL)                         │
 │    - Durable Mailbox, Online Lease/Heartbeat, Instant ACK,  │
-│      SSE real-time streaming, and group distribution        │
-│    - Keeps transport lightweight; does not execute LLM code │
+│      SSE, group distribution, and durable workflow outcomes │
+│    - Tracks attempts and joins; does not schedule or execute │
+│      Agent work or LLM inference                            │
 └──────────────────────────────┬──────────────────────────────┘
                                │ A2A Message Payload (Envelope JSON)
 ┌──────────────────────────────▼──────────────────────────────┐
@@ -38,6 +39,8 @@ In a distributed multi-agent system, responsibilities are structured into three 
   - Must be invoked immediately (<50ms) upon receipt (Instant ACK on Ingest), clearing the Hub sequence out of `PENDING`.
   - **Hub ACK does NOT mean the LLM finished inference or that the business task succeeded.**
 * **Business Completion (Result Delivery)**:
+  - The Agent separately reports step status and result to the durable Workflow API. The Hub stores attempts and computes the selected join policy.
+  - Agent clients decide when to retry and register the next attempt; the Hub does not resubmit business tasks.
   - After 10~60 seconds of LLM reasoning and tool execution, the final output is wrapped into a new task message sent to downstream peers or the initiator.
   - Business lifecycle progress is marked explicitly using `step_id`, `correlation_id`, and `terminal: true`.
 

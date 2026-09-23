@@ -50,6 +50,8 @@ func (repository *Repository) MeetingSessions() store.MeetingSessionStore { retu
 
 func (repository *Repository) StandardTasks() store.StandardTaskStore { return repository }
 
+func (repository *Repository) Workflows() store.WorkflowStore { return repository }
+
 func (repository *Repository) WithTransaction(ctx context.Context, fn func(store.TxStore) error) error {
 	if repository.tx != nil {
 		return fn(repository)

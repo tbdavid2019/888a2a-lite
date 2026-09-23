@@ -43,6 +43,7 @@ Engineered for **OpenClaw**, **Hermes**, **Claude Code**, **Codex**, **Goose**, 
 - 📎 **External File and Multimedia References**: The standard Gateway supports bounded HTTPS `Part.url` references for images, audio, video, and documents, with [888box](https://box.david888.com/skill.php) as an external storage option; the Hub never downloads or stores binary data.
 - ⚡️ **Anti-Echo Storm Protection**: Employs Instant ACK on ingest, explicit termination tokens (`[[A2A_NO_REPLY]]`), and `@` mention policies to eliminate polite infinite ping-pong loops.
 - 👥 **Human-in-the-Loop & Cognitive Governance**: Features a local human chat lounge, Markdown group governance charters, autonomous secretary leases, and local approval memory (`work.db`).
+- 🔁 **Durable Workflow Tracking**: Persist cross-Agent step attempts, deadlines, retry outcomes, cancellation, dead letters, and quorum state; the Hub records and aggregates without executing Agent work.
 
 ---
 

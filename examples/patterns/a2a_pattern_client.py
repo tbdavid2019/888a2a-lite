@@ -14,6 +14,7 @@ Supports:
 import json
 import sys
 import time
+from datetime import datetime, timedelta, timezone
 import urllib.error
 import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
@@ -27,7 +28,7 @@ class PatternHubClient:
 
     def __init__(
         self,
-        hub_url: str = "https://a2a.david888.com",
+        hub_url: str = "http://127.0.0.1:8080",
         agent_id: Optional[str] = None,
         token: Optional[str] = None,
         shared_key: Optional[str] = None,
@@ -38,6 +39,19 @@ class PatternHubClient:
         self.token = token
         self.shared_key = shared_key
         self.circle_id = circle_id
+        self._workflow_create_requests: Dict[str, Dict[str, Any]] = {}
+
+    def _request_json(self, url: str, method: str = "GET", body: Optional[Dict[str, Any]] = None, timeout: float = 15.0) -> Dict[str, Any]:
+        payload = None if body is None else json.dumps(body, ensure_ascii=False).encode("utf-8")
+        req = urllib.request.Request(url, data=payload, headers=self._headers(), method=method)
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as err:
+            detail = err.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"Hub request failed: HTTP {err.code}: {detail}") from err
+        except Exception as err:
+            raise RuntimeError(f"Hub request failed: {err}") from err
 
     def _headers(self, auth: bool = True) -> Dict[str, str]:
         h = {
@@ -141,6 +155,95 @@ class PatternHubClient:
             context_id=envelope.correlation_id,
             task_id=task_id,
         )
+
+    def create_workflow(
+        self,
+        workflow_id: str,
+        flow_type: str,
+        expected_steps: int,
+        join_policy: str = "ALL_SUCCESS",
+        minimum_successes: Optional[int] = None,
+        retry_limit: int = 0,
+        deadline_seconds: float = 300.0,
+    ) -> Dict[str, Any]:
+        """Create a durable Hub workflow with bounded lifetime and retries."""
+        if not self.agent_id or not self.token:
+            raise RuntimeError("register an Agent before creating a workflow")
+        if workflow_id in self._workflow_create_requests:
+            previous = self._workflow_create_requests[workflow_id]
+            min_success = expected_steps if minimum_successes is None else minimum_successes
+            if (
+                previous["flowType"] != flow_type
+                or previous["joinPolicy"] != join_policy
+                or previous["expectedSteps"] != expected_steps
+                or previous["minimumSuccesses"] != min_success
+                or previous["retryLimit"] != retry_limit
+            ):
+                raise ValueError("workflow_id is already bound to a different create request")
+            return self._request_json(
+                f"{self.hub_url}/hub/v1/workflows",
+                method="POST",
+                body=self._workflow_create_requests[workflow_id],
+            )
+        min_success = expected_steps if minimum_successes is None else minimum_successes
+        body = {
+            "workflowId": workflow_id,
+            "flowType": flow_type,
+            "joinPolicy": join_policy,
+            "expectedSteps": expected_steps,
+            "minimumSuccesses": min_success,
+            "retryLimit": retry_limit,
+            "deadline": (datetime.now(timezone.utc) + timedelta(seconds=deadline_seconds)).isoformat(),
+            "idempotencyKey": f"create-{workflow_id}",
+        }
+        self._workflow_create_requests[workflow_id] = body
+        return self._request_json(f"{self.hub_url}/hub/v1/workflows", method="POST", body=body)
+
+    def register_workflow_attempt(
+        self,
+        workflow_id: str,
+        step_id: str,
+        target_agent_id: str,
+        task_id: str,
+        attempt: int = 1,
+    ) -> Dict[str, Any]:
+        """Link an existing durable inbox task to a workflow step attempt."""
+        body = {
+            "stepId": step_id,
+            "targetAgentId": target_agent_id,
+            "taskId": task_id,
+            "attempt": attempt,
+            "idempotencyKey": f"{workflow_id}-{step_id}-{attempt}",
+        }
+        url = f"{self.hub_url}/hub/v1/workflows/{quote(workflow_id, safe='')}/steps"
+        return self._request_json(url, method="POST", body=body)
+
+    def report_workflow_outcome(
+        self,
+        workflow_id: str,
+        step_id: str,
+        attempt: int,
+        state: str,
+        result: str = "",
+        error: str = "",
+    ) -> Dict[str, Any]:
+        """Report WORKING or a terminal attempt outcome to the Hub."""
+        body = {"state": state, "result": result, "error": error}
+        url = f"{self.hub_url}/hub/v1/workflows/{quote(workflow_id, safe='')}/steps/{quote(step_id, safe='')}/attempts/{attempt}/outcome"
+        return self._request_json(url, method="POST", body=body)
+
+    def get_workflow(self, workflow_id: str) -> Dict[str, Any]:
+        url = f"{self.hub_url}/hub/v1/workflows/{quote(workflow_id, safe='')}"
+        return self._request_json(url)
+
+    def list_workflows(self, limit: int = 50, offset: int = 0) -> Dict[str, Any]:
+        """List workflows owned by this Agent for restart recovery and inspection."""
+        url = f"{self.hub_url}/hub/v1/workflows?limit={max(1, min(int(limit), 100))}&offset={max(0, int(offset))}"
+        return self._request_json(url)
+
+    def cancel_workflow(self, workflow_id: str) -> Dict[str, Any]:
+        url = f"{self.hub_url}/hub/v1/workflows/{quote(workflow_id, safe='')}/cancel"
+        return self._request_json(url, method="POST", body={})
 
     def list_agents(self, online_only: bool = True) -> List[Dict[str, Any]]:
         """List peer agents on Hub, optionally filtering for online presence."""

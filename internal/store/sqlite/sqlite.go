@@ -123,6 +123,9 @@ func (database *DB) migrate(ctx context.Context) error {
 	if err := migrateMeetingSession(ctx, database.db); err != nil {
 		return err
 	}
+	if err := migrateWorkflows(ctx, database.db); err != nil {
+		return err
+	}
 	for _, column := range []struct{ table, name, ddl string }{
 		{table: "inbox_item", name: "protocol", ddl: "TEXT NOT NULL DEFAULT ''"},
 		{table: "inbox_item", name: "message_id", ddl: "TEXT NOT NULL DEFAULT ''"},

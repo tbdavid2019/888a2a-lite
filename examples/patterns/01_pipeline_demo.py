@@ -54,8 +54,15 @@ def simulate_pipeline(hub_url: str, shared_key: str = None):
     print(f"  [✓] Auditor registered:   {auditor.agent_id}")
 
     # 2. Initiator creates workflow envelope and dispatches to Drafter
-    workflow_id = f"wf-pipeline-{int(time.time())}"
-    correlation_id = f"corr-{int(time.time())}"
+    workflow_id = f"wf-pipeline-{time.time_ns()}"
+    correlation_id = f"corr-{time.time_ns()}"
+    initiator.create_workflow(
+        workflow_id=workflow_id,
+        flow_type="pipeline",
+        expected_steps=2,
+        join_policy="ALL_SUCCESS",
+        retry_limit=1,
+    )
 
     initial_envelope = Envelope(
         workflow_id=workflow_id,
@@ -72,7 +79,8 @@ def simulate_pipeline(hub_url: str, shared_key: str = None):
     )
 
     print(f"\n[Step 1] Initiator dispatching initial task to Drafter ({drafter.agent_id})...")
-    initiator.send_envelope(drafter.agent_id, initial_envelope)
+    draft_task = initiator.send_envelope(drafter.agent_id, initial_envelope)
+    initiator.register_workflow_attempt(workflow_id, "draft", drafter.agent_id, draft_task["taskId"])
 
     # 3. Drafter polls inbox, ACKs immediately, processes, and hands off to Auditor
     print("\n[Step 2] Drafter receiving task...")
@@ -90,6 +98,7 @@ def simulate_pipeline(hub_url: str, shared_key: str = None):
     item = items[0]
     seq = item.get("sequence")
     drafter.ack_task(seq)
+    drafter.report_workflow_outcome(workflow_id, "draft", 1, "WORKING")
     print(f"  [✓] Drafter instant ACK sent for sequence #{seq}")
 
     req_env = Envelope.from_json(item.get("message", ""))
@@ -114,7 +123,9 @@ def simulate_pipeline(hub_url: str, shared_key: str = None):
         }
     )
     print(f"  [✓] Drafter completed draft. Forwarding to Auditor ({auditor.agent_id})...")
-    drafter.send_envelope(auditor.agent_id, audit_envelope)
+    drafter.report_workflow_outcome(workflow_id, "draft", 1, "COMPLETED", result="draft generated")
+    audit_task = drafter.send_envelope(auditor.agent_id, audit_envelope)
+    drafter.register_workflow_attempt(workflow_id, "audit", auditor.agent_id, audit_task["taskId"])
 
     # 4. Auditor polls inbox, ACKs immediately, reviews, sets terminal=True, returns to Initiator
     print("\n[Step 3] Auditor receiving draft...")
@@ -131,6 +142,7 @@ def simulate_pipeline(hub_url: str, shared_key: str = None):
     audit_item = audit_items[0]
     audit_seq = audit_item.get("sequence")
     auditor.ack_task(audit_seq)
+    auditor.report_workflow_outcome(workflow_id, "audit", 1, "WORKING")
     print(f"  [✓] Auditor instant ACK sent for sequence #{audit_seq}")
 
     auditor_env = Envelope.from_json(audit_item.get("message", ""))
@@ -157,6 +169,7 @@ def simulate_pipeline(hub_url: str, shared_key: str = None):
         terminal=True  # Terminal flag triggers Anti-Echo Guard
     )
     print(f"  [✓] Auditor review passed. Returning final result to Initiator ({initiator.agent_id})...")
+    auditor.report_workflow_outcome(workflow_id, "audit", 1, "COMPLETED", result="audit approved")
     auditor.send_envelope(initiator.agent_id, final_envelope)
 
     # 5. Initiator collects final result
@@ -174,13 +187,19 @@ def simulate_pipeline(hub_url: str, shared_key: str = None):
     else:
         print("[!] Initiator did not receive final envelope within timeout.")
 
+    workflow = initiator.get_workflow(workflow_id)
+    print(f"  Hub Workflow:   {workflow['state']} ({workflow['counts']['completed']}/{workflow['counts']['expected']} steps)")
+
 
 def main():
     parser = argparse.ArgumentParser(description="A2A Pattern 01: Sequential Pipeline")
-    parser.add_argument("--hub", default=os.getenv("A2A888_HUB_URL", "https://a2a.david888.com"), help="Hub URL")
+    parser.add_argument("--hub", default=os.getenv("A2A888_HUB_URL", "http://127.0.0.1:8080"), help="Hub URL")
     parser.add_argument("--key", default=os.getenv("A2A888_HUB_SHARED_KEY"), help="Shared Hub Key (if private circle)")
     parser.add_argument("--demo", action="store_true", help="Run end-to-end 3-agent pipeline demonstration")
     args = parser.parse_args()
+
+    if not args.demo:
+        parser.error("--demo is required to register example Agents and send tasks")
 
     simulate_pipeline(hub_url=args.hub, shared_key=args.key)
 

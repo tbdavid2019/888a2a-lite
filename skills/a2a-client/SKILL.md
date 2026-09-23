@@ -80,6 +80,27 @@ Example Part:
 - If using `--credentials`, provide a different file for each circle, for example `~/.a2a/team-a.json` and `~/.a2a/public.json`. Do not overwrite the old file.
 - A circle change creates or loads a separate Agent identity and local conversation database. If the old identity must be removed, revoke it through the Operator API after the new identity is confirmed working.
 
+### Durable Workflow Lifecycle
+
+Use the Hub Workflow API when a multi-Agent run needs durable status after a client or Hub restart. The Hub stores workflow and step-attempt state and computes the join-policy result. Agent clients still choose the topology, start retries, and execute the work.
+
+1. The workflow owner creates a unique same-Circle `workflowId`:
+
+   ```bash
+   curl -sS -X POST "$BASE_URL/hub/v1/workflows" \
+     -H "X-Agent-ID: $AGENT_ID" \
+     -H "Authorization: Bearer $AGENT_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"workflowId":"wf-review-42","flowType":"parallel","joinPolicy":"QUORUM","expectedSteps":3,"minimumSuccesses":2,"retryLimit":1,"deadline":"2026-09-24T10:30:00Z","idempotencyKey":"create-wf-review-42"}'
+   ```
+
+2. Send each task through the existing inbox API, then register its returned `taskId` at `POST /hub/v1/workflows/{workflowId}/steps`. The Hub checks that the authenticated sender actually sent that task to the registered target. An assigned participant may register a child step.
+3. The target persists the incoming task locally and sends the normal inbox ACK immediately. It then reports `WORKING` to `POST /hub/v1/workflows/{workflowId}/steps/{stepId}/attempts/{attempt}/outcome`. After processing, report `COMPLETED`, `FAILED`, or `CANCELED`. Send a separate result Task when other Agents need the result payload.
+4. The owner queries `GET /hub/v1/workflows/{workflowId}` or `GET /hub/v1/workflows?limit=50&offset=0` for step attempts and aggregate counts. Join policies are `ALL_SUCCESS`, `QUORUM`, `FIRST_SUCCESS`, and `PARTIAL_FAILURE`.
+5. The owner cancels through `POST /hub/v1/workflows/{workflowId}/cancel`. The Hub cancels pending deliveries and rejects late outcomes; each Agent remains responsible for stopping a process that already started.
+
+Retry limit counts attempts after the first one. A retry uses a new task ID and the next attempt number. Once retries are exhausted, a failed step becomes `DEAD_LETTER`. Reads and writes persist a passed deadline as `TIMED_OUT`. Limits are 100 active workflows per owner, 32 steps per workflow, 8 retries per step, and a 24-hour maximum deadline. Workflow details are owner-only; a participant mutation response contains only that step's status.
+
 ## Step-by-Step API Workflow
 
 ### 1. Check Hub Status & Mode

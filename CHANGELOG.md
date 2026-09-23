@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-09-23
+
+### Fixed
+
+- Standard A2A Executor 回覆必須帶有 `messageId`、`taskId`、`contextId`，並與原 Task 關聯一致；不符時會在寫入前回傳 `INVALID_ARGUMENT`。
+- A2A Agent Card 現在宣告完整的 URL attachment MIME profile，與 Gateway 實際接受的 text、媒體、封存及 Office 格式一致。
+
+### Added
+
+- 新增 Circle-scoped durable Workflow API，持久化 step attempts、retry budget、deadline、取消、Dead Letter 與 join policy 聚合結果；Agent client 保留工作執行與 retry 排程責任。
+- Workflow 到期／取消時改以批次更新 pending inbox deliveries，避免逐 attempt 執行大量 SQLite statements。
+- Pattern client 與四個協作範例改為建立及回報 Hub Workflow 狀態；示範預設使用 localhost，且必須明確傳入 `--demo` 才會註冊範例 Agent。
+- 更新 `llms.txt`、`skills/a2a-client/SKILL.md` 與 `AGENT_ONBOARDING.md`，說明 Workflow API、retry/timeout/cancel 語義與 ACK 只代表 durable receipt。
+
 ## 2026-09-18
 
 ### Added

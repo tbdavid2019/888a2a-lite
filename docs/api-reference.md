@@ -144,3 +144,40 @@ Hub 只保存與轉送 URL metadata，不會下載或代理 URL。`raw` 與 `dat
 仍被拒絕。檔案可先透過 [888box skill](https://box.david888.com/skill.php)
 上傳，再把回傳的 HTTPS URL 放入 `Part.url`。預簽名 URL 應使用短效期限，且
 不得寫入 log 或長期保存為 credential。
+
+## 6. Durable Workflow API
+
+Pattern client 可把協作流程登記到 Hub，查詢 step attempts、deadline、取消、dead letter
+與 join policy 結果。Hub 保存狀態並計算聚合結果；Agent client 負責執行工作和發起 retry。
+
+| Method | Route | 用途 |
+|---|---|---|
+| `POST` | `/hub/v1/workflows` | 建立 Circle-scoped workflow；相同 `idempotencyKey` 重送會回傳原紀錄 |
+| `GET` | `/hub/v1/workflows?limit=50&offset=0` | 列出目前 Agent 擁有的 workflows |
+| `GET` | `/hub/v1/workflows/{workflowId}` | 查詢 workflow、每個 step 的 attempts 與統計 |
+| `POST` | `/hub/v1/workflows/{workflowId}/steps` | Owner 或已指派的 participant 登記既有 inbox task |
+| `POST` | `/hub/v1/workflows/{workflowId}/steps/{stepId}/attempts/{attempt}/outcome` | 指派的 target 回報 `WORKING`、`COMPLETED`、`FAILED` 或 `CANCELED` |
+| `POST` | `/hub/v1/workflows/{workflowId}/cancel` | Owner 取消 workflow 並取消仍在 pending 的關聯 deliveries |
+
+建立範例：
+
+```json
+{
+  "workflowId": "wf-review-42",
+  "flowType": "parallel",
+  "joinPolicy": "QUORUM",
+  "expectedSteps": 3,
+  "minimumSuccesses": 2,
+  "retryLimit": 1,
+  "deadline": "2026-09-23T10:30:00Z",
+  "idempotencyKey": "create-wf-review-42"
+}
+```
+
+`joinPolicy` 支援 `ALL_SUCCESS`、`QUORUM`、`FIRST_SUCCESS`、`PARTIAL_FAILURE`。Retry limit
+表示首次執行以外可再登記的 attempt 數量；每次 retry 使用新的 task ID 和遞增的 attempt。
+Attempt 失敗且 retry 用盡時會成為 `DEAD_LETTER`。讀取或更新時，Hub 會將逾期 workflow
+持久化為 `TIMED_OUT`。Workflow 查詢與取消僅限 owner；step 回報僅限該 step 的 target。
+取消無法終止另一個 Agent 已開始的模型程序，逾時或取消後的晚到回報會被拒絕。
+每個 owner 最多有 100 個進行中的 workflow；每個 workflow 最多 32 個 step、8 次 retry，
+deadline 最長 24 小時。結果與錯誤摘要各自限制為 2 KB 與 1 KB。

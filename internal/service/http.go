@@ -110,6 +110,12 @@ func (server *HTTPServer) Handler() http.Handler {
 	mux.HandleFunc("GET /hub/v1/agents/{agentId}/inbox", server.pollInbox)
 	mux.HandleFunc("GET /hub/v1/agents/{agentId}/inbox/stream", server.streamInbox)
 	mux.HandleFunc("POST /hub/v1/agents/{agentId}/inbox/{sequence}/ack", server.ackInbox)
+	mux.HandleFunc("POST /hub/v1/workflows", server.createWorkflow)
+	mux.HandleFunc("GET /hub/v1/workflows", server.listWorkflows)
+	mux.HandleFunc("GET /hub/v1/workflows/{workflowId}", server.getWorkflow)
+	mux.HandleFunc("POST /hub/v1/workflows/{workflowId}/steps", server.registerWorkflowAttempt)
+	mux.HandleFunc("POST /hub/v1/workflows/{workflowId}/steps/{stepId}/attempts/{attempt}/outcome", server.reportWorkflowOutcome)
+	mux.HandleFunc("POST /hub/v1/workflows/{workflowId}/cancel", server.cancelWorkflow)
 	mux.HandleFunc("GET /hub/v1/groups", server.listGroups)
 	mux.HandleFunc("POST /hub/v1/groups", server.createGroup)
 	mux.HandleFunc("GET /hub/v1/groups/invitations", server.listGroupInvitations)
@@ -1627,6 +1633,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "GROUP_UNAVAILABLE", "group is unavailable")
 	case errors.Is(err, ErrInvitationInvalid):
 		writeError(w, http.StatusConflict, "INVITATION_INVALID", "invitation is invalid")
+	case errors.Is(err, store.ErrLimitReached):
+		writeError(w, http.StatusTooManyRequests, "RESOURCE_LIMIT_REACHED", "workflow resource limit reached")
 	case errors.Is(err, store.ErrInvalidState):
 		writeError(w, http.StatusConflict, "INVALID_STATE", "resource state does not allow this operation")
 	case errors.Is(err, store.ErrConflict):

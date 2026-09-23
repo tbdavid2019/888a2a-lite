@@ -120,9 +120,17 @@ def simulate_supervisor_router(hub_url: str, shared_key: str = None):
         print(f"  [✓] Router matched best agent: '{target_name}' ({target_id}) for {req_caps}")
 
         # Send Task via Structured Envelope
-        corr_id = f"corr-{req['id']}-{int(time.time())}"
+        workflow_id = f"wf-{req['id']}-{time.time_ns()}"
+        corr_id = f"corr-{req['id']}-{time.time_ns()}"
+        supervisor.create_workflow(
+            workflow_id=workflow_id,
+            flow_type="supervisor",
+            expected_steps=1,
+            join_policy="ALL_SUCCESS",
+            retry_limit=1,
+        )
         dispatch_env = Envelope(
-            workflow_id=f"wf-{req['id']}",
+            workflow_id=workflow_id,
             correlation_id=corr_id,
             flow_type="supervisor",
             step_id=f"delegated_{req['id']}",
@@ -132,7 +140,8 @@ def simulate_supervisor_router(hub_url: str, shared_key: str = None):
             payload={"request": req["desc"], "supervisor_id": supervisor.agent_id}
         )
 
-        supervisor.send_envelope(target_id, dispatch_env)
+        sent = supervisor.send_envelope(target_id, dispatch_env)
+        supervisor.register_workflow_attempt(workflow_id, dispatch_env.step_id, target_id, sent["taskId"])
         print(f"  [➔] Dispatched envelope to {target_name}")
 
         # Worker Receives, Instant ACKs, and Delivers Result
@@ -144,6 +153,7 @@ def simulate_supervisor_router(hub_url: str, shared_key: str = None):
             w_seq = w_item.get("sequence")
             # Instant ACK on Ingest (<50ms)
             worker_client.ack_task(w_seq)
+            worker_client.report_workflow_outcome(workflow_id, dispatch_env.step_id, 1, "WORKING")
             print(f"  [✓] Worker '{target_name}' instant ACK sent for seq #{w_seq}")
 
             w_env = Envelope.from_json(w_item.get("message", ""))
@@ -153,6 +163,13 @@ def simulate_supervisor_router(hub_url: str, shared_key: str = None):
                 payload={"result": req["mock_output"]},
                 terminal=False
             )
+            worker_client.report_workflow_outcome(
+                workflow_id,
+                dispatch_env.step_id,
+                1,
+                "COMPLETED",
+                result=req["mock_output"],
+            )
             worker_client.send_envelope(supervisor.agent_id, result_env)
             print(f"  [✓] Worker '{target_name}' computed result and returned to Supervisor.")
 
@@ -161,6 +178,7 @@ def simulate_supervisor_router(hub_url: str, shared_key: str = None):
         if sup_envs:
             res_payload = sup_envs[0].payload
             print(f"  🎉 Supervisor verified output from {target_name}: {res_payload.get('result')}")
+        print(f"  Hub workflow state: {supervisor.get_workflow(workflow_id)['state']}")
 
     print("\n" + "=" * 60)
     print(" [✓] Supervisor dynamic routing demonstration complete!")
@@ -169,10 +187,13 @@ def simulate_supervisor_router(hub_url: str, shared_key: str = None):
 
 def main():
     parser = argparse.ArgumentParser(description="A2A Pattern 03: Supervisor / Dynamic Router")
-    parser.add_argument("--hub", default=os.getenv("A2A888_HUB_URL", "https://a2a.david888.com"), help="Hub URL")
+    parser.add_argument("--hub", default=os.getenv("A2A888_HUB_URL", "http://127.0.0.1:8080"), help="Hub URL")
     parser.add_argument("--key", default=os.getenv("A2A888_HUB_SHARED_KEY"), help="Shared Hub Key (if private circle)")
     parser.add_argument("--demo", action="store_true", help="Run end-to-end supervisor router demonstration")
     args = parser.parse_args()
+
+    if not args.demo:
+        parser.error("--demo is required to register example Agents and send tasks")
 
     simulate_supervisor_router(hub_url=args.hub, shared_key=args.key)
 
