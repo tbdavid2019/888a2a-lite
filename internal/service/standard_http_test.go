@@ -37,7 +37,7 @@ func TestStandardGatewayUsesBearerTenantAndSeparateEnvelopes(t *testing.T) {
 	}
 
 	card := doStandardRequest(t, handler, http.MethodGet, "/.well-known/agent-card.json", "", nil)
-	if card.Code != http.StatusOK || !strings.Contains(card.Body.String(), `"protocolBinding":"HTTP+JSON"`) || !strings.Contains(card.Body.String(), `"image/*"`) || strings.Contains(card.Body.String(), `"raw"`) {
+	if card.Code != http.StatusOK || !strings.Contains(card.Body.String(), `"protocolBinding":"HTTP+JSON"`) || !strings.Contains(card.Body.String(), `"image/*"`) || !strings.Contains(card.Body.String(), `"application/zip"`) || !strings.Contains(card.Body.String(), `"raw"`) {
 		t.Fatalf("gateway card = %d/%s", card.Code, card.Body.String())
 	}
 	perAgentCard := doStandardRequest(t, handler, http.MethodGet, "/a2a/v1/agents/"+target.AgentID+"/card", target.AgentToken, nil)
@@ -81,7 +81,17 @@ func TestStandardGatewayUsesBearerTenantAndSeparateEnvelopes(t *testing.T) {
 	if invalidUpdated.Code != http.StatusBadRequest || !strings.Contains(invalidUpdated.Body.String(), `"reason":"CONTENT_TYPE_NOT_SUPPORTED"`) {
 		t.Fatalf("invalid artifact update = %d/%s", invalidUpdated.Code, invalidUpdated.Body.String())
 	}
-	update := map[string]any{"updateId": "update-1", "turnId": inboxBody.Items[0].TurnID, "expectedRevision": 2, "state": string(a2a.TaskStateCompleted), "message": map[string]any{"messageId": "reply-1", "contextId": "context-1", "taskId": sentResponse.Task.ID, "role": "ROLE_AGENT", "parts": []any{map[string]any{"text": "done"}}}, "artifacts": []any{map[string]any{"artifactId": "artifact-1", "name": "processed asset", "parts": []any{map[string]any{"url": "https://box.david888.com/storage/processed.pdf", "filename": "processed.pdf", "mediaType": "application/pdf"}}}}}
+	missingReplyID := map[string]any{"updateId": "update-missing-message-id", "turnId": inboxBody.Items[0].TurnID, "expectedRevision": 2, "state": string(a2a.TaskStateCompleted), "message": map[string]any{"role": "ROLE_AGENT", "parts": []any{map[string]any{"text": "done"}}}}
+	missingReplyIDResponse := doStandardRequest(t, handler, http.MethodPost, "/hub/v1/a2a/tasks/"+sentResponse.Task.ID+"/updates", target.AgentToken, missingReplyID)
+	if missingReplyIDResponse.Code != http.StatusBadRequest || !strings.Contains(missingReplyIDResponse.Body.String(), "messageId is required") {
+		t.Fatalf("missing reply messageId = %d/%s", missingReplyIDResponse.Code, missingReplyIDResponse.Body.String())
+	}
+	mismatchedReply := map[string]any{"updateId": "update-mismatched-reply", "turnId": inboxBody.Items[0].TurnID, "expectedRevision": 2, "state": string(a2a.TaskStateCompleted), "message": map[string]any{"messageId": "reply-mismatch", "contextId": "wrong-context", "taskId": sentResponse.Task.ID, "role": "ROLE_AGENT", "parts": []any{map[string]any{"text": "done"}}}}
+	mismatchedReplyResponse := doStandardRequest(t, handler, http.MethodPost, "/hub/v1/a2a/tasks/"+sentResponse.Task.ID+"/updates", target.AgentToken, mismatchedReply)
+	if mismatchedReplyResponse.Code != http.StatusBadRequest || !strings.Contains(mismatchedReplyResponse.Body.String(), "must match the task") {
+		t.Fatalf("mismatched reply correlation = %d/%s", mismatchedReplyResponse.Code, mismatchedReplyResponse.Body.String())
+	}
+	update := map[string]any{"updateId": "update-1", "turnId": inboxBody.Items[0].TurnID, "expectedRevision": 2, "state": string(a2a.TaskStateCompleted), "message": map[string]any{"messageId": "reply-1", "contextId": sentResponse.Task.ContextID, "taskId": sentResponse.Task.ID, "role": "ROLE_AGENT", "parts": []any{map[string]any{"text": "done"}}}, "artifacts": []any{map[string]any{"artifactId": "artifact-1", "name": "processed asset", "parts": []any{map[string]any{"url": "https://box.david888.com/storage/processed.pdf", "filename": "processed.pdf", "mediaType": "application/pdf"}}}}}
 	updated := doStandardRequest(t, handler, http.MethodPost, "/hub/v1/a2a/tasks/"+sentResponse.Task.ID+"/updates", target.AgentToken, update)
 	if updated.Code != http.StatusOK || !strings.Contains(updated.Body.String(), string(a2a.TaskStateCompleted)) || !strings.Contains(updated.Body.String(), "processed.pdf") {
 		t.Fatalf("standard update = %d/%s", updated.Code, updated.Body.String())

@@ -239,5 +239,12 @@ func supportedURLMediaType(mediaType string) bool {
 }
 
 func URLAttachmentInputModes() []string {
-	return []string{"text/plain", "image/*", "audio/*", "video/*", "application/pdf", "application/octet-stream"}
+	return []string{
+		"text/plain", "text/csv", "image/*", "audio/*", "video/*", "application/pdf",
+		"application/octet-stream", "application/zip", "application/gzip", "application/rtf",
+		"application/msword", "application/vnd.ms-excel", "application/vnd.ms-powerpoint",
+		"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+		"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+		"application/vnd.openxmlformats-officedocument.presentationml.presentation",
+	}
 }

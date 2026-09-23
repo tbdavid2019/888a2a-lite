@@ -465,7 +465,7 @@ func (server *HTTPServer) standardTaskUpdate(w http.ResponseWriter, r *http.Requ
 		writeStandardError(w, &StandardError{HTTPStatus: http.StatusBadRequest, Reason: "INVALID_ARGUMENT", Message: "updateId, turnId, expectedRevision, and state are required"})
 		return
 	}
-	task, duplicate, err := server.service.ApplyStandardUpdate(r.Context(), a2a.TaskUpdate{HubID: target.HubID, TaskID: r.PathValue("taskId"), TargetAgentID: target.AgentID, UpdateID: request.UpdateID, TurnID: request.TurnID, ExpectedRevision: request.ExpectedRevision, State: request.State, Message: request.Message, Artifacts: request.Artifacts})
+	task, duplicate, err := server.service.ApplyStandardUpdate(r.Context(), a2a.TaskUpdate{HubID: target.HubID, CircleID: target.CircleID, TaskID: r.PathValue("taskId"), TargetAgentID: target.AgentID, UpdateID: request.UpdateID, TurnID: request.TurnID, ExpectedRevision: request.ExpectedRevision, State: request.State, Message: request.Message, Artifacts: request.Artifacts})
 	if err != nil {
 		writeStandardServiceError(w, err)
 		return

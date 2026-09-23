@@ -310,6 +310,19 @@ func (service *Service) ApplyStandardUpdate(ctx context.Context, update a2a.Task
 		if update.Message.Role != "ROLE_AGENT" {
 			return a2a.TaskRecord{}, false, standardError(400, "INVALID_ARGUMENT", "update.message.role must be ROLE_AGENT")
 		}
+		if strings.TrimSpace(update.Message.MessageID) == "" {
+			return a2a.TaskRecord{}, false, standardError(400, "INVALID_ARGUMENT", "update.message.messageId is required")
+		}
+		if strings.TrimSpace(update.Message.ContextID) == "" || strings.TrimSpace(update.Message.TaskID) == "" {
+			return a2a.TaskRecord{}, false, standardError(400, "INVALID_ARGUMENT", "update.message.contextId and taskId are required")
+		}
+		task, findErr := service.store.StandardTasks().FindTaskForTarget(ctx, update.HubID, update.CircleID, update.TargetAgentID, update.TaskID)
+		if findErr != nil {
+			return a2a.TaskRecord{}, false, standardError(404, "TASK_NOT_FOUND", "task not found")
+		}
+		if update.Message.TaskID != task.ID || update.Message.ContextID != task.ContextID {
+			return a2a.TaskRecord{}, false, standardError(400, "INVALID_ARGUMENT", "update.message task and context IDs must match the task")
+		}
 		if err := a2a.ValidateMessage(*update.Message, service.config.AttachmentLimits); err != nil {
 			return a2a.TaskRecord{}, false, standardValidationError(err)
 		}

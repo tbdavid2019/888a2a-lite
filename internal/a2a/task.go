@@ -40,6 +40,7 @@ type TaskFilter struct {
 
 type TaskUpdate struct {
 	HubID            string
+	CircleID         string
 	TaskID           string
 	TargetAgentID    string
 	UpdateID         string

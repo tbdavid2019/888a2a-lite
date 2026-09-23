@@ -110,6 +110,10 @@ func (repository *Repository) FindTask(ctx context.Context, hubID, circleID, req
 	return repository.findTask(ctx, `SELECT `+standardTaskColumns+` FROM a2a_task WHERE hub_id = ? AND circle_id = ? AND requester_agent_id = ? AND task_id = ?`, hubID, circleID, requesterID, taskID)
 }
 
+func (repository *Repository) FindTaskForTarget(ctx context.Context, hubID, circleID, targetAgentID, taskID string) (a2a.TaskRecord, error) {
+	return repository.findTask(ctx, `SELECT `+standardTaskColumns+` FROM a2a_task WHERE hub_id = ? AND circle_id = ? AND target_agent_id = ? AND task_id = ?`, hubID, circleID, targetAgentID, taskID)
+}
+
 func (repository *Repository) ResumeTaskWithDelivery(ctx context.Context, task a2a.TaskRecord, expectedRevision int64, item hub.InboxItem) (a2a.TaskRecord, bool, error) {
 	var result a2a.TaskRecord
 	duplicate := false

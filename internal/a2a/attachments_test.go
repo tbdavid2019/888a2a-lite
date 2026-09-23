@@ -1,6 +1,9 @@
 package a2a
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func urlPart(value, mediaType string) Part {
 	return Part{URL: &value, MediaType: mediaType, Filename: "asset.bin"}
@@ -43,6 +46,40 @@ func TestValidateArtifactsRejectsInvalidPartAtomically(t *testing.T) {
 	artifacts := []Artifact{{ArtifactID: "artifact-1", Parts: []Part{{URL: &value, MediaType: "application/x-unknown"}}}}
 	if err := ValidateArtifacts(artifacts, DefaultAttachmentLimits()); err == nil {
 		t.Fatal("ValidateArtifacts() accepted unsupported media type")
+	}
+}
+
+func TestURLAttachmentModesCoverAcceptedMediaTypes(t *testing.T) {
+	for _, mediaType := range []string{
+		"text/plain", "text/csv", "image/png", "audio/mpeg", "video/mp4",
+		"application/pdf", "application/octet-stream", "application/zip", "application/gzip",
+		"application/rtf", "application/msword", "application/vnd.ms-excel",
+		"application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+		"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+		"application/vnd.openxmlformats-officedocument.presentationml.presentation",
+	} {
+		advertised := false
+		for _, mode := range URLAttachmentInputModes() {
+			if mode == mediaType || strings.HasSuffix(mode, "/*") && strings.HasPrefix(mediaType, strings.TrimSuffix(mode, "*")) {
+				advertised = true
+				break
+			}
+		}
+		if !advertised {
+			t.Errorf("accepted MIME type %q is not advertised", mediaType)
+		}
+		part := urlPart("https://example.com/asset", mediaType)
+		if err := ValidatePart(part, DefaultAttachmentLimits()); err != nil {
+			t.Errorf("advertised MIME type %q is rejected: %v", mediaType, err)
+		}
+	}
+}
+
+func TestTextPartModeIsAdvertised(t *testing.T) {
+	text := "table"
+	part := Part{Text: &text, MediaType: "text/plain"}
+	if err := ValidatePart(part, DefaultAttachmentLimits()); err != nil {
+		t.Fatalf("ValidatePart() error = %v", err)
 	}
 }
 
