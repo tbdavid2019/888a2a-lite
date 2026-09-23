@@ -41,19 +41,19 @@ func TestWorkflowHTTPQuorumAndOwnerIsolation(t *testing.T) {
 	}
 	workers := []hub.AgentIdentity{worker1, worker2, worker3}
 	for index, worker := range workers {
-		taskID := "wf-task-" + itoa(index+1)
+		taskID := "wf-task-" + itoa(uint64(index+1))
 		_, _, err := svc.SendTask(ctx, owner.AgentID, owner.AgentToken, hub.TaskDelivery{TargetAgentID: worker.AgentID, ContextID: workflowID, IdempotencyKey: "idem-" + taskID, Message: "work", TaskID: taskID})
 		if err != nil {
 			t.Fatalf("send task %s: %v", taskID, err)
 		}
-		registration := hub.WorkflowAttemptRegistration{StepID: "step-" + itoa(index+1), TargetAgentID: worker.AgentID, TaskID: taskID, Attempt: 1, IdempotencyKey: "attempt-" + taskID}
+		registration := hub.WorkflowAttemptRegistration{StepID: "step-" + itoa(uint64(index+1)), TargetAgentID: worker.AgentID, TaskID: taskID, Attempt: 1, IdempotencyKey: "attempt-" + taskID}
 		registered := doJSON(t, handler, http.MethodPost, "/hub/v1/workflows/"+workflowID+"/steps", owner.AgentID, owner.AgentToken, registration)
 		if registered.Code != http.StatusCreated {
 			t.Fatalf("register step = %d/%s", registered.Code, registered.Body.String())
 		}
 	}
 	for index, worker := range workers[:2] {
-		outcomeURL := "/hub/v1/workflows/" + workflowID + "/steps/step-" + itoa(index+1) + "/attempts/1/outcome"
+		outcomeURL := "/hub/v1/workflows/" + workflowID + "/steps/step-" + itoa(uint64(index+1)) + "/attempts/1/outcome"
 		outcome := doJSON(t, handler, http.MethodPost, outcomeURL, worker.AgentID, worker.AgentToken, map[string]any{"state": hub.WorkflowStepCompleted, "result": "done"})
 		if outcome.Code != http.StatusOK {
 			t.Fatalf("report outcome = %d/%s", outcome.Code, outcome.Body.String())
@@ -99,7 +99,7 @@ func TestWorkflowHTTPRetryBudgetCreatesDeadLetter(t *testing.T) {
 		t.Fatalf("create retry workflow = %d/%s", created.Code, created.Body.String())
 	}
 	for attempt := 1; attempt <= 2; attempt++ {
-		taskID := "retry-task-" + itoa(attempt)
+		taskID := "retry-task-" + itoa(uint64(attempt))
 		_, _, err := svc.SendTask(ctx, owner.AgentID, owner.AgentToken, hub.TaskDelivery{TargetAgentID: worker.AgentID, ContextID: workflowID, IdempotencyKey: "idem-" + taskID, Message: "work", TaskID: taskID})
 		if err != nil {
 			t.Fatalf("send retry task: %v", err)
@@ -109,7 +109,7 @@ func TestWorkflowHTTPRetryBudgetCreatesDeadLetter(t *testing.T) {
 		if registered.Code != http.StatusCreated {
 			t.Fatalf("register attempt %d = %d/%s", attempt, registered.Code, registered.Body.String())
 		}
-		outcome := doJSON(t, handler, http.MethodPost, "/hub/v1/workflows/"+workflowID+"/steps/step/attempts/"+itoa(attempt)+"/outcome", worker.AgentID, worker.AgentToken, map[string]any{"state": hub.WorkflowStepFailed, "error": "worker failed"})
+		outcome := doJSON(t, handler, http.MethodPost, "/hub/v1/workflows/"+workflowID+"/steps/step/attempts/"+itoa(uint64(attempt))+"/outcome", worker.AgentID, worker.AgentToken, map[string]any{"state": hub.WorkflowStepFailed, "error": "worker failed"})
 		if outcome.Code != http.StatusOK {
 			t.Fatalf("report attempt %d = %d/%s", attempt, outcome.Code, outcome.Body.String())
 		}
