@@ -37,8 +37,28 @@ func TestStandardGatewayUsesBearerTenantAndSeparateEnvelopes(t *testing.T) {
 	}
 
 	card := doStandardRequest(t, handler, http.MethodGet, "/.well-known/agent-card.json", "", nil)
-	if card.Code != http.StatusOK || !strings.Contains(card.Body.String(), `"protocolBinding":"HTTP+JSON"`) || !strings.Contains(card.Body.String(), `"image/*"`) || !strings.Contains(card.Body.String(), `"application/zip"`) || !strings.Contains(card.Body.String(), `"raw"`) {
+	if card.Code != http.StatusOK || !strings.Contains(card.Body.String(), `"protocolBinding":"HTTP+JSON"`) {
 		t.Fatalf("gateway card = %d/%s", card.Code, card.Body.String())
+	}
+	var gatewayCard a2a.AgentCard
+	if err := json.NewDecoder(card.Body).Decode(&gatewayCard); err != nil {
+		t.Fatalf("decode gateway card: %v", err)
+	}
+	hasMode := func(modes []string, expected string) bool {
+		for _, mode := range modes {
+			if mode == expected {
+				return true
+			}
+		}
+		return false
+	}
+	for _, required := range []string{"image/*", "application/zip"} {
+		if !hasMode(gatewayCard.DefaultInputModes, required) || !hasMode(gatewayCard.DefaultOutputModes, required) {
+			t.Errorf("gateway card does not advertise %q in both directions", required)
+		}
+	}
+	if hasMode(gatewayCard.DefaultInputModes, "raw") || hasMode(gatewayCard.DefaultOutputModes, "raw") {
+		t.Fatal("gateway card advertises unsupported raw Parts")
 	}
 	perAgentCard := doStandardRequest(t, handler, http.MethodGet, "/a2a/v1/agents/"+target.AgentID+"/card", target.AgentToken, nil)
 	if perAgentCard.Code != http.StatusOK || !strings.Contains(perAgentCard.Body.String(), `"tenant":"`+target.AgentID+`"`) || perAgentCard.Header().Get("Cache-Control") != "private, no-store" {
