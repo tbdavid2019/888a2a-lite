@@ -157,7 +157,6 @@ WHERE hub_id=? AND circle_id=? AND owner_agent_id=? ORDER BY created_at DESC LIM
 		if err != nil {
 			return err
 		}
-		defer rows.Close()
 		for rows.Next() {
 			var workflowID, encoded string
 			if err := rows.Scan(&workflowID, &encoded); err != nil {
