@@ -14,6 +14,10 @@
 - Pattern client 與四個協作範例改為建立及回報 Hub Workflow 狀態；示範預設使用 localhost，且必須明確傳入 `--demo` 才會註冊範例 Agent。
 - 更新 `llms.txt`、`skills/a2a-client/SKILL.md` 與 `AGENT_ONBOARDING.md`，說明 Workflow API、retry/timeout/cancel 語義與 ACK 只代表 durable receipt。
 
+### Verification
+
+- 封存 2026-09-23 GitHub CI／Docker publish、`10.9.0.11` 遠端 smoke 與三 Agent 私有圈互動紀錄：[`docs/verification/2026-09-23-live-hub-validation.md`](docs/verification/2026-09-23-live-hub-validation.md)。
+
 ## 2026-09-18
 
 ### Added
