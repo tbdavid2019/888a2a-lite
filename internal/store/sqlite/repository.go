@@ -325,6 +325,15 @@ func (repository *Repository) cleanupAgentDependencies(ctx context.Context, tx *
 	_ = groupRows.Close()
 
 	for _, gid := range ownedGroups {
+		if _, err := tx.executor().ExecContext(ctx, `DELETE FROM group_charter_revision WHERE group_id = ?`, gid); err != nil {
+			return err
+		}
+		if _, err := tx.executor().ExecContext(ctx, `DELETE FROM group_secretary WHERE group_id = ?`, gid); err != nil {
+			return err
+		}
+		if _, err := tx.executor().ExecContext(ctx, `DELETE FROM meeting_session WHERE group_id = ?`, gid); err != nil {
+			return err
+		}
 		if _, err := tx.executor().ExecContext(ctx, `DELETE FROM group_delivery WHERE group_id = ?`, gid); err != nil {
 			return err
 		}
@@ -377,11 +386,22 @@ func (repository *Repository) DeleteAgent(ctx context.Context, agentID string) e
 }
 
 func (repository *Repository) PruneInactiveAgents(ctx context.Context, now time.Time) (int64, error) {
-	var pruned int64
-	err := repository.withTransaction(ctx, func(tx *Repository) error {
-		rows, err := tx.executor().QueryContext(ctx, `
+	return repository.pruneMatchingAgents(ctx, `
 SELECT agent_id FROM agent
 WHERE revoked_at IS NOT NULL OR expires_at <= ?`, formatTime(now))
+}
+
+func (repository *Repository) PruneIdleAgents(ctx context.Context, idleCutoff time.Time) (int64, error) {
+	cutoff := formatTime(idleCutoff)
+	return repository.pruneMatchingAgents(ctx, `
+SELECT agent_id FROM agent
+WHERE last_seen_at <= ? AND lease_expires_at <= ?`, cutoff, cutoff)
+}
+
+func (repository *Repository) pruneMatchingAgents(ctx context.Context, query string, args ...any) (int64, error) {
+	var pruned int64
+	err := repository.withTransaction(ctx, func(tx *Repository) error {
+		rows, err := tx.executor().QueryContext(ctx, query, args...)
 		if err != nil {
 			return err
 		}

@@ -24,6 +24,7 @@ var (
 	ErrForbidden            = errors.New("operation is not permitted")
 	ErrAgentUnavailable     = errors.New("agent is unavailable")
 	ErrAgentLimit           = errors.New("registered agent limit reached")
+	ErrCircleLimit          = errors.New("dynamic circle limit reached")
 	ErrTaskLimit            = errors.New("task limit reached")
 	ErrValidation           = errors.New("validation failed")
 	ErrCircleDisabled       = errors.New("circle is disabled")
@@ -121,23 +122,39 @@ func (service *Service) RegisterWithSharedKey(ctx context.Context, declaration h
 	if err != nil {
 		return hub.AgentIdentity{}, false, fmt.Errorf("%w: %s", ErrValidation, err.Error())
 	}
-	if err := service.ensureCircle(ctx, circleIdentity); err != nil {
-		return hub.AgentIdentity{}, false, err
-	}
 	if existing, findErr := service.store.Agents().FindAgentByRegistrationKey(ctx, circleIdentity.ID, declaration.RegistrationIdempotency); findErr == nil {
+		if err := service.ensureCircle(ctx, circleIdentity); err != nil {
+			return hub.AgentIdentity{}, false, err
+		}
 		service.audit(ctx, hub.Event{Type: hub.EventAgentRegistrationRetry, ActorAgentID: existing.AgentID})
 		return hub.AgentIdentity{HubID: existing.HubID, AgentID: existing.AgentID, CircleID: existing.CircleID, ExpiresAt: existing.ExpiresAt}, true, nil
 	} else if !errors.Is(findErr, store.ErrNotFound) {
 		return hub.AgentIdentity{}, false, findErr
 	}
 	now := service.now().UTC()
-	_, _ = service.store.Agents().PruneInactiveAgents(ctx, now)
+	_, _, _ = service.pruneStaleResourcesLocked(ctx, now)
 	count, err := service.store.Agents().CountAgents(ctx)
 	if err != nil {
 		return hub.AgentIdentity{}, false, err
 	}
 	if count >= policy.MaxRegisteredAgents {
 		return hub.AgentIdentity{}, false, ErrAgentLimit
+	}
+	if service.config.MaxCircles > 0 && circleIdentity.ID != circle.PublicID && circleIdentity.Alias == "" {
+		if _, findCircleErr := service.store.Circles().FindCircle(ctx, circleIdentity.ID); errors.Is(findCircleErr, store.ErrNotFound) {
+			dynamicCount, countErr := service.store.Circles().CountDynamicCircles(ctx, service.circleResolver.StaticCircleIDs())
+			if countErr != nil {
+				return hub.AgentIdentity{}, false, countErr
+			}
+			if dynamicCount >= service.config.MaxCircles {
+				return hub.AgentIdentity{}, false, ErrCircleLimit
+			}
+		} else if findCircleErr != nil {
+			return hub.AgentIdentity{}, false, findCircleErr
+		}
+	}
+	if err := service.ensureCircle(ctx, circleIdentity); err != nil {
+		return hub.AgentIdentity{}, false, err
 	}
 	token, err := hub.GenerateToken()
 	if err != nil {
@@ -562,16 +579,64 @@ func (service *Service) DeleteAgent(ctx context.Context, token, agentID string) 
 	return err
 }
 
+func (service *Service) pruneStaleResourcesLocked(ctx context.Context, now time.Time) (int64, int64, error) {
+	prunedAgents, err := service.store.Agents().PruneInactiveAgents(ctx, now)
+	if err != nil {
+		return 0, 0, err
+	}
+	if service.config.IdleAgentTTL > 0 {
+		idlePruned, idleErr := service.store.Agents().PruneIdleAgents(ctx, now.Add(-service.config.IdleAgentTTL))
+		if idleErr != nil {
+			return prunedAgents, 0, idleErr
+		}
+		prunedAgents += idlePruned
+	}
+	var prunedCircles int64
+	if service.config.EmptyCircleTTL > 0 {
+		prunedCircles, err = service.store.Circles().PruneEmptyCircles(ctx, now.Add(-service.config.EmptyCircleTTL), service.circleResolver.StaticCircleIDs())
+		if err != nil {
+			return prunedAgents, 0, err
+		}
+	}
+	if prunedAgents > 0 {
+		service.audit(ctx, hub.Event{Type: hub.EventAgentsPruned, Details: map[string]any{"count": prunedAgents}})
+	}
+	if prunedCircles > 0 {
+		service.audit(ctx, hub.Event{Type: hub.EventCirclesPruned, Details: map[string]any{"count": prunedCircles}})
+	}
+	return prunedAgents, prunedCircles, nil
+}
+
+// RunScheduledMaintenance executes background expiration and empty-circle cleanup.
+func (service *Service) RunScheduledMaintenance(ctx context.Context) (int64, int64, error) {
+	service.circleMu.Lock()
+	defer service.circleMu.Unlock()
+	now := service.now().UTC()
+	prunedAgents, prunedCircles, err := service.pruneStaleResourcesLocked(ctx, now)
+	if err != nil {
+		return prunedAgents, prunedCircles, err
+	}
+	_, _ = service.store.StandardTasks().ExpireStandardTasks(ctx, now)
+	return prunedAgents, prunedCircles, nil
+}
+
 func (service *Service) PruneInactiveAgents(ctx context.Context, token string) (int64, error) {
 	if err := service.AuthenticateOperator(token); err != nil {
 		return 0, err
 	}
-	now := service.now().UTC()
-	pruned, err := service.store.Agents().PruneInactiveAgents(ctx, now)
-	if err == nil && pruned > 0 {
-		service.audit(ctx, hub.Event{Type: hub.EventAgentsPruned, Details: map[string]any{"count": pruned}})
+	service.circleMu.Lock()
+	defer service.circleMu.Unlock()
+	prunedAgents, _, err := service.pruneStaleResourcesLocked(ctx, service.now().UTC())
+	return prunedAgents, err
+}
+
+func (service *Service) PruneMaintenanceAdmin(ctx context.Context, token string) (int64, int64, error) {
+	if err := service.AuthenticateOperator(token); err != nil {
+		return 0, 0, err
 	}
-	return pruned, err
+	service.circleMu.Lock()
+	defer service.circleMu.Unlock()
+	return service.pruneStaleResourcesLocked(ctx, service.now().UTC())
 }
 
 func (service *Service) ListCirclesAdmin(ctx context.Context, token string) ([]hub.Circle, error) {

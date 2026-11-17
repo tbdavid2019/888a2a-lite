@@ -12,6 +12,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strconv"
 	"strings"
@@ -1394,12 +1395,12 @@ func (server *HTTPServer) adminPruneAgents(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	pruned, err := server.service.PruneInactiveAgents(r.Context(), token)
+	prunedAgents, prunedCircles, err := server.service.PruneMaintenanceAdmin(r.Context(), token)
 	if err != nil {
 		writeServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"prunedCount": pruned})
+	writeJSON(w, http.StatusOK, map[string]any{"prunedCount": prunedAgents, "prunedCircles": prunedCircles})
 }
 
 func (server *HTTPServer) cancelTask(w http.ResponseWriter, r *http.Request) {
@@ -1640,6 +1641,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusUnauthorized, "CIRCLE_KEY_INACTIVE", "shared key is inactive")
 	case errors.Is(err, ErrAgentLimit):
 		writeError(w, http.StatusTooManyRequests, "AGENT_LIMIT_REACHED", "agent limit reached")
+	case errors.Is(err, ErrCircleLimit):
+		writeError(w, http.StatusTooManyRequests, "CIRCLE_LIMIT_REACHED", "dynamic circle limit reached")
 	case errors.Is(err, ErrTaskLimit):
 		writeError(w, http.StatusTooManyRequests, "TASK_LIMIT_REACHED", "task limit reached")
 	case errors.Is(err, ErrGroupLimit):
@@ -1683,11 +1686,44 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 	_ = json.NewEncoder(w).Encode(value)
 }
 
-func clientIP(r *http.Request) string {
-	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-		return host
+func isTrustedProxyAddr(addr netip.Addr) bool {
+	return addr.IsLoopback() || addr.IsPrivate() || addr.IsLinkLocalUnicast()
+}
+
+func parseHeaderAddr(raw string) (netip.Addr, bool) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return netip.Addr{}, false
 	}
-	return r.RemoteAddr
+	addr, err := netip.ParseAddr(trimmed)
+	if err != nil {
+		return netip.Addr{}, false
+	}
+	return addr.Unmap(), true
+}
+
+func clientIP(r *http.Request) string {
+	remoteHost := r.RemoteAddr
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		remoteHost = host
+	}
+	if peerAddr, ok := parseHeaderAddr(remoteHost); ok && isTrustedProxyAddr(peerAddr) {
+		if cfAddr, ok := parseHeaderAddr(r.Header.Get("CF-Connecting-IP")); ok {
+			return cfAddr.String()
+		}
+		if realAddr, ok := parseHeaderAddr(r.Header.Get("X-Real-IP")); ok {
+			return realAddr.String()
+		}
+		if xff := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); xff != "" {
+			parts := strings.Split(xff, ",")
+			for i := len(parts) - 1; i >= 0; i-- {
+				if hopAddr, ok := parseHeaderAddr(parts[i]); ok && !isTrustedProxyAddr(hopAddr) {
+					return hopAddr.String()
+				}
+			}
+		}
+	}
+	return remoteHost
 }
 
 type requestLimiter struct {
@@ -1756,6 +1792,14 @@ func (limiter *requestLimiter) allow(key string) bool {
 	if len(limiter.requests) > 10000 {
 		for k, v := range limiter.requests {
 			if len(v) == 0 || v[len(v)-1].Before(cutoff) {
+				delete(limiter.requests, k)
+			}
+		}
+		for k := range limiter.requests {
+			if len(limiter.requests) <= 10000 {
+				break
+			}
+			if k != key {
 				delete(limiter.requests, k)
 			}
 		}

@@ -33,6 +33,7 @@ type AgentStore interface {
 	RevokeAgentsInCircle(context.Context, string, string, time.Time) (int64, error)
 	DeleteAgent(context.Context, string) error
 	PruneInactiveAgents(context.Context, time.Time) (int64, error)
+	PruneIdleAgents(context.Context, time.Time) (int64, error)
 }
 
 type PolicyStore interface {
@@ -88,6 +89,8 @@ type CircleStore interface {
 	CreateCircle(context.Context, hub.Circle) error
 	FindCircle(context.Context, string) (hub.Circle, error)
 	ListCircles(context.Context) ([]hub.Circle, error)
+	CountDynamicCircles(context.Context, []string) (int, error)
+	PruneEmptyCircles(context.Context, time.Time, []string) (int64, error)
 	SetCircleState(context.Context, string, hub.CircleState, *time.Time) error
 	CreateCircleKey(context.Context, hub.CircleKey) error
 	RotateCircleKey(context.Context, string, hub.CircleKey, *time.Time) error

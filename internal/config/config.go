@@ -26,6 +26,9 @@ const (
 	DefaultMaxGroupHistoryPage   = 100
 	DefaultRegistrationPerMinute = 10
 	DefaultStandardWaitTimeout   = 30 * time.Second
+	DefaultMaxCircles            = 200
+	DefaultEmptyCircleTTL        = 24 * time.Hour
+	DefaultIdleAgentTTL          = 7 * 24 * time.Hour
 )
 
 type Config struct {
@@ -36,7 +39,10 @@ type Config struct {
 	RegistrationEnabled    bool
 	RegistrationTTL        time.Duration
 	PeerLease              time.Duration
+	IdleAgentTTL           time.Duration
 	MaxRegisteredAgents    int
+	MaxCircles             int
+	EmptyCircleTTL         time.Duration
 	MaxTasksPerMinute      int
 	MaxConcurrentTasks     int
 	MaxPayloadBytes        int64
@@ -65,7 +71,10 @@ func Load() (Config, error) {
 		RegistrationEnabled:    envBool("A2A888_HUB_REGISTRATION_ENABLED", true),
 		RegistrationTTL:        DefaultRegistrationTTL,
 		PeerLease:              DefaultPeerLease,
+		IdleAgentTTL:           DefaultIdleAgentTTL,
 		MaxRegisteredAgents:    DefaultMaxRegisteredAgents,
+		MaxCircles:             DefaultMaxCircles,
+		EmptyCircleTTL:         DefaultEmptyCircleTTL,
 		MaxTasksPerMinute:      DefaultMaxTasksPerMinute,
 		MaxConcurrentTasks:     DefaultMaxConcurrentTasks,
 		MaxPayloadBytes:        DefaultMaxPayloadBytes,
@@ -136,6 +145,15 @@ func Load() (Config, error) {
 	if config.MaxGroupHistoryPage, err = envInt("A2A888_HUB_MAX_GROUP_HISTORY_PAGE", config.MaxGroupHistoryPage); err != nil {
 		return Config{}, err
 	}
+	if config.MaxCircles, err = envInt("A2A888_HUB_MAX_CIRCLES", config.MaxCircles); err != nil {
+		return Config{}, err
+	}
+	if config.EmptyCircleTTL, err = envDurationSeconds("A2A888_HUB_EMPTY_CIRCLE_TTL_SECONDS", config.EmptyCircleTTL); err != nil {
+		return Config{}, err
+	}
+	if config.IdleAgentTTL, err = envDurationSeconds("A2A888_HUB_IDLE_AGENT_TTL_SECONDS", config.IdleAgentTTL); err != nil {
+		return Config{}, err
+	}
 	if err := config.Validate(); err != nil {
 		return Config{}, err
 	}
@@ -153,6 +171,9 @@ func (config Config) Validate() error {
 	}
 	if config.RegistrationTTL <= 0 || config.PeerLease <= 0 || config.PeerLease > config.RegistrationTTL {
 		return fmt.Errorf("peer lease and registration ttl are invalid")
+	}
+	if config.MaxCircles < 0 || config.EmptyCircleTTL < 0 || config.IdleAgentTTL < 0 {
+		return fmt.Errorf("circle limits and idle ttls must be non-negative")
 	}
 	if config.MaxRegisteredAgents <= 0 || config.MaxTasksPerMinute <= 0 || config.MaxConcurrentTasks <= 0 || config.RegistrationPerMinute <= 0 || config.MaxGroupMembers < 0 || config.MaxGroupFanout < 0 || config.MaxGroupHistoryPage < 0 {
 		return fmt.Errorf("agent and rate limits must be positive")

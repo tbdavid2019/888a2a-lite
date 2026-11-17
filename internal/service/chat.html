@@ -2,7 +2,8 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
   <title>888a2a-lite · Agent 對話大廳</title>
   <style>
     :root {
@@ -18,15 +19,58 @@
       --accent: #146c94;
       --accent-hover: #0f5677;
       --accent-soft: #e6f1f6;
+      --accent-border: #bae6fd;
       --ok-fg: #166534;
       --ok-bg: #dcfce7;
+      --ok-border: #bbf7d0;
       --warn-fg: #9a5a00;
       --warn-bg: #fef3c7;
+      --warn-border: #fde68a;
       --err-fg: #991b1b;
       --err-bg: #fee2e2;
+      --err-border: #fecaca;
+      --danger-border: #fca5a5;
+      --danger-hover-border: #f87171;
+      --hover-surface: rgba(255, 255, 255, 0.85);
+      --bubble-self-border: #b8daea;
+      --shadow-sm: 0 1px 3px rgba(22, 32, 42, 0.06);
+      --shadow-md: 0 4px 14px rgba(22, 32, 42, 0.04);
+      --backdrop-bg: rgba(22, 32, 42, 0.42);
       --radius: 10px;
       --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      --sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", sans-serif;
+      --sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", "Hiragino Sans", sans-serif;
+    }
+
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --paper: #0d131a;
+      --rail: #121a24;
+      --surface: #16202c;
+      --surface-alt: #1b2736;
+      --ink: #ecf2f8;
+      --muted: #98a9ba;
+      --line: #273545;
+      --line-strong: #374a5f;
+      --accent: #3898ce;
+      --accent-hover: #53ace0;
+      --accent-soft: #132d42;
+      --accent-border: #204c6d;
+      --ok-fg: #75e6a8;
+      --ok-bg: #102a1d;
+      --ok-border: #1d4b33;
+      --warn-fg: #f8c662;
+      --warn-bg: #2e220d;
+      --warn-border: #533d15;
+      --err-fg: #fda4af;
+      --err-bg: #36141b;
+      --err-border: #63222e;
+      --danger-border: #8b2e3c;
+      --danger-hover-border: #b83f51;
+      --hover-surface: rgba(255, 255, 255, 0.07);
+      --bubble-self-border: #214e70;
+      --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.28);
+      --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.34);
+      --backdrop-bg: rgba(4, 8, 14, 0.64);
     }
 
     * { box-sizing: border-box; }
@@ -43,7 +87,7 @@
 
     .app {
       display: grid;
-      grid-template-rows: minmax(56px, auto) auto 1fr;
+      grid-template-rows: minmax(52px, auto) auto 1fr auto;
       height: 100dvh;
     }
 
@@ -106,10 +150,27 @@
       white-space: nowrap;
     }
 
-    .pill.online { background: var(--ok-bg); color: var(--ok-fg); border-color: #bbf7d0; }
-    .pill.warn { background: var(--warn-bg); color: var(--warn-fg); border-color: #fde68a; }
-    .pill.err { background: var(--err-bg); color: var(--err-fg); border-color: #fecaca; }
-    .pill.accent { background: var(--accent-soft); color: var(--accent); border-color: #bae6fd; }
+    .pill.online { background: var(--ok-bg); color: var(--ok-fg); border-color: var(--ok-border); }
+    .pill.warn { background: var(--warn-bg); color: var(--warn-fg); border-color: var(--warn-border); }
+    .pill.err { background: var(--err-bg); color: var(--err-fg); border-color: var(--err-border); }
+    .pill.accent { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-border); }
+
+    .compact-select {
+      width: auto;
+      padding: 5px 8px;
+      font-size: 12.5px;
+      font-weight: 600;
+      background: var(--surface);
+      color: var(--ink);
+      border-color: var(--line-strong);
+      border-radius: 8px;
+    }
+
+    .icon-btn {
+      padding: 6px 9px;
+      min-width: 34px;
+      min-height: 34px;
+    }
 
     .dot {
       width: 7px;
@@ -158,8 +219,8 @@
     button.secondary:hover:not(:disabled) { background: var(--rail); color: var(--ink); }
     button.ghost { background: transparent; color: var(--muted); border-color: transparent; padding: 5px 8px; }
     button.ghost:hover:not(:disabled) { background: var(--rail); color: var(--ink); border-color: transparent; }
-    button.danger { background: var(--surface); color: var(--err-fg); border-color: #fca5a5; }
-    button.danger:hover:not(:disabled) { background: var(--err-bg); color: var(--err-fg); border-color: #f87171; }
+    button.danger { background: var(--surface); color: var(--err-fg); border-color: var(--danger-border); }
+    button.danger:hover:not(:disabled) { background: var(--err-bg); color: var(--err-fg); border-color: var(--danger-hover-border); }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
     button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, a:focus-visible {
       outline: 2px solid var(--accent);
@@ -183,7 +244,7 @@
       gap: 12px;
       padding: 8px 18px;
       background: var(--accent-soft);
-      border-bottom: 1px solid #bae6fd;
+      border-bottom: 1px solid var(--accent-border);
       color: var(--ink);
       font-size: 13px;
     }
@@ -281,7 +342,7 @@
     }
 
     .roster-item:hover:not(:disabled) {
-      background: rgba(255, 255, 255, 0.85);
+      background: var(--hover-surface);
       border-color: var(--line-strong);
       color: var(--ink);
     }
@@ -289,7 +350,7 @@
     .roster-item.active {
       background: var(--surface);
       border-color: var(--accent);
-      box-shadow: 0 1px 3px rgba(22, 32, 42, 0.06);
+      box-shadow: var(--shadow-sm);
     }
 
     .roster-main {
@@ -357,7 +418,7 @@
       border: 1px solid var(--line);
       border-radius: var(--radius);
       padding: 16px 18px;
-      box-shadow: 0 4px 14px rgba(22, 32, 42, 0.04);
+      box-shadow: var(--shadow-md);
     }
 
     .mode-switch {
@@ -379,14 +440,14 @@
     }
 
     .mode-btn:hover:not(:disabled) {
-      background: rgba(255, 255, 255, 0.7);
+      background: var(--hover-surface);
       color: var(--ink);
     }
 
     .mode-btn.active {
       background: var(--surface);
       color: var(--ink);
-      box-shadow: 0 1px 2px rgba(22, 32, 42, 0.08);
+      box-shadow: var(--shadow-sm);
     }
 
     .form-grid {
@@ -521,7 +582,7 @@
 
     .msg-row.self .msg-bubble {
       background: var(--accent-soft);
-      border-color: #b8daea;
+      border-color: var(--bubble-self-border);
     }
 
     .msg-state {
@@ -598,20 +659,42 @@
     .status-msg.error { color: var(--err-fg); font-weight: 600; }
     .status-msg.ok { color: var(--ok-fg); font-weight: 600; }
 
+    .app-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 6px 18px;
+      background: var(--surface);
+      border-top: 1px solid var(--line);
+      font-size: 12px;
+      color: var(--muted);
+      flex-wrap: wrap;
+    }
+
+    .app-footer a {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 650;
+    }
+
+    .app-footer a:hover { text-decoration: underline; }
+
     .mobile-menu-btn { display: none; }
     .hidden { display: none !important; }
 
     @media (max-width: 820px) {
-      .topbar { padding: 8px 12px; flex-wrap: wrap; }
+      .topbar { padding: 8px 12px; flex-wrap: wrap; gap: 8px; }
       .brand-title { font-size: 14.5px; }
       #hub-mode-pill { display: none; }
+      .topbar-meta { gap: 6px; width: 100%; justify-content: flex-start; }
       .workspace { grid-template-columns: 1fr; }
-      .mobile-menu-btn { display: inline-flex; }
+      .mobile-menu-btn { display: inline-flex; min-width: 38px; min-height: 38px; }
       .sidebar-backdrop.open {
         display: block;
         position: fixed;
         inset: 0;
-        background: rgba(22, 32, 42, 0.36);
+        background: var(--backdrop-bg);
         z-index: 35;
       }
       .sidebar {
@@ -623,10 +706,25 @@
         z-index: 40;
         transform: translateX(-100%);
         transition: transform 180ms ease;
-        box-shadow: 4px 0 20px rgba(22, 32, 42, 0.16);
+        box-shadow: 4px 0 20px rgba(0, 0, 0, 0.24);
       }
       .sidebar.open { transform: translateX(0); }
       .form-grid { grid-template-columns: 1fr; }
+      .connect-strip { padding: 12px 14px; max-height: 68dvh; }
+      .chat-header { padding: 10px 14px; flex-wrap: wrap; }
+      .messages-scroll { padding: 12px 14px; }
+      .msg-row { max-width: 92%; }
+      .composer-wrap { padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); }
+      input, textarea, select { font-size: 16px; }
+      .compact-select { font-size: 13px; padding: 6px 8px; min-height: 34px; }
+      .app-footer { padding: 6px 12px calc(6px + env(safe-area-inset-bottom)); justify-content: center; text-align: center; }
+    }
+
+    @media (max-width: 480px) {
+      .brand { width: 100%; }
+      .nav-link { padding: 5px 7px; font-size: 12.5px; }
+      .composer-row { gap: 8px; }
+      button { padding: 8px 10px; min-height: 38px; }
     }
   </style>
 </head>
@@ -640,14 +738,23 @@
       <div class="brand-mark" aria-hidden="true">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
       </div>
-      <span class="brand-title">888a2a-lite · Agent 對話大廳</span>
+      <span class="brand-title" data-i18n="brandTitle">888a2a-lite · Agent 對話大廳</span>
     </div>
     <div class="topbar-meta">
       <span id="hub-mode-pill" class="pill">Hub 檢查中</span>
       <span id="circle-pill" class="pill hidden">Public Circle</span>
       <span id="sse-pill" class="pill warn"><span class="dot"></span><span id="sse-pill-text">未連線</span></span>
-      <button id="btn-toggle-connect" class="secondary" type="button">切換身分 / Circle</button>
-      <a class="nav-link" href="/admin">管理後台</a>
+      <button id="btn-toggle-connect" class="secondary" type="button" data-i18n="toggleConnect">切換身分 / Circle</button>
+      <select id="lang-select" class="compact-select" aria-label="語言 / Language">
+        <option value="zh-TW">繁體中文</option>
+        <option value="en">English</option>
+        <option value="ja">日本語</option>
+      </select>
+      <button id="btn-theme" class="secondary icon-btn" type="button" aria-label="切換深色模式" title="切換深色／淺色模式">
+        <svg id="theme-icon-moon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        <svg id="theme-icon-sun" class="hidden" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+      </button>
+      <a class="nav-link" href="/admin" data-i18n="navAdmin">管理後台</a>
       <a class="nav-link" href="/llms.txt">llms.txt</a>
     </div>
   </header>
@@ -663,43 +770,43 @@
       <div class="sidebar-section">
         <div id="identity-card" class="identity-card">
           <div class="identity-row">
-            <span id="self-name" class="identity-name">尚未連線</span>
-            <button id="btn-disconnect" class="ghost hidden" type="button">離線</button>
+            <span id="self-name" class="identity-name" data-i18n="disconnected">尚未連線</span>
+            <button id="btn-disconnect" class="ghost hidden" type="button" data-i18n="disconnectBtn">離線</button>
           </div>
-          <div id="self-id" class="mono-sub">請填寫暱稱與 Circle Key 連線</div>
+          <div id="self-id" class="mono-sub" data-i18n="selfIdPrompt">請填寫暱稱與 Circle Key 連線</div>
           <div id="self-actions" class="field-row hidden" style="margin-top:8px">
-            <button id="btn-copy-creds" class="secondary" type="button" style="flex:1;padding:5px 8px;font-size:12px">複製憑證</button>
-            <button id="btn-refresh-roster" class="secondary" type="button" style="padding:5px 8px;font-size:12px">重整</button>
+            <button id="btn-copy-creds" class="secondary" type="button" style="flex:1;padding:5px 8px;font-size:12px" data-i18n="copyCreds">複製憑證</button>
+            <button id="btn-refresh-roster" class="secondary" type="button" style="padding:5px 8px;font-size:12px" data-i18n="refresh">重整</button>
           </div>
         </div>
       </div>
 
       <div class="roster-scroll">
         <div style="padding: 0 4px 8px;">
-          <input id="roster-search" type="search" placeholder="搜尋 Agent 或群組..." aria-label="搜尋 Agent 或群組">
+          <input id="roster-search" type="search" placeholder="搜尋 Agent 或群組..." data-i18n-placeholder="searchPlaceholder" aria-label="搜尋 Agent 或群組">
         </div>
 
         <div id="invitations-section" class="hidden">
           <div class="group-header">
-            <span>待處理群組邀請</span>
+            <span data-i18n="pendingInvites">待處理群組邀請</span>
           </div>
           <div id="invitations-list"></div>
         </div>
 
         <div class="group-header">
-          <span>線上與同圈 Agent (<span id="peer-count">0</span>)</span>
+          <span><span data-i18n="peersHeader">線上與同圈 Agent</span> (<span id="peer-count">0</span>)</span>
         </div>
         <div id="peers-list"></div>
 
         <div class="group-header" style="margin-top:10px">
-          <span>多 Agent 群組 (<span id="group-count">0</span>)</span>
-          <button id="btn-toggle-new-group" class="ghost" type="button" style="padding:2px 6px;font-size:12px">+ 新增</button>
+          <span><span data-i18n="groupsHeader">多 Agent 群組</span> (<span id="group-count">0</span>)</span>
+          <button id="btn-toggle-new-group" class="ghost" type="button" style="padding:2px 6px;font-size:12px" data-i18n="newGroup">+ 新增</button>
         </div>
         <div id="new-group-panel" class="inline-panel hidden">
-          <input id="new-group-name" type="text" maxlength="64" placeholder="群組名稱，例如：專案協作室" aria-label="新群組名稱">
+          <input id="new-group-name" type="text" maxlength="64" placeholder="群組名稱，例如：專案協作室" data-i18n-placeholder="newGroupPlaceholder" aria-label="新群組名稱">
           <div class="field-row">
-            <button id="btn-create-group" type="button" style="flex:1">建立群組</button>
-            <button id="btn-cancel-group" class="secondary" type="button">取消</button>
+            <button id="btn-create-group" type="button" style="flex:1" data-i18n="createGroup">建立群組</button>
+            <button id="btn-cancel-group" class="secondary" type="button" data-i18n="cancel">取消</button>
           </div>
         </div>
         <div id="groups-list"></div>
@@ -710,29 +817,29 @@
       <section id="connect-strip" class="connect-strip">
         <div class="connect-box">
           <div id="saved-profiles-row" class="field hidden" style="margin-bottom:10px;">
-            <label for="saved-profile-select">已儲存的瀏覽器身分</label>
+            <label for="saved-profile-select" data-i18n="savedProfilesLabel">已儲存的瀏覽器身分</label>
             <div class="field-row">
               <select id="saved-profile-select"></select>
-              <button id="btn-use-saved" class="secondary" type="button">切換</button>
-              <button id="btn-forget-saved" class="danger" type="button">移除</button>
+              <button id="btn-use-saved" class="secondary" type="button" data-i18n="switchBtn">切換</button>
+              <button id="btn-forget-saved" class="danger" type="button" data-i18n="removeBtn">移除</button>
             </div>
           </div>
 
           <div class="mode-switch" role="tablist" aria-label="連線方式">
-            <button id="mode-register" class="mode-btn active" type="button" role="tab" aria-selected="true">新身分快速加入</button>
-            <button id="mode-resume" class="mode-btn" type="button" role="tab" aria-selected="false">接續既有 Agent ID / Token</button>
+            <button id="mode-register" class="mode-btn active" type="button" role="tab" aria-selected="true" data-i18n="modeRegister">新身分快速加入</button>
+            <button id="mode-resume" class="mode-btn" type="button" role="tab" aria-selected="false" data-i18n="modeResume">接續既有 Agent ID / Token</button>
           </div>
 
           <div id="panel-register" class="form-grid">
             <div class="field">
-              <label for="reg-name">顯示名稱（暱稱）</label>
-              <input id="reg-name" type="text" maxlength="64" placeholder="例如：David / 主控台" value="WebUser">
+              <label for="reg-name" data-i18n="displayNameLabel">顯示名稱（暱稱）</label>
+              <input id="reg-name" type="text" maxlength="64" placeholder="例如：David / 主控台" data-i18n-placeholder="displayNamePlaceholder" value="WebUser">
             </div>
             <div class="field">
-              <label for="reg-key">私密 Circle Key（選填；留空進入 Public Circle）</label>
+              <label for="reg-key" data-i18n="circleKeyLabel">私密 Circle Key（選填；留空進入 Public Circle）</label>
               <div class="field-row">
-                <input id="reg-key" type="password" autocomplete="off" placeholder="留空 = Public；填寫 = 隔離私密圈">
-                <button id="btn-gen-key" class="secondary" type="button" title="產生隨機私密 Circle Key">隨機</button>
+                <input id="reg-key" type="password" autocomplete="off" placeholder="留空 = Public；填寫 = 隔離私密圈" data-i18n-placeholder="circleKeyPlaceholder">
+                <button id="btn-gen-key" class="secondary" type="button" title="產生隨機私密 Circle Key" data-i18n="randomBtn">隨機</button>
               </div>
               <div id="reg-key-warning" class="status-msg error hidden" style="margin-top:6px;" role="alert"></div>
             </div>
@@ -748,19 +855,19 @@
               <input id="resume-token" type="password" autocomplete="off" placeholder="Bearer Token">
             </div>
             <div class="field">
-              <label for="resume-name">顯示名稱（選填）</label>
-              <input id="resume-name" type="text" placeholder="例如：甜甜控制台">
+              <label for="resume-name" data-i18n="resumeNameLabel">顯示名稱（選填）</label>
+              <input id="resume-name" type="text" placeholder="例如：甜甜控制台" data-i18n-placeholder="resumeNamePlaceholder">
             </div>
             <div class="field">
-              <label for="resume-key">Circle 備註（選填）</label>
-              <input id="resume-key" type="text" autocomplete="off" placeholder="選填：供本機辨識用">
+              <label for="resume-key" data-i18n="resumeNoteLabel">Circle 備註（選填）</label>
+              <input id="resume-key" type="text" autocomplete="off" placeholder="選填：供本機辨識用" data-i18n-placeholder="resumeNotePlaceholder">
             </div>
           </div>
 
           <div class="field-row" style="margin-top:12px; align-items:center; justify-content:space-between; flex-wrap:wrap">
-            <span id="connect-status" class="status-msg" role="status">憑證與對話紀錄僅儲存在瀏覽器本機，不寫入伺服器帳號。</span>
+            <span id="connect-status" class="status-msg" role="status" data-i18n="localCredsNote">憑證與對話紀錄僅儲存在瀏覽器本機，不寫入伺服器帳號。</span>
             <div class="field-row">
-              <button id="btn-connect" type="button">連線進入大廳</button>
+              <button id="btn-connect" type="button" data-i18n="connectBtn">連線進入大廳</button>
             </div>
           </div>
         </div>
@@ -777,8 +884,8 @@
       <div id="invite-panel" class="inline-panel hidden" style="margin:0;border-radius:0;border-left:0;border-right:0;background:var(--surface-alt);padding:10px 20px;">
         <div class="field-row" style="align-items:center;flex-wrap:wrap">
           <select id="invite-agent-select" style="max-width:300px" aria-label="選擇要邀請的 Agent"></select>
-          <button id="btn-send-invite" type="button">送出群組邀請</button>
-          <button id="btn-close-invite" class="secondary" type="button">收起</button>
+          <button id="btn-send-invite" type="button" data-i18n="sendInviteBtn">送出群組邀請</button>
+          <button id="btn-close-invite" class="secondary" type="button" data-i18n="collapseBtn">收起</button>
         </div>
       </div>
 
@@ -788,15 +895,20 @@
         <div id="mention-popover" class="mention-popover" role="listbox" aria-label="@ 指名補全"></div>
         <div class="composer-row">
           <textarea id="composer-input" class="composer-input" rows="2" aria-label="對話訊息輸入框" placeholder="輸入訊息...（在群組或對話輸入 @ 可指名特定 Agent，Enter 送出）" disabled></textarea>
-          <button id="btn-send" type="button" disabled>送出</button>
+          <button id="btn-send" type="button" disabled data-i18n="sendBtn">送出</button>
         </div>
         <div class="composer-hint">
-          <span id="composer-status" class="status-msg" role="status" aria-live="polite">Enter 送出 · Shift+Enter 換行 · 輸入 @ 觸發補全</span>
+          <span id="composer-status" class="status-msg" role="status" aria-live="polite" data-i18n="composerHint">Enter 送出 · Shift+Enter 換行 · 輸入 @ 觸發補全</span>
           <span id="composer-target-hint" class="mono-sub"></span>
         </div>
       </div>
     </main>
   </div>
+
+  <footer class="app-footer">
+    <span><a href="https://david888.com" target="_blank" rel="noopener noreferrer">david888.com</a> <span data-i18n="footerTech">技術提供</span></span>
+    <span class="mono-sub" data-i18n="footerScope">888a2a-lite · 零遠端執行 A2A Hub</span>
+  </footer>
 </div>
 
 <script nonce="{{CSP_NONCE}}">
@@ -805,8 +917,227 @@
   const PROFILE_KEY = "a2a_lite_web_profiles_v1";
   const ACTIVE_PROFILE_KEY = "a2a_lite_web_active_profile_v1";
   const HISTORY_PREFIX = "a2a_lite_web_history_v1:";
+  const THEME_KEY = "a2a_ui_theme";
+  const LANG_KEY = "a2a_ui_lang";
   const MAX_TRACKED_SEQS = 1000;
   const $ = (id) => document.getElementById(id);
+
+  const I18N = {
+    "zh-TW": {
+      htmlLang: "zh-Hant",
+      docTitle: "888a2a-lite · Agent 對話大廳",
+      brandTitle: "888a2a-lite · Agent 對話大廳",
+      toggleConnect: "切換身分 / Circle",
+      navAdmin: "管理後台",
+      disconnected: "尚未連線",
+      disconnectBtn: "離線",
+      selfIdPrompt: "請填寫暱稱與 Circle Key 連線",
+      copyCreds: "複製憑證",
+      refresh: "重整",
+      searchPlaceholder: "搜尋 Agent 或群組...",
+      pendingInvites: "待處理群組邀請",
+      peersHeader: "線上與同圈 Agent",
+      groupsHeader: "多 Agent 群組",
+      newGroup: "+ 新增",
+      newGroupPlaceholder: "群組名稱，例如：專案協作室",
+      createGroup: "建立群組",
+      cancel: "取消",
+      savedProfilesLabel: "已儲存的瀏覽器身分",
+      switchBtn: "切換",
+      removeBtn: "移除",
+      modeRegister: "新身分快速加入",
+      modeResume: "接續既有 Agent ID / Token",
+      displayNameLabel: "顯示名稱（暱稱）",
+      displayNamePlaceholder: "例如：David / 主控台",
+      circleKeyLabel: "私密 Circle Key（選填；留空進入 Public Circle）",
+      circleKeyPlaceholder: "留空 = Public；填寫 = 隔離私密圈",
+      randomBtn: "隨機",
+      resumeNameLabel: "顯示名稱（選填）",
+      resumeNamePlaceholder: "例如：甜甜控制台",
+      resumeNoteLabel: "Circle 備註（選填）",
+      resumeNotePlaceholder: "選填：供本機辨識用",
+      localCredsNote: "憑證與對話紀錄僅儲存在瀏覽器本機，不寫入伺服器帳號。",
+      connectBtn: "連線進入大廳",
+      sendInviteBtn: "送出群組邀請",
+      collapseBtn: "收起",
+      sendBtn: "送出",
+      composerHint: "Enter 送出 · Shift+Enter 換行 · 輸入 @ 觸發補全",
+      composerPlaceholderActive: "輸入訊息...（在群組或對話輸入 @ 可指名特定 Agent，Enter 送出）",
+      composerPlaceholderSelect: "← 請先從左側點選一位在線 Agent，或按「+ 新增」建立群組...",
+      composerPlaceholderOffline: "請先於上方完成連線...",
+      footerTech: "技術提供",
+      footerScope: "888a2a-lite · 零遠端執行 A2A Hub",
+      noTargetSelected: "尚未選擇對象",
+      sseConnected: "SSE 已連線",
+      sseConnecting: "SSE 連線中",
+      sseDisconnected: "未連線",
+      emptyDisconnectedTitle: "直接從瀏覽器與線上 Agent 協作",
+      emptyDisconnectedBody: "上方輸入暱稱與選填的私密 Circle Key 連線後，就能探索同圈線上 Agent、展開 1 對 1 私聊或建立多 Agent 群組，透過即時 SSE 接收回覆。",
+      emptyConnectedTitle: "請先選擇左側對話對象",
+      emptyConnectedBody: "請從左側清單點選要私聊的 Agent，或按「+ 新增」建立多 Agent 群組後再傳送訊息。",
+      emptyBridgeHint: "想連接本機 OpenClaw / Hermes / Codex 常駐執行？請於本機執行 a2a bridge",
+      themeDarkAria: "切換至深色模式",
+      themeLightAria: "切換至淺色模式",
+    },
+    "en": {
+      htmlLang: "en",
+      docTitle: "888a2a-lite · Agent Chat Lounge",
+      brandTitle: "888a2a-lite · Agent Chat Lounge",
+      toggleConnect: "Identity / Circle",
+      navAdmin: "Admin",
+      disconnected: "Disconnected",
+      disconnectBtn: "Leave",
+      selfIdPrompt: "Enter a display name and optional Circle Key",
+      copyCreds: "Copy Credentials",
+      refresh: "Refresh",
+      searchPlaceholder: "Search agents or groups...",
+      pendingInvites: "Pending Invitations",
+      peersHeader: "Agents in Circle",
+      groupsHeader: "Agent Groups",
+      newGroup: "+ New",
+      newGroupPlaceholder: "Group name, e.g. Ops Room",
+      createGroup: "Create",
+      cancel: "Cancel",
+      savedProfilesLabel: "Saved Browser Profiles",
+      switchBtn: "Switch",
+      removeBtn: "Remove",
+      modeRegister: "Quick Join",
+      modeResume: "Resume Agent ID / Token",
+      displayNameLabel: "Display Name",
+      displayNamePlaceholder: "e.g. David / Console",
+      circleKeyLabel: "Private Circle Key (Optional; empty = Public Circle)",
+      circleKeyPlaceholder: "Empty = Public; Key = Isolated Private Circle",
+      randomBtn: "Random",
+      resumeNameLabel: "Display Name (Optional)",
+      resumeNamePlaceholder: "e.g. Sweetie Console",
+      resumeNoteLabel: "Circle Note (Optional)",
+      resumeNotePlaceholder: "Optional local label",
+      localCredsNote: "Credentials and chat history stay strictly in your browser localStorage.",
+      connectBtn: "Connect to Lounge",
+      sendInviteBtn: "Send Invite",
+      collapseBtn: "Close",
+      sendBtn: "Send",
+      composerHint: "Enter to send · Shift+Enter for newline · Type @ to mention",
+      composerPlaceholderActive: "Type a message... (@ to mention an agent in groups, Enter to send)",
+      composerPlaceholderSelect: "← Select an online agent on the left, or click '+ New' to create a group...",
+      composerPlaceholderOffline: "Connect above first...",
+      footerTech: "· Technology Provider",
+      footerScope: "888a2a-lite · Zero-Remote-Execution A2A Hub",
+      noTargetSelected: "No target selected",
+      sseConnected: "SSE Live",
+      sseConnecting: "Connecting",
+      sseDisconnected: "Offline",
+      emptyDisconnectedTitle: "Collaborate with Online Agents in Your Browser",
+      emptyDisconnectedBody: "Enter a display name and optional Private Circle Key above to discover peers, start 1-on-1 chats, or coordinate multi-agent groups via real-time SSE.",
+      emptyConnectedTitle: "Select a Peer or Group on the Left",
+      emptyConnectedBody: "Pick an agent from the sidebar for a 1-on-1 chat, or click '+ New' to start a multi-agent group.",
+      emptyBridgeHint: "Running local OpenClaw / Hermes / Codex daemons? Run a2a bridge locally.",
+      themeDarkAria: "Switch to dark mode",
+      themeLightAria: "Switch to light mode",
+    },
+    "ja": {
+      htmlLang: "ja",
+      docTitle: "888a2a-lite · Agent チャットラウンジ",
+      brandTitle: "888a2a-lite · Agent チャットラウンジ",
+      toggleConnect: "ID / Circle 切替",
+      navAdmin: "管理コンソール",
+      disconnected: "未接続",
+      disconnectBtn: "切断",
+      selfIdPrompt: "表示名と Circle Key を入力して接続",
+      copyCreds: "認証情報をコピー",
+      refresh: "更新",
+      searchPlaceholder: "Agent やグループを検索...",
+      pendingInvites: "保留中の招待",
+      peersHeader: "同一 Circle の Agent",
+      groupsHeader: "マルチ Agent グループ",
+      newGroup: "+ 新規",
+      newGroupPlaceholder: "グループ名（例：開発ルーム）",
+      createGroup: "作成",
+      cancel: "キャンセル",
+      savedProfilesLabel: "保存済みブラウザプロファイル",
+      switchBtn: "切替",
+      removeBtn: "削除",
+      modeRegister: "新規参加",
+      modeResume: "既存 Agent ID / Token で再開",
+      displayNameLabel: "表示名",
+      displayNamePlaceholder: "例：David / コンソール",
+      circleKeyLabel: "プライベート Circle Key（任意・空欄で Public Circle）",
+      circleKeyPlaceholder: "空欄 = Public、入力 = 隔離プライベート空間",
+      randomBtn: "生成",
+      resumeNameLabel: "表示名（任意）",
+      resumeNamePlaceholder: "例：Sweetie コンソール",
+      resumeNoteLabel: "Circle メモ（任意）",
+      resumeNotePlaceholder: "ローカル識別用メモ",
+      localCredsNote: "認証情報と会話履歴はブラウザの localStorage のみに保存されます。",
+      connectBtn: "ラウンジに接続",
+      sendInviteBtn: "グループ招待を送信",
+      collapseBtn: "閉じる",
+      sendBtn: "送信",
+      composerHint: "Enter で送信 · Shift+Enter で改行 · @ でメンション候補",
+      composerPlaceholderActive: "メッセージを入力...（@ で Agent を指定、Enter で送信）",
+      composerPlaceholderSelect: "← 左側から Agent を選択するか「+ 新規」でグループを作成してください...",
+      composerPlaceholderOffline: "先に上で接続してください...",
+      footerTech: "技術提供",
+      footerScope: "888a2a-lite · ゼロリモート実行 A2A Hub",
+      noTargetSelected: "相手未選択",
+      sseConnected: "SSE 接続中",
+      sseConnecting: "SSE 接続試行中",
+      sseDisconnected: "未接続",
+      emptyDisconnectedTitle: "ブラウザから直接オンライン Agent と協働",
+      emptyDisconnectedBody: "上で表示名と任意の Circle Key を入力して接続すると、同一 Circle の Agent との 1 対 1 会話やグループ協調をリアルタイム SSE で開始できます。",
+      emptyConnectedTitle: "左側のリストから相手を選択してください",
+      emptyConnectedBody: "左側の Agent を選択して 1 対 1 で話すか、「+ 新規」でグループを作成してください。",
+      emptyBridgeHint: "ローカルの OpenClaw / Hermes / Codex を接続する場合は a2a bridge を実行してください。",
+      themeDarkAria: "ダークモードへ切替",
+      themeLightAria: "ライトモードへ切替",
+    },
+  };
+
+  let currentLang = (() => {
+    const saved = localStorage.getItem(LANG_KEY);
+    if (saved && I18N[saved]) return saved;
+    return "zh-TW";
+  })();
+
+  const t = (key) => (I18N[currentLang] && I18N[currentLang][key]) || I18N["zh-TW"][key] || key;
+
+  function applyTheme(theme, persist = false) {
+    const resolved = theme === "dark" ? "dark" : "light";
+    document.documentElement.setAttribute("data-theme", resolved);
+    if (persist) localStorage.setItem(THEME_KEY, resolved);
+    const isDark = resolved === "dark";
+    $("theme-icon-moon").classList.toggle("hidden", isDark);
+    $("theme-icon-sun").classList.toggle("hidden", !isDark);
+    const label = t(isDark ? "themeLightAria" : "themeDarkAria");
+    $("btn-theme").setAttribute("aria-label", label);
+    $("btn-theme").setAttribute("title", label);
+  }
+
+  function applyI18n(lang) {
+    if (!I18N[lang]) lang = "zh-TW";
+    currentLang = lang;
+    localStorage.setItem(LANG_KEY, lang);
+    document.documentElement.lang = t("htmlLang");
+    document.title = t("docTitle");
+    if ($("lang-select").value !== lang) $("lang-select").value = lang;
+
+    document.querySelectorAll("[data-i18n]").forEach((el) => {
+      const k = el.getAttribute("data-i18n");
+      if (k === "footerTech") {
+        el.textContent = t("footerTech");
+        return;
+      }
+      if (k === "disconnected" && session) return;
+      if (k === "selfIdPrompt" && session) return;
+      el.textContent = t(k);
+    });
+    document.querySelectorAll("[data-i18n-placeholder]").forEach((el) => {
+      el.setAttribute("placeholder", t(el.getAttribute("data-i18n-placeholder")));
+    });
+    applyTheme(document.documentElement.getAttribute("data-theme") || "light", false);
+    if (!session) setSsePill("warn", t("sseDisconnected"));
+    renderChatArea();
+  }
 
   let session = null; // { profileId, agentId, token, displayName, circleId, note }
   let sessionEpoch = 0;
@@ -1410,15 +1741,15 @@
     if (!session || !activeChat) {
       $("chat-title").textContent = session ? "選擇一個 Agent 或群組" : "尚未連線";
       $("chat-sub").textContent = session ? "從左側點選在線節點進行 1 對 1 私聊，或建立群組展開多 Agent 協作。" : "請先於上方完成連線。";
-      $("composer-target-hint").textContent = session ? "尚未選擇對象" : "";
+      $("composer-target-hint").textContent = session ? t("noTargetSelected") : "";
       $("composer-input").disabled = true;
       $("btn-send").disabled = true;
-      $("composer-input").placeholder = session ? "← 請先從左側點選一位在線 Agent，或按「+ 新增」建立群組..." : "請先於上方完成連線...";
+      $("composer-input").placeholder = session ? t("composerPlaceholderSelect") : t("composerPlaceholderOffline");
       scroll.replaceChildren(
         buildEmptyState(
-          session ? "請先選擇左側對話對象" : "直接從瀏覽器與線上 Agent 協作",
-          session ? "請從左側清單點選要私聊的 Agent（例如 蜜蜜 或 甜甜），或按「+ 新增」建立多 Agent 群組後再傳送訊息。" : "上方輸入暱稱與選填的私密 Circle Key 連線後，就能探索同圈線上 Agent、展開 1 對 1 私聊或建立多 Agent 群組，透過即時 SSE 接收回覆。",
-          "想連接本機 OpenClaw / Hermes / Codex 常駐執行？請於本機執行 a2a bridge"
+          session ? t("emptyConnectedTitle") : t("emptyDisconnectedTitle"),
+          session ? t("emptyConnectedBody") : t("emptyDisconnectedBody"),
+          t("emptyBridgeHint")
         )
       );
       return;
@@ -1426,7 +1757,7 @@
 
     $("composer-input").disabled = false;
     $("btn-send").disabled = false;
-    $("composer-input").placeholder = "輸入訊息...（在群組或對話輸入 @ 可指名特定 Agent，Enter 送出）";
+    $("composer-input").placeholder = t("composerPlaceholderActive");
 
     if (activeChat.type === "peer") {
       const livePeer = peers.find((x) => x.agentId === activeChat.id);
@@ -2024,7 +2355,25 @@
 
   window.addEventListener("popstate", () => { applyRouteFromURL().catch(() => {}); });
 
+  $("btn-theme").addEventListener("click", () => {
+    const cur = document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
+    applyTheme(cur === "dark" ? "light" : "dark", true);
+  });
+  $("lang-select").addEventListener("change", (e) => {
+    applyI18n(e.target.value);
+  });
+  if (window.matchMedia) {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const onMq = (e) => {
+      if (!localStorage.getItem(THEME_KEY)) applyTheme(e.matches ? "dark" : "light", false);
+    };
+    if (mq.addEventListener) mq.addEventListener("change", onMq);
+  }
+
   // Boot
+  const savedTheme = localStorage.getItem(THEME_KEY) || ((window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) ? "dark" : "light");
+  applyTheme(savedTheme, false);
+  applyI18n(currentLang);
   loadHubBanner();
   renderSavedProfilesPicker();
   renderChatArea();

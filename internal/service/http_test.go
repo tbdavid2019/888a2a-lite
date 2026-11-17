@@ -1017,6 +1017,9 @@ func TestHostedWebChatAndAdminChatRoutes(t *testing.T) {
 		if !strings.Contains(body, "imeComposing") || !strings.Contains(body, "lastCompositionEndAt") {
 			t.Fatalf("GET %s missing CJK IME composition Enter guard", path)
 		}
+		if !strings.Contains(body, "david888.com") || !strings.Contains(body, "技術提供") || !strings.Contains(body, `data-theme="dark"`) || !strings.Contains(body, `id="lang-select"`) {
+			t.Fatalf("GET %s missing footer, dark mode, or language switcher", path)
+		}
 	}
 
 	adminRec := httptest.NewRecorder()
@@ -1029,6 +1032,9 @@ func TestHostedWebChatAndAdminChatRoutes(t *testing.T) {
 	}
 	if !strings.Contains(adminRec.Body.String(), "imeComposing") || !strings.Contains(adminRec.Body.String(), "lastCompositionEndAt") {
 		t.Fatalf("GET /admin/chat missing CJK IME composition Enter guard")
+	}
+	if !strings.Contains(adminRec.Body.String(), "david888.com") || !strings.Contains(adminRec.Body.String(), "技術提供") || !strings.Contains(adminRec.Body.String(), `data-theme="dark"`) || !strings.Contains(adminRec.Body.String(), `id="admin-lang-select"`) {
+		t.Fatalf("GET /admin/chat missing footer, dark mode, or language switcher")
 	}
 	if csp := adminRec.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "script-src 'nonce-") {
 		t.Fatalf("GET /admin/chat missing CSP nonce header: %q", csp)
@@ -1044,5 +1050,118 @@ func TestHostedWebChatAndAdminChatRoutes(t *testing.T) {
 	handler.ServeHTTP(missRec, httptest.NewRequest(http.MethodGet, "/does-not-exist", nil))
 	if missRec.Code != http.StatusNotFound {
 		t.Fatalf("GET /does-not-exist = %d, want 404", missRec.Code)
+	}
+}
+
+func TestDynamicCircleLimitAndScheduledCleanup(t *testing.T) {
+	ctx := context.Background()
+	database, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "hub.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open: %v", err)
+	}
+	defer func() { _ = database.Close() }()
+
+	currentTime := time.Date(2026, 11, 17, 9, 0, 0, 0, time.UTC)
+	cfg := config.Config{
+		HubID:                  "public",
+		ListenAddr:             ":0",
+		DatabasePath:           filepath.Join(t.TempDir(), "unused.db"),
+		OperatorToken:          "op-secret",
+		RegistrationEnabled:    true,
+		RegistrationTTL:        365 * 24 * time.Hour,
+		PeerLease:              15 * time.Minute,
+		IdleAgentTTL:           2 * time.Hour,
+		MaxRegisteredAgents:    10,
+		MaxCircles:             1,
+		EmptyCircleTTL:         time.Hour,
+		MaxTasksPerMinute:      20,
+		MaxConcurrentTasks:     4,
+		MaxPayloadBytes:        1 << 20,
+		RegistrationPerMinute:  50,
+		CircleMode:             "multi",
+		SharedKeys:             "team-a:static-secret-a",
+		AllowDynamicCircles:    true,
+		CircleDerivationSecret: "test-derivation-secret",
+	}
+	svc := New(sqlite.NewRepository(database), cfg)
+	svc.now = func() time.Time { return currentTime }
+	handler := NewHTTPServer(svc).Handler()
+
+	registerWithKey := func(name, hubKey string) *httptest.ResponseRecorder {
+		body, _ := json.Marshal(hub.AgentDeclaration{
+			DisplayName:             name,
+			ProviderFamily:          "browser",
+			TransportID:             "http-json",
+			Capabilities:            []string{"text/plain"},
+			RegistrationIdempotency: "reg-" + name + "-" + hubKey,
+		})
+		req := httptest.NewRequest(http.MethodPost, "/hub/v1/agents/register", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		if hubKey != "" {
+			req.Header.Set("X-Hub-Key", hubKey)
+		}
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		return rec
+	}
+
+	// Static alias circle should succeed without consuming dynamic circle limit
+	if rec := registerWithKey("static-worker", "static-secret-a"); rec.Code != http.StatusCreated {
+		t.Fatalf("static circle register = %d (%s), want 201", rec.Code, rec.Body.String())
+	}
+	// First dynamic circle fills MaxCircles=1
+	if rec := registerWithKey("dyn-1", "dyn-key-1"); rec.Code != http.StatusCreated {
+		t.Fatalf("first dynamic circle register = %d (%s), want 201", rec.Code, rec.Body.String())
+	}
+	// Second dynamic circle must be blocked and NOT persist an orphan circle row
+	if rec := registerWithKey("dyn-2", "dyn-key-2"); rec.Code != http.StatusTooManyRequests || !strings.Contains(rec.Body.String(), "CIRCLE_LIMIT_REACHED") {
+		t.Fatalf("second dynamic circle register = %d (%s), want 429 CIRCLE_LIMIT_REACHED", rec.Code, rec.Body.String())
+	}
+	circles, err := svc.ListCirclesAdmin(ctx, "op-secret")
+	if err != nil {
+		t.Fatalf("ListCirclesAdmin: %v", err)
+	}
+	if len(circles) != 2 { // team-a + dyn-1 only (public wasn't seeded in service test)
+		t.Fatalf("expected 2 circles after rejected registration, got %d (%+v)", len(circles), circles)
+	}
+
+	// Advance past IdleAgentTTL (2h) -> idle agents pruned, circle now empty
+	currentTime = currentTime.Add(3 * time.Hour)
+	prunedAgents, prunedCircles, err := svc.RunScheduledMaintenance(ctx)
+	if err != nil {
+		t.Fatalf("RunScheduledMaintenance #1: %v", err)
+	}
+	if prunedAgents != 2 || prunedCircles != 1 {
+		t.Fatalf("maintenance #1 pruned (%d agents, %d circles), want (2, 1)", prunedAgents, prunedCircles)
+	}
+
+	// Dynamic circle was removed, static team-a stays preserved
+	circlesAfter, err := svc.ListCirclesAdmin(ctx, "op-secret")
+	if err != nil {
+		t.Fatalf("ListCirclesAdmin after prune: %v", err)
+	}
+	if len(circlesAfter) != 1 || circlesAfter[0].Alias != "team-a" {
+		t.Fatalf("expected only static alias team-a to survive pruning, got %+v", circlesAfter)
+	}
+
+	// Now a new dynamic circle can be created again
+	if rec := registerWithKey("dyn-3", "dyn-key-3"); rec.Code != http.StatusCreated {
+		t.Fatalf("new dynamic circle after cleanup = %d (%s), want 201", rec.Code, rec.Body.String())
+	}
+}
+
+func TestTrustedProxyClientIP(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/hub/v1/status", nil)
+	req.RemoteAddr = "172.17.0.1:45123"
+	req.Header.Set("X-Forwarded-For", "198.51.100.42, 10.0.0.5")
+	if got := clientIP(req); got != "198.51.100.42" {
+		t.Fatalf("trusted proxy clientIP = %q, want 198.51.100.42", got)
+	}
+
+	untrusted := httptest.NewRequest(http.MethodGet, "/hub/v1/status", nil)
+	untrusted.RemoteAddr = "203.0.113.9:12345"
+	untrusted.Header.Set("X-Real-IP", "1.2.3.4")
+	if got := clientIP(untrusted); got != "203.0.113.9" {
+		t.Fatalf("untrusted remote clientIP = %q, want 203.0.113.9", got)
 	}
 }

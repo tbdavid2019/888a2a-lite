@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestLoadUsesSafeAttachmentDefaults(t *testing.T) {
 	for _, name := range []string{
@@ -19,6 +22,21 @@ func TestLoadUsesSafeAttachmentDefaults(t *testing.T) {
 	}
 	if loaded.AttachmentLimits.MaxURLLength <= 0 || loaded.AttachmentLimits.MaxParts <= 0 || loaded.AttachmentLimits.MaxMetadataBytes <= 0 {
 		t.Fatalf("Load() attachment limits = %+v", loaded.AttachmentLimits)
+	}
+	if loaded.MaxCircles != DefaultMaxCircles || loaded.EmptyCircleTTL != DefaultEmptyCircleTTL || loaded.IdleAgentTTL != DefaultIdleAgentTTL {
+		t.Fatalf("Load() circle/idle defaults = (%d, %v, %v)", loaded.MaxCircles, loaded.EmptyCircleTTL, loaded.IdleAgentTTL)
+	}
+}
+
+func TestLoadRejectsNegativeCircleOrIdleLimits(t *testing.T) {
+	t.Setenv("A2A888_HUB_MAX_CIRCLES", "-1")
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() accepted negative A2A888_HUB_MAX_CIRCLES")
+	}
+	t.Setenv("A2A888_HUB_MAX_CIRCLES", "10")
+	t.Setenv("A2A888_HUB_EMPTY_CIRCLE_TTL_SECONDS", "-5")
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() accepted negative A2A888_HUB_EMPTY_CIRCLE_TTL_SECONDS")
 	}
 }
 

@@ -87,6 +87,116 @@ FROM hub_circle ORDER BY created_at, circle_id`)
 	return circles, rows.Err()
 }
 
+func (repository *Repository) CountDynamicCircles(ctx context.Context, protectedIDs []string) (int, error) {
+	protected := make(map[string]struct{}, len(protectedIDs)+1)
+	protected["public"] = struct{}{}
+	for _, id := range protectedIDs {
+		if trimmed := strings.TrimSpace(id); trimmed != "" {
+			protected[trimmed] = struct{}{}
+		}
+	}
+	rows, err := repository.executor().QueryContext(ctx, `
+SELECT circle_id FROM hub_circle
+WHERE circle_id <> 'public' AND alias = ''`)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = rows.Close() }()
+	count := 0
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return 0, err
+		}
+		if _, skip := protected[id]; !skip {
+			count++
+		}
+	}
+	return count, rows.Err()
+}
+
+func (repository *Repository) PruneEmptyCircles(ctx context.Context, cutoff time.Time, protectedIDs []string) (int64, error) {
+	protected := make(map[string]struct{}, len(protectedIDs)+1)
+	protected["public"] = struct{}{}
+	for _, id := range protectedIDs {
+		if trimmed := strings.TrimSpace(id); trimmed != "" {
+			protected[trimmed] = struct{}{}
+		}
+	}
+	cutoffStr := formatTime(cutoff)
+	var pruned int64
+	err := repository.withTransaction(ctx, func(tx *Repository) error {
+		rows, err := tx.executor().QueryContext(ctx, `
+SELECT c.hub_id, c.circle_id
+FROM hub_circle c
+WHERE c.circle_id <> 'public'
+  AND c.alias = ''
+  AND c.created_at <= ?
+  AND NOT EXISTS (SELECT 1 FROM agent a WHERE a.hub_id = c.hub_id AND a.circle_id = c.circle_id)
+  AND NOT EXISTS (SELECT 1 FROM agent_group g WHERE g.hub_id = c.hub_id AND g.circle_id = c.circle_id AND g.created_at > ?)
+  AND NOT EXISTS (SELECT 1 FROM inbox_item i WHERE i.hub_id = c.hub_id AND i.circle_id = c.circle_id AND i.created_at > ?)
+  AND NOT EXISTS (SELECT 1 FROM a2a_task t WHERE t.hub_id = c.hub_id AND t.circle_id = c.circle_id AND t.updated_at > ?)
+  AND NOT EXISTS (SELECT 1 FROM event_log e WHERE e.hub_id = c.hub_id AND e.circle_id = c.circle_id AND e.created_at > ?)`,
+			cutoffStr, cutoffStr, cutoffStr, cutoffStr, cutoffStr)
+		if err != nil {
+			return err
+		}
+		type targetCircle struct {
+			hubID    string
+			circleID string
+		}
+		var targets []targetCircle
+		for rows.Next() {
+			var item targetCircle
+			if err := rows.Scan(&item.hubID, &item.circleID); err != nil {
+				_ = rows.Close()
+				return err
+			}
+			if _, skip := protected[item.circleID]; !skip {
+				targets = append(targets, item)
+			}
+		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
+
+		for _, item := range targets {
+			if _, err := tx.executor().ExecContext(ctx, `DELETE FROM a2a_task_update WHERE hub_id = ? AND task_id IN (SELECT task_id FROM a2a_task WHERE hub_id = ? AND circle_id = ?)`, item.hubID, item.hubID, item.circleID); err != nil {
+				return err
+			}
+			for _, stmt := range []string{
+				`DELETE FROM a2a_task_event WHERE hub_id = ? AND circle_id = ?`,
+				`DELETE FROM a2a_group_task_member WHERE hub_id = ? AND circle_id = ?`,
+				`DELETE FROM a2a_task WHERE hub_id = ? AND circle_id = ?`,
+				`DELETE FROM agent_workflow WHERE hub_id = ? AND circle_id = ?`,
+				`DELETE FROM group_charter_revision WHERE hub_id = ? AND circle_id = ?`,
+				`DELETE FROM group_secretary WHERE hub_id = ? AND circle_id = ?`,
+				`DELETE FROM meeting_session WHERE hub_id = ? AND circle_id = ?`,
+				`DELETE FROM group_delivery WHERE hub_id = ? AND circle_id = ?`,
+				`DELETE FROM group_message WHERE hub_id = ? AND circle_id = ?`,
+				`DELETE FROM group_invitation WHERE hub_id = ? AND circle_id = ?`,
+				`DELETE FROM group_member WHERE hub_id = ? AND circle_id = ?`,
+				`DELETE FROM agent_group WHERE hub_id = ? AND circle_id = ?`,
+				`DELETE FROM inbox_item WHERE hub_id = ? AND circle_id = ?`,
+				`DELETE FROM event_log WHERE hub_id = ? AND circle_id = ?`,
+				`DELETE FROM hub_circle_key WHERE hub_id = ? AND circle_id = ?`,
+				`DELETE FROM hub_circle WHERE hub_id = ? AND circle_id = ?`,
+			} {
+				if _, err := tx.executor().ExecContext(ctx, stmt, item.hubID, item.circleID); err != nil {
+					return err
+				}
+			}
+			pruned++
+		}
+		return nil
+	})
+	return pruned, err
+}
+
 func (repository *Repository) SetCircleState(ctx context.Context, circleID string, state hub.CircleState, disabledAt *time.Time) error {
 	result, err := repository.executor().ExecContext(ctx, `
 UPDATE hub_circle SET state = ?, disabled_at = ? WHERE circle_id = ?`,

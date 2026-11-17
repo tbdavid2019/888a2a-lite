@@ -102,6 +102,17 @@ func ParseAliases(value string) ([]Alias, error) {
 
 func (resolver Resolver) Mode() string { return resolver.mode }
 
+// StaticCircleIDs returns circle IDs that are configured statically (public + configured aliases)
+// and must never be removed by empty-circle pruning.
+func (resolver Resolver) StaticCircleIDs() []string {
+	ids := make([]string, 0, 1+len(resolver.aliases))
+	ids = append(ids, PublicID)
+	for _, a := range resolver.aliases {
+		ids = append(ids, resolver.aliasID(a.Name))
+	}
+	return ids
+}
+
 func (resolver Resolver) KeyDigest(sharedKey string) string {
 	return resolver.digest("key:" + strings.TrimSpace(sharedKey))
 }

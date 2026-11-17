@@ -2,8 +2,18 @@
 
 ## 2026-11-17
 
+### Security & Hardening
+
+- 新增動態 Circle 防濫用與自動排程清空機制：
+  - 新增 `A2A888_HUB_MAX_CIRCLES`（預設 `200`）、`A2A888_HUB_EMPTY_CIRCLE_TTL_SECONDS`（預設 `86400` 秒 / 24 小時）與 `A2A888_HUB_IDLE_AGENT_TTL_SECONDS`（預設 `604800` 秒 / 7 天）設定。
+  - 背景 1 分鐘排程（`Service.RunScheduledMaintenance`）新增 `PruneIdleAgents` 與 `PruneEmptyCircles`：自動回收長期未心跳離線的 Agent 並清除已無任何成員與近期活動的動態 Circle（`public` 與靜態 `SharedKeys` 圈永久保留），且於管理員手動觸發 `/hub/v1/admin/agents/prune` 時一併回收並回報 `prunedCircles`。
+  - 修正 `Service.RegisterWithSharedKey` 順序，先檢查冪等重複、Agent 上限與動態 Circle 上限（回傳 `429 CIRCLE_LIMIT_REACHED`）再寫入 `hub_circle`，防止超限請求殘留幽靈空 Circle；同步修復 `cleanupAgentDependencies` 遺漏刪除 `group_charter_revision`、`group_secretary`、`meeting_session` 外鍵列的問題。
+  - 強化 `clientIP` 與 `requestLimiter`：受信任本地／內網反向代理（Nginx / Docker bridge）後方可正確解析 `CF-Connecting-IP`、`X-Real-IP` 或最右側非代理 `X-Forwarded-For` 用戶真實 IP 進行獨立限流，避免單一濫用者連坐全站並確保限流映射記憶體封頂。
+
 ### Fixed
 
+- 強化 Web 對話大廳（`chat.html`）與管理後台（`admin.html`）體驗：
+  - 新增 `david888.com 技術提供` Footer、手機端 RWD 版面調校（`100dvh`、安全區域、側邊抽屜／水平捲動分頁與 16px 防 iOS 自動縮放輸入欄）、深淺色暗黑模式切換（`data-theme="dark"`，同步本機記憶與系統偏好）以及繁體中文／English／日本語多國語即時切換。
 - 修正 Web 對話大廳（`chat.html`）與 `/admin/chat`（`admin.html`）操作防呆：
   - 為訊息輸入框補齊中文 IME（含 macOS Safari／Chrome 注音選字）組字防護（檢查 `e.isComposing`、`keyCode === 229` 與 `compositionstart`/`compositionupdate`/`compositionend` + 80ms 時窗），避免選字按 `Enter` 時誤觸發 `@` 選單或直接送出未完成訊息。
   - 於「私密 Circle Key」欄位即時偵測誤貼 `circle-<32位hex>` 雜湊 Circle ID 之情形，跳出明確警告「這看起來是 Circle ID（雜湊值），請改填原始密鑰（--key）」，並於首次送出時暫停防呆確認，避免誤入空白新圈子。
