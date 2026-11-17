@@ -1202,24 +1202,24 @@ func TestPruneNonOwnerMemberWithGroupDeliveryFK(t *testing.T) {
 	if err != nil {
 		t.Fatalf("register member: %v", err)
 	}
-	group, err := svc.CreateGroup(ctx, owner.AgentID, owner.AgentToken, "fk-group")
+	group, err := svc.CreateGroup(ctx, owner.AgentID, owner.AgentToken, hub.CreateGroupInput{Name: "fk-group"})
 	if err != nil {
 		t.Fatalf("CreateGroup: %v", err)
 	}
-	inv, err := svc.InviteToGroup(ctx, owner.AgentID, owner.AgentToken, group.GroupID, member.AgentID)
+	inv, err := svc.InviteMember(ctx, owner.AgentID, owner.AgentToken, group.GroupID, member.AgentID)
 	if err != nil {
-		t.Fatalf("InviteToGroup: %v", err)
+		t.Fatalf("InviteMember: %v", err)
 	}
-	if _, err := svc.AcceptInvitation(ctx, member.AgentID, member.AgentToken, group.GroupID, inv.InvitationID); err != nil {
+	if _, err := svc.AcceptInvitation(ctx, member.AgentID, member.AgentToken, inv.ID); err != nil {
 		t.Fatalf("AcceptInvitation: %v", err)
 	}
-	if _, _, err := svc.SendGroupMessage(ctx, owner.AgentID, owner.AgentToken, group.GroupID, hub.GroupMessageInput{Message: "hello member", IdempotencyKey: "gm-fk-1"}); err != nil {
+	if _, _, err := svc.SendGroupMessage(ctx, owner.AgentID, owner.AgentToken, group.GroupID, hub.GroupMessageInput{ContextID: "ctx-fk", Message: "hello member", IdempotencyKey: "gm-fk-1"}); err != nil {
 		t.Fatalf("SendGroupMessage: %v", err)
 	}
 
 	// Keep owner alive, let member go idle past IdleAgentTTL -> pruning member must not hit group_delivery FK error
 	currentTime = currentTime.Add(2 * time.Hour)
-	if _, err := svc.Heartbeat(ctx, owner.AgentID, owner.AgentToken); err != nil {
+	if _, err := svc.Heartbeat(ctx, owner.AgentID, owner.AgentToken, ""); err != nil {
 		t.Fatalf("owner Heartbeat: %v", err)
 	}
 	prunedAgents, _, err := svc.RunScheduledMaintenance(ctx)
