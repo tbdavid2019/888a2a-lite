@@ -734,6 +734,7 @@
                 <input id="reg-key" type="password" autocomplete="off" placeholder="留空 = Public；填寫 = 隔離私密圈">
                 <button id="btn-gen-key" class="secondary" type="button" title="產生隨機私密 Circle Key">隨機</button>
               </div>
+              <div id="reg-key-warning" class="status-msg error hidden" style="margin-top:6px;" role="alert"></div>
             </div>
           </div>
 
@@ -810,6 +811,9 @@
   let session = null; // { profileId, agentId, token, displayName, circleId, note }
   let sessionEpoch = 0;
   let connectMode = "register";
+  let hubMode = "PUBLIC";
+  let confirmedHashedKeyFor = "";
+  const HASHED_CIRCLE_ID_RE = /^circle-[0-9a-f]{32}$/i;
   let peers = [];
   let groups = [];
   let invitations = [];
@@ -979,9 +983,12 @@
   async function loadHubBanner() {
     try {
       const st = await hubFetch("/hub/v1/status", {}, null);
-      $("hub-mode-pill").textContent = `${st.mode || "PUBLIC"} · ${st.registeredAgents || 0} Agents`;
+      hubMode = st.mode || "PUBLIC";
+      if (!session) {
+        $("hub-mode-pill").textContent = `${hubMode} · ${st.registeredAgents || 0} Agents`;
+      }
     } catch {
-      $("hub-mode-pill").textContent = "Hub 狀態未知";
+      if (!session) $("hub-mode-pill").textContent = "Hub 狀態未知";
     }
     try {
       const ann = await hubFetch("/hub/v1/announcements?afterId=0&limit=5", {}, null);
@@ -1075,10 +1082,9 @@
     $("circle-pill").textContent = session.circleId && session.circleId !== "public" ? `Private · ${session.circleId}` : "Public Circle";
     $("circle-pill").className = `pill ${session.circleId && session.circleId !== "public" ? "accent" : ""}`.trim();
     $("circle-pill").classList.remove("hidden");
+    $("hub-mode-pill").textContent = `${hubMode} · 同圈 ${peers.length + 1} 位`;
     $("connect-strip").classList.add("hidden");
     $("chat-header").classList.remove("hidden");
-    $("composer-input").disabled = false;
-    $("btn-send").disabled = false;
 
     renderSavedProfilesPicker();
     renderSidebar();
@@ -1101,6 +1107,29 @@
     if (myEpoch === sessionEpoch) renderChatArea();
   }
 
+  function resetChatURL() {
+    const p = window.location.pathname;
+    if ((p.startsWith("/chat/") || p.startsWith("/group/")) && window.history?.replaceState) {
+      window.history.replaceState({}, "", "/chat");
+    }
+  }
+
+  function updateRegKeyWarning(resetConfirm = true) {
+    const key = $("reg-key").value.trim();
+    const warn = $("reg-key-warning");
+    if (resetConfirm && key !== confirmedHashedKeyFor) {
+      confirmedHashedKeyFor = "";
+    }
+    if (HASHED_CIRCLE_ID_RE.test(key)) {
+      warn.textContent = "這看起來是 Circle ID（雜湊值），請改填原始密鑰（--key）；若沒有原始密鑰，請改用上方「接續既有 Agent ID / Token」分頁。";
+      warn.classList.remove("hidden");
+      return true;
+    }
+    warn.textContent = "";
+    warn.classList.add("hidden");
+    return false;
+  }
+
   async function doConnect() {
     const btn = $("btn-connect");
     btn.disabled = true;
@@ -1108,6 +1137,13 @@
       if (connectMode === "register") {
         const displayName = $("reg-name").value.trim() || "WebUser";
         const sharedKey = $("reg-key").value.trim();
+        if (updateRegKeyWarning(false) && confirmedHashedKeyFor !== sharedKey) {
+          confirmedHashedKeyFor = sharedKey;
+          setStatus("connect-status", "偵測到 circle- 開頭的雜湊 Circle ID：請改填原始密鑰（--key）；若確認這就是你的原始密鑰，請再按一次「連線進入大廳」。", "error");
+          $("reg-key").focus();
+          return;
+        }
+        confirmedHashedKeyFor = "";
         const headers = {};
         if (sharedKey) headers["X-Hub-Key"] = sharedKey;
         const idem = (crypto.randomUUID ? crypto.randomUUID() : `web-${Date.now()}-${Math.random().toString(16).slice(2)}`);
@@ -1132,6 +1168,7 @@
           circleId: ident.circleId || "public",
           note: sharedKey ? "私密圈" : "",
         });
+        resetChatURL();
         setStatus("connect-status", "已成功連線！", "ok");
         await connectWithSession(prof);
       } else {
@@ -1151,6 +1188,7 @@
           circleId: agentObj.circleId || "public",
           note,
         });
+        resetChatURL();
         setStatus("connect-status", "憑證驗證成功！", "ok");
         await connectWithSession(prof);
       }
@@ -1173,6 +1211,7 @@
     peers = (peersResp.agents || []).filter((a) => a.agentId !== current.agentId);
     groups = groupsResp.groups || [];
     invitations = (invResp.invitations || []).filter((inv) => inv.state === "PENDING");
+    $("hub-mode-pill").textContent = `${hubMode} · 同圈 ${peers.length + 1} 位`;
     if (activeChat && activeChat.type === "group") {
       try {
         const r = await hubFetch(`/hub/v1/groups/${encodeURIComponent(activeChat.id)}/roster`, {}, current);
@@ -1182,6 +1221,7 @@
       }
     }
     renderSidebar();
+    if (activeChat && expectedEpoch === sessionEpoch) renderChatArea();
   }
 
   function renderSidebar() {
@@ -1292,6 +1332,7 @@
     activeChat = { type: "peer", id: peer.agentId, title: peer.displayName || peer.agentId, peer };
     delete unreadCounts[`peer:${peer.agentId}`];
     $("invite-panel").classList.add("hidden");
+    setStatus("composer-status", "");
     if (pushUrl && window.history?.pushState) {
       window.history.pushState({ chat: activeChat }, "", `/chat/${encodeURIComponent(peer.agentId)}`);
     }
@@ -1305,6 +1346,7 @@
     activeChat = { type: "group", id: group.groupId, title: group.name || group.groupId, group };
     delete unreadCounts[`group:${group.groupId}`];
     $("invite-panel").classList.add("hidden");
+    setStatus("composer-status", "");
     if (pushUrl && window.history?.pushState) {
       window.history.pushState({ chat: activeChat }, "", `/group/${encodeURIComponent(group.groupId)}`);
     }
@@ -1368,23 +1410,35 @@
     if (!session || !activeChat) {
       $("chat-title").textContent = session ? "選擇一個 Agent 或群組" : "尚未連線";
       $("chat-sub").textContent = session ? "從左側點選在線節點進行 1 對 1 私聊，或建立群組展開多 Agent 協作。" : "請先於上方完成連線。";
-      $("composer-target-hint").textContent = "";
+      $("composer-target-hint").textContent = session ? "尚未選擇對象" : "";
+      $("composer-input").disabled = true;
+      $("btn-send").disabled = true;
+      $("composer-input").placeholder = session ? "← 請先從左側點選一位在線 Agent，或按「+ 新增」建立群組..." : "請先於上方完成連線...";
       scroll.replaceChildren(
         buildEmptyState(
-          "直接從瀏覽器與線上 Agent 協作",
-          "上方輸入暱稱與選填的私密 Circle Key 連線後，就能探索同圈線上 Agent、展開 1 對 1 私聊或建立多 Agent 群組，透過即時 SSE 接收回覆。",
+          session ? "請先選擇左側對話對象" : "直接從瀏覽器與線上 Agent 協作",
+          session ? "請從左側清單點選要私聊的 Agent（例如 蜜蜜 或 甜甜），或按「+ 新增」建立多 Agent 群組後再傳送訊息。" : "上方輸入暱稱與選填的私密 Circle Key 連線後，就能探索同圈線上 Agent、展開 1 對 1 私聊或建立多 Agent 群組，透過即時 SSE 接收回覆。",
           "想連接本機 OpenClaw / Hermes / Codex 常駐執行？請於本機執行 a2a bridge"
         )
       );
       return;
     }
 
+    $("composer-input").disabled = false;
+    $("btn-send").disabled = false;
+    $("composer-input").placeholder = "輸入訊息...（在群組或對話輸入 @ 可指名特定 Agent，Enter 送出）";
+
     if (activeChat.type === "peer") {
-      const p = peers.find((x) => x.agentId === activeChat.id) || activeChat.peer || {};
-      const isOnline = p.state === "ONLINE";
-      $("chat-title").innerHTML = `<span class="dot" style="color:${isOnline ? "var(--ok-fg)" : "var(--muted)"}"></span><span>${esc(p.displayName || activeChat.id)}</span> <span class="pill ${isOnline ? "online" : ""}">${esc(p.state || "UNKNOWN")}</span>`;
+      const livePeer = peers.find((x) => x.agentId === activeChat.id);
+      const p = livePeer || activeChat.peer || {};
+      const peerState = livePeer ? (livePeer.state || "UNKNOWN") : "UNAVAILABLE";
+      const isOnline = peerState === "ONLINE";
+      $("chat-title").innerHTML = `<span class="dot" style="color:${isOnline ? "var(--ok-fg)" : "var(--muted)"}"></span><span>${esc(p.displayName || activeChat.id)}</span> <span class="pill ${isOnline ? "online" : ""}">${esc(peerState)}</span>`;
       $("chat-sub").textContent = `${p.providerFamily || "agent"} · ${activeChat.id}`;
-      $("composer-target-hint").textContent = `發送至 ${activeChat.id}`;
+      $("composer-target-hint").textContent = `發送至 ${p.displayName || activeChat.id}`;
+      if (!isOnline) {
+        setStatus("composer-status", `對象 ${p.displayName || activeChat.id} 目前狀態為 ${peerState}，若無法送出請從左側改選 ONLINE Agent。`, "error");
+      }
     } else {
       $("chat-title").innerHTML = `<span># ${esc(activeChat.title)}</span> <span class="pill">${groupRoster.length} 成員</span>`;
       $("chat-sub").textContent = `群組 ID：${activeChat.id} · 成員：${groupRoster.map((m) => peerLabel(m.agentId)).join("、") || "載入中"}`;
@@ -1722,9 +1776,9 @@
       }
     } finally {
       if (myEpoch === sessionEpoch && session === current) {
-        btn.disabled = false;
-        input.disabled = false;
-        input.focus();
+        btn.disabled = !activeChat;
+        input.disabled = !activeChat;
+        if (activeChat) input.focus();
       }
     }
   }
@@ -1790,12 +1844,22 @@
     const path = window.location.pathname;
     if (path.startsWith("/chat/")) {
       const id = decodeURIComponent(path.slice("/chat/".length));
-      const p = peers.find((x) => x.agentId === id) || { agentId: id, displayName: id, state: "UNKNOWN" };
-      selectPeer(p, false);
+      const p = peers.find((x) => x.agentId === id);
+      if (p) {
+        selectPeer(p, false);
+      } else {
+        resetChatURL();
+        setStatus("composer-status", `找不到指定的對話對象 ${id}（可能已離線或屬於其他 Circle），請從左側點選在線 Agent。`, "error");
+      }
     } else if (path.startsWith("/group/")) {
       const id = decodeURIComponent(path.slice("/group/".length));
-      const g = groups.find((x) => x.groupId === id) || { groupId: id, name: id };
-      await selectGroup(g, false, expectedEpoch);
+      const g = groups.find((x) => x.groupId === id);
+      if (g) {
+        await selectGroup(g, false, expectedEpoch);
+      } else {
+        resetChatURL();
+        setStatus("composer-status", `找不到指定的群組 ${id}（可能不屬於目前 Circle），請從左側點選或建立群組。`, "error");
+      }
     }
   }
 
@@ -1812,6 +1876,7 @@
   $("btn-dismiss-announcement").addEventListener("click", () => $("announcement-bar").classList.remove("visible"));
   $("mode-register").addEventListener("click", () => switchConnectMode("register"));
   $("mode-resume").addEventListener("click", () => switchConnectMode("resume"));
+  $("reg-key").addEventListener("input", () => updateRegKeyWarning(true));
   $("btn-connect").addEventListener("click", doConnect);
   $("btn-toggle-connect").addEventListener("click", () => {
     renderSavedProfilesPicker();
@@ -1822,6 +1887,7 @@
     const prof = loadProfiles()[pid];
     if (!prof) return;
     try {
+      resetChatURL();
       await connectWithSession(prof);
     } catch (err) {
       setStatus("connect-status", err.message || "切換失敗", "error");
@@ -1832,7 +1898,10 @@
     if (!pid) return;
     const wasCurrent = session && session.profileId === pid;
     removeProfile(pid);
-    if (wasCurrent) resetDisconnectedUI("已移除該本機憑證。", "ok");
+    if (wasCurrent) {
+      resetChatURL();
+      resetDisconnectedUI("已移除該本機憑證。", "ok");
+    }
   });
 
   $("roster-search").addEventListener("input", renderSidebar);
@@ -1844,6 +1913,7 @@
     const hex = Array.from(arr, (b) => b.toString(16).padStart(2, "0")).join("");
     $("reg-key").type = "text";
     $("reg-key").value = hex;
+    updateRegKeyWarning(true);
   });
 
   $("btn-copy-creds").addEventListener("click", async () => {
@@ -1872,6 +1942,7 @@
   $("btn-disconnect").addEventListener("click", async () => {
     if (!session) return;
     const old = session;
+    resetChatURL();
     resetDisconnectedUI("已離線（已保留本機憑證以便稍後接續，或按上方移除）。", "ok");
     hubFetch(`/hub/v1/agents/${encodeURIComponent(old.agentId)}/disconnect`, { method: "POST" }, old).catch(() => {});
   });

@@ -1011,12 +1011,18 @@ func TestHostedWebChatAndAdminChatRoutes(t *testing.T) {
 		if !strings.Contains(body, "888a2a-lite · Agent 對話大廳") {
 			t.Fatalf("GET %s missing hosted chat title", path)
 		}
+		if !strings.Contains(body, `id="reg-key-warning"`) || !strings.Contains(body, "HASHED_CIRCLE_ID_RE") {
+			t.Fatalf("GET %s missing hashed circle ID guard", path)
+		}
 	}
 
 	adminRec := httptest.NewRecorder()
 	handler.ServeHTTP(adminRec, httptest.NewRequest(http.MethodGet, "/admin/chat", nil))
 	if adminRec.Code != http.StatusOK || !strings.Contains(adminRec.Body.String(), "線上對話") {
 		t.Fatalf("GET /admin/chat = %d, missing chat tab", adminRec.Code)
+	}
+	if !strings.Contains(adminRec.Body.String(), `id="admin-chat-key-warning"`) || !strings.Contains(adminRec.Body.String(), "ADMIN_HASHED_CIRCLE_ID_RE") {
+		t.Fatalf("GET /admin/chat missing hashed circle ID guard")
 	}
 	if csp := adminRec.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "script-src 'nonce-") {
 		t.Fatalf("GET /admin/chat missing CSP nonce header: %q", csp)

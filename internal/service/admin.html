@@ -277,7 +277,7 @@
       </div>
       <div class="grid">
         <label>顯示名稱<input id="admin-chat-name" type="text" value="OperatorConsole" placeholder="例如：OperatorConsole"></label>
-        <label>私密 Circle Key（選填；留空 = Public Circle）<input id="admin-chat-key" type="password" autocomplete="off" placeholder="留空進入 Public Circle"></label>
+        <label>私密 Circle Key（選填；留空 = Public Circle）<input id="admin-chat-key" type="password" autocomplete="off" placeholder="留空進入 Public Circle"><span id="admin-chat-key-warning" class="meta-sub" style="color:var(--danger); display:none; margin-top:4px;"></span></label>
         <label>接續既有 Agent ID（選填）<input id="admin-chat-agent-id" type="text" placeholder="agent-..."></label>
         <label>接續既有 Agent Token（選填）<input id="admin-chat-agent-token" type="password" autocomplete="off" placeholder="Bearer Token"></label>
       </div>
@@ -730,6 +730,24 @@
   let chatReconnectTimer = null;
   let chatReconnectDelay = 1000;
   let adminPendingSend = null;
+  let adminConfirmedHashedKeyFor = "";
+  const ADMIN_HASHED_CIRCLE_ID_RE = /^circle-[0-9a-f]{32}$/i;
+
+  function updateAdminChatKeyWarning(resetConfirm = true) {
+    const key = $("admin-chat-key").value.trim();
+    const warn = $("admin-chat-key-warning");
+    if (resetConfirm && key !== adminConfirmedHashedKeyFor) {
+      adminConfirmedHashedKeyFor = "";
+    }
+    if (ADMIN_HASHED_CIRCLE_ID_RE.test(key)) {
+      warn.textContent = "這看起來是 Circle ID（雜湊值），請改填原始密鑰（--key）；若沒有原始密鑰，請改填下方 Agent ID / Token。";
+      warn.style.display = "block";
+      return true;
+    }
+    warn.textContent = "";
+    warn.style.display = "none";
+    return false;
+  }
 
   const adminChatProfileId = (circleId, agentId) => `${circleId || "public"}:${agentId}`;
   const adminChatHistKey = (sess = chatSession) => sess ? `${CHAT_HISTORY_PREFIX}${sess.circleId || "public"}:${sess.agentId}` : "";
@@ -1003,6 +1021,8 @@
     } catch {}
   };
 
+  $("admin-chat-key").addEventListener("input", () => updateAdminChatKeyWarning(true));
+
   $("btn-admin-chat-connect").addEventListener("click", async () => {
     try {
       const customId = $("admin-chat-agent-id").value.trim();
@@ -1017,6 +1037,13 @@
         const cid = ag.circleId || "public";
         sess = { profileId: adminChatProfileId(cid, customId), agentId: customId, token: customTok, displayName: ag.displayName || name, circleId: cid, note: key ? "私密圈" : "" };
       } else {
+        if (updateAdminChatKeyWarning(false) && adminConfirmedHashedKeyFor !== key) {
+          adminConfirmedHashedKeyFor = key;
+          status("偵測到 circle- 開頭的雜湊 Circle ID：請改填原始密鑰（--key）；若確認這就是原始密鑰，請再按一次「連線／註冊對話身分」。", "error");
+          $("admin-chat-key").focus();
+          return;
+        }
+        adminConfirmedHashedKeyFor = "";
         const headers = { "Content-Type": "application/json" };
         if (key) headers["X-Hub-Key"] = key;
         const idem = (crypto.randomUUID ? crypto.randomUUID() : `admin-${Date.now()}`);
