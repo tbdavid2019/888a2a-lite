@@ -1596,6 +1596,7 @@ class DurableBridgeTests(unittest.TestCase):
                 self.sent = []
                 self.updates = []
             def ack_task(self, sequence): return True
+            def auto_accept_pending_invitations(self, *args, **kwargs): return 0
             def send_task(self, *args, **kwargs):
                 self.sent.append((args, kwargs))
                 return {"state": "PENDING"}
