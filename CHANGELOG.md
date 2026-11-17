@@ -5,6 +5,7 @@
 ### Fixed
 
 - 修正 Web 對話大廳（`chat.html`）與 `/admin/chat`（`admin.html`）操作防呆：
+  - 為訊息輸入框補齊中文 IME（含 macOS Safari／Chrome 注音選字）組字防護（檢查 `e.isComposing`、`keyCode === 229` 與 `compositionstart`/`compositionupdate`/`compositionend` + 80ms 時窗），避免選字按 `Enter` 時誤觸發 `@` 選單或直接送出未完成訊息。
   - 於「私密 Circle Key」欄位即時偵測誤貼 `circle-<32位hex>` 雜湊 Circle ID 之情形，跳出明確警告「這看起來是 Circle ID（雜湊值），請改填原始密鑰（--key）」，並於首次送出時暫停防呆確認，避免誤入空白新圈子。
   - 修正切換／連線身分時殘留 `/chat/<oldAgentId>` 網址導致誤向已離線或跨圈 `UNKNOWN` Agent 發訊（回傳 `agent is unavailable`）之問題，並在尚未從左側選定有效 Agent／群組前禁用輸入框並顯示明確提示，同時將右上角狀態膠囊同步為目前同圈在線人數。
 - 依據三方獨立全量 Code Review（OMP／OpenCode／Research）全面修復：

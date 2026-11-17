@@ -1014,6 +1014,9 @@ func TestHostedWebChatAndAdminChatRoutes(t *testing.T) {
 		if !strings.Contains(body, `id="reg-key-warning"`) || !strings.Contains(body, "HASHED_CIRCLE_ID_RE") {
 			t.Fatalf("GET %s missing hashed circle ID guard", path)
 		}
+		if !strings.Contains(body, "imeComposing") || !strings.Contains(body, "lastCompositionEndAt") {
+			t.Fatalf("GET %s missing CJK IME composition Enter guard", path)
+		}
 	}
 
 	adminRec := httptest.NewRecorder()
@@ -1023,6 +1026,9 @@ func TestHostedWebChatAndAdminChatRoutes(t *testing.T) {
 	}
 	if !strings.Contains(adminRec.Body.String(), `id="admin-chat-key-warning"`) || !strings.Contains(adminRec.Body.String(), "ADMIN_HASHED_CIRCLE_ID_RE") {
 		t.Fatalf("GET /admin/chat missing hashed circle ID guard")
+	}
+	if !strings.Contains(adminRec.Body.String(), "imeComposing") || !strings.Contains(adminRec.Body.String(), "lastCompositionEndAt") {
+		t.Fatalf("GET /admin/chat missing CJK IME composition Enter guard")
 	}
 	if csp := adminRec.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "script-src 'nonce-") {
 		t.Fatalf("GET /admin/chat missing CSP nonce header: %q", csp)

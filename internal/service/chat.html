@@ -1993,18 +1993,34 @@
 
   $("btn-send").addEventListener("click", sendMessage);
   $("composer-input").addEventListener("input", updateMentionPopover);
-  $("composer-input").addEventListener("keydown", (e) => {
-    if ($("mention-popover").classList.contains("visible")) {
-      if (e.key === "ArrowDown") { e.preventDefault(); mentionIndex = (mentionIndex + 1) % mentionItems.length; renderMentionPopover(); return; }
-      if (e.key === "ArrowUp") { e.preventDefault(); mentionIndex = (mentionIndex - 1 + mentionItems.length) % mentionItems.length; renderMentionPopover(); return; }
-      if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); applyMention(mentionItems[mentionIndex]); return; }
-      if (e.key === "Escape") { e.preventDefault(); hideMentionPopover(); return; }
-    }
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
-  });
+  (() => {
+    const input = $("composer-input");
+    let imeComposing = false;
+    let lastCompositionEndAt = 0;
+    input.addEventListener("compositionstart", () => { imeComposing = true; });
+    input.addEventListener("compositionupdate", () => { imeComposing = true; });
+    input.addEventListener("compositionend", () => {
+      imeComposing = false;
+      lastCompositionEndAt = Date.now();
+    });
+    input.addEventListener("blur", () => { imeComposing = false; });
+    input.addEventListener("keydown", (e) => {
+      // Guard CJK/Zhuyin IME confirmation Enter (including Safari where compositionend fires right before keydown)
+      if (e.isComposing || imeComposing || e.keyCode === 229 || (Date.now() - lastCompositionEndAt < 80)) {
+        return;
+      }
+      if ($("mention-popover").classList.contains("visible")) {
+        if (e.key === "ArrowDown") { e.preventDefault(); mentionIndex = (mentionIndex + 1) % mentionItems.length; renderMentionPopover(); return; }
+        if (e.key === "ArrowUp") { e.preventDefault(); mentionIndex = (mentionIndex - 1 + mentionItems.length) % mentionItems.length; renderMentionPopover(); return; }
+        if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); applyMention(mentionItems[mentionIndex]); return; }
+        if (e.key === "Escape") { e.preventDefault(); hideMentionPopover(); return; }
+      }
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    });
+  })();
 
   window.addEventListener("popstate", () => { applyRouteFromURL().catch(() => {}); });
 

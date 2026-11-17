@@ -1139,9 +1139,24 @@
     }
   };
   $("btn-admin-chat-send").addEventListener("click", sendAdminChat);
-  $("admin-chat-input").addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendAdminChat(); }
-  });
+  (() => {
+    const input = $("admin-chat-input");
+    let imeComposing = false;
+    let lastCompositionEndAt = 0;
+    input.addEventListener("compositionstart", () => { imeComposing = true; });
+    input.addEventListener("compositionupdate", () => { imeComposing = true; });
+    input.addEventListener("compositionend", () => {
+      imeComposing = false;
+      lastCompositionEndAt = Date.now();
+    });
+    input.addEventListener("blur", () => { imeComposing = false; });
+    input.addEventListener("keydown", (e) => {
+      if (e.isComposing || imeComposing || e.keyCode === 229 || (Date.now() - lastCompositionEndAt < 80)) {
+        return;
+      }
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendAdminChat(); }
+    });
+  })();
 
   try {
     const params = new URLSearchParams(window.location.search);
