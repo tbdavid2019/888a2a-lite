@@ -51,7 +51,7 @@ fits, but do not copy the full Manager or its SaaS dependencies.
 - Keep the project deployable after each focused change.
 - Write tests for new behavior, but do not run tests or builds on the local
   workstation for this project. Validation must run in GitHub Actions.
-- Runtime deployment and smoke tests must run on `david@10.9.0.11`.
+- Runtime deployment and smoke tests must run on `dns.glsoft.ai` (`/home/ubuntu/888a2a-lite`).
 - Do not expose credentials in command output, logs, commits, or documentation.
 
 ## Implementation order
