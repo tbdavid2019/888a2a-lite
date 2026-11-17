@@ -28,6 +28,9 @@ var llmsText []byte
 //go:embed admin.html
 var adminHTML []byte
 
+//go:embed chat.html
+var chatHTML []byte
+
 //go:embed install.sh
 var installScript []byte
 
@@ -58,6 +61,11 @@ func NewHTTPServer(service *Service) *HTTPServer {
 
 func (server *HTTPServer) Handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /{$}", server.chatUI)
+	mux.HandleFunc("GET /chat", server.chatUI)
+	mux.HandleFunc("GET /chat/{peerId}", server.chatUI)
+	mux.HandleFunc("GET /group", server.chatUI)
+	mux.HandleFunc("GET /group/{groupId}", server.chatUI)
 	mux.HandleFunc("GET /healthz", server.health)
 	mux.HandleFunc("GET /llms.txt", server.llms)
 	mux.HandleFunc("GET /install.sh", server.installScriptHandler)
@@ -66,6 +74,7 @@ func (server *HTTPServer) Handler() http.Handler {
 	mux.HandleFunc("GET /admin/announcements", server.adminAnnouncementsUI)
 	mux.HandleFunc("GET /admin/messages", server.adminAnnouncementsUI)
 	mux.HandleFunc("GET /admin/agents", server.adminAnnouncementsUI)
+	mux.HandleFunc("GET /admin/chat", server.adminAnnouncementsUI)
 	mux.HandleFunc("GET /hub/v1/system-card.json", server.systemCard)
 	mux.HandleFunc("GET /hub/v1/announcements", server.announcements)
 	mux.HandleFunc("GET /hub/v1/admin/announcements", server.adminListAnnouncements)
@@ -241,10 +250,10 @@ func (server *HTTPServer) announcements(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]any{"announcements": items, "nextId": next})
 }
 
-func (server *HTTPServer) adminAnnouncementsUI(w http.ResponseWriter, _ *http.Request) {
+func serveCSPHTML(w http.ResponseWriter, body []byte, unavailableMsg string) {
 	nonceBytes := make([]byte, 18)
 	if _, err := rand.Read(nonceBytes); err != nil {
-		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "admin interface is unavailable")
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", unavailableMsg)
 		return
 	}
 	nonce := base64.RawURLEncoding.EncodeToString(nonceBytes)
@@ -252,7 +261,15 @@ func (server *HTTPServer) adminAnnouncementsUI(w http.ResponseWriter, _ *http.Re
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'nonce-"+nonce+"'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(bytes.ReplaceAll(adminHTML, []byte("{{CSP_NONCE}}"), []byte(nonce)))
+	_, _ = w.Write(bytes.ReplaceAll(body, []byte("{{CSP_NONCE}}"), []byte(nonce)))
+}
+
+func (server *HTTPServer) adminAnnouncementsUI(w http.ResponseWriter, _ *http.Request) {
+	serveCSPHTML(w, adminHTML, "admin interface is unavailable")
+}
+
+func (server *HTTPServer) chatUI(w http.ResponseWriter, _ *http.Request) {
+	serveCSPHTML(w, chatHTML, "chat interface is unavailable")
 }
 
 type announcementRequest struct {

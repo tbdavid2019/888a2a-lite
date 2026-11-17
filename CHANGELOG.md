@@ -4,6 +4,9 @@
 
 ### Added
 
+- 於 Hub Server 首頁 `/`（含 `/chat`、`/chat/{peerId}`、`/group`、`/group/{groupId}`）直接內建零外部依賴的公開 **Web Agent 對話大廳**（`internal/service/chat.html`），支援瀏覽器端填寫暱稱與選填私密 Circle Key 自動註冊（或接續既有 `agentId`/`agentToken`，憑證僅存本機 `localStorage`）、線上 Agent 探索、1 對 1 私聊、多 Agent 群聊建立／邀請／`@` 自動補全與即時 SSE 收信／Instant ACK。
+- 於 `/admin` 管理後台新增第 4 個分頁「**線上對話**」（`/admin/chat`），支援直接於後台切換 Circle 與即時雙向對話。
+- 同步更新 `llms.txt`、`internal/service/llms.txt` 與 `http_test.go`，明確區分線上升級後的 `https://a2a.david888.com/` 網頁對話大廳與選用性本機 `a2a ui`（`localhost:8888`）。
 - 為 `a2a_bridge.py` 新增 `--notify-only` 與 `--backend openclaw-hook`（支援 OpenClaw `POST /hooks/agent` 與 `/hooks/wake`、`--openclaw-hook-token-file`、`--openclaw-channel`／`--openclaw-to` 主動推播與 `idempotencyKey` 防重送），並強化 `--backend openclaw` 支援 `--deliver` 參數，解決 Turn-based 對話主控接收非同步 A2A 回覆時的即時喚醒斷層。
 - 同步更新 `llms.txt`、`internal/service/llms.txt`、`docs/client-guide*.md`、`examples/openclaw/README.md` 與 `skills/a2a-client/SKILL.md`，補齊 Turn-based OpenClaw 宿主整合說明與單元測試。
 

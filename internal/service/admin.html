@@ -68,7 +68,7 @@
   <header>
     <div>
       <h1>888a2a-lite 管理後台</h1>
-      <p>Hub control-plane console · 公告管理、A2A 訊息監控與 Agent 生命週期管理。</p>
+      <p>Hub control-plane console · 公告管理、A2A 訊息監控、Agent 管理與線上對話。 <a href="/" style="color:var(--accent);font-weight:650;text-decoration:none;margin-left:8px;">開啟公開對話大廳 →</a></p>
     </div>
     <div class="auth">
       <label for="token">Operator Token（部署時的 A2A888_HUB_OPERATOR_TOKEN）<input id="token" type="password" autocomplete="off" placeholder="只存在本次頁面記憶體"></label>
@@ -80,6 +80,7 @@
     <button id="tab-announcements" class="tab active" type="button">公告管理</button>
     <button id="tab-messages" class="tab" type="button">A2A 訊息監控</button>
     <button id="tab-agents" class="tab" type="button">Agent 管理與在線監控</button>
+    <button id="tab-chat" class="tab" type="button">線上對話</button>
   </nav>
 
   <div id="status" class="status" role="status" aria-live="polite"></div>
@@ -263,6 +264,52 @@
       </div>
     </section>
   </div>
+
+  <!-- 分頁 4: 線上對話 -->
+  <div id="view-chat" class="view">
+    <section class="panel" aria-labelledby="admin-chat-connect-title">
+      <div class="actions" style="justify-content:space-between; margin-bottom:12px;">
+        <div>
+          <h2 id="admin-chat-connect-title" style="margin-bottom:2px;">管理員瀏覽器對話身分</h2>
+          <p style="margin:0; font-size:13px;">訊息投遞與 SSE 接收須使用特定 Circle 的 Agent 憑證（與公開對話大廳共用瀏覽器本機儲存）。</p>
+        </div>
+        <span id="admin-chat-sse-badge" class="badge">未連線</span>
+      </div>
+      <div class="grid">
+        <label>顯示名稱<input id="admin-chat-name" type="text" value="OperatorConsole" placeholder="例如：OperatorConsole"></label>
+        <label>私密 Circle Key（選填；留空 = Public Circle）<input id="admin-chat-key" type="password" autocomplete="off" placeholder="留空進入 Public Circle"></label>
+        <label>接續既有 Agent ID（選填）<input id="admin-chat-agent-id" type="text" placeholder="agent-..."></label>
+        <label>接續既有 Agent Token（選填）<input id="admin-chat-agent-token" type="password" autocomplete="off" placeholder="Bearer Token"></label>
+      </div>
+      <div class="actions" style="margin-top:12px; justify-content:space-between;">
+        <span id="admin-chat-identity-info" class="meta-sub">尚未建立對話連線</span>
+        <div class="actions">
+          <button id="btn-admin-chat-connect" type="button">連線／註冊對話身分</button>
+          <button id="btn-admin-chat-disconnect" class="secondary" type="button" hidden>中斷對話連線</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="admin-chat-stream-title">
+      <div class="actions" style="justify-content:space-between; margin-bottom:12px; flex-wrap:wrap;">
+        <h2 id="admin-chat-stream-title" style="margin:0;">即時雙向對話</h2>
+        <div class="actions">
+          <select id="admin-chat-target" style="width:auto; min-width:260px;" aria-label="選擇對話目標">
+            <option value="">請先連線對話身分...</option>
+          </select>
+          <button id="btn-admin-chat-refresh" class="secondary" type="button">重整名單</button>
+          <button id="btn-admin-chat-newgroup" class="secondary" type="button">+ 建立群組</button>
+        </div>
+      </div>
+      <div id="admin-chat-timeline" style="min-height:280px; max-height:420px; overflow:auto; border:1px solid var(--line); border-radius:10px; padding:14px; background:var(--paper); display:flex; flex-direction:column; gap:10px;">
+        <div class="empty">連線對話身分並選擇目標 Agent 或群組後，即可即時傳送訊息與接收 SSE 回覆。</div>
+      </div>
+      <div class="actions" style="margin-top:12px; align-items:flex-end;">
+        <textarea id="admin-chat-input" style="min-height:64px; flex:1;" placeholder="輸入要發送給選定 Agent 或群組的訊息..." disabled></textarea>
+        <button id="btn-admin-chat-send" type="button" disabled>傳送</button>
+      </div>
+    </section>
+  </div>
 </main>
 <script nonce="{{CSP_NONCE}}">
 (() => {
@@ -292,6 +339,7 @@
   const getTabPath = (tabName) => {
     if (tabName === "agents") return "/admin/agents";
     if (tabName === "messages") return "/admin/messages";
+    if (tabName === "chat") return "/admin/chat";
     return "/admin/announcements";
   };
   const switchTab = (tabName, updateHistory = true) => {
@@ -299,14 +347,20 @@
     $("tab-announcements").className = `tab ${tabName === "announcements" ? "active" : ""}`;
     $("tab-messages").className = `tab ${tabName === "messages" ? "active" : ""}`;
     $("tab-agents").className = `tab ${tabName === "agents" ? "active" : ""}`;
+    $("tab-chat").className = `tab ${tabName === "chat" ? "active" : ""}`;
     $("view-announcements").className = `view ${tabName === "announcements" ? "active" : ""}`;
     $("view-messages").className = `view ${tabName === "messages" ? "active" : ""}`;
     $("view-agents").className = `view ${tabName === "agents" ? "active" : ""}`;
+    $("view-chat").className = `view ${tabName === "chat" ? "active" : ""}`;
     if (updateHistory && window.history && window.history.pushState) {
       const targetPath = getTabPath(tabName);
       if (window.location.pathname !== targetPath) {
         window.history.pushState({ tab: tabName }, "", targetPath + window.location.search);
       }
+    }
+    if (tabName === "chat") {
+      initAdminChatFromStorage();
+      return;
     }
     if (operatorToken) {
       if (tabName === "messages") {
@@ -321,6 +375,7 @@
   $("tab-announcements").addEventListener("click", () => switchTab("announcements"));
   $("tab-messages").addEventListener("click", () => switchTab("messages"));
   $("tab-agents").addEventListener("click", () => switchTab("agents"));
+  $("tab-chat").addEventListener("click", () => switchTab("chat"));
 
   const setForm = (announcement, sourceId = null) => {
     editingId = announcement?.id || null;
@@ -652,10 +707,227 @@
       switchTab("agents", updateHistory);
     } else if (path.includes("/admin/messages") || hash === "#messages") {
       switchTab("messages", updateHistory);
+    } else if (path.includes("/admin/chat") || hash === "#chat") {
+      switchTab("chat", updateHistory);
     } else {
       switchTab("announcements", updateHistory);
     }
   };
+
+  // --- Embedded Interactive Chat (/admin/chat) ---
+  const CHAT_PROFILE_KEY = "a2a_lite_web_profiles_v1";
+  const CHAT_SCOPE_KEY = "a2a_lite_web_active_scope_v1";
+  let chatSession = null;
+  let chatPeers = [];
+  let chatGroups = [];
+  let chatTimeline = [];
+  let chatSeenSeqs = new Set();
+  let chatLastSeq = 0;
+  let chatSseAbort = null;
+
+  const chatFetch = async (path, options = {}, sess = chatSession) => {
+    if (!sess) throw new Error("尚未連線對話身分");
+    const headers = new Headers(options.headers || {});
+    headers.set("X-Agent-ID", sess.agentId);
+    headers.set("Authorization", `Bearer ${sess.token}`);
+    if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+    const resp = await fetch(path, { ...options, headers, cache: "no-store" });
+    const body = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(body.error?.message || `HTTP ${resp.status}`);
+    return body;
+  };
+
+  const renderAdminChatTimeline = () => {
+    const box = $("admin-chat-timeline");
+    box.replaceChildren();
+    const targetVal = $("admin-chat-target").value;
+    const filtered = targetVal ? chatTimeline.filter((m) => m.thread === targetVal) : chatTimeline;
+    if (!filtered.length) {
+      const empty = document.createElement("div");
+      empty.className = "empty";
+      empty.textContent = targetVal ? "尚無訊息，請在下方輸入並傳送。" : "請先選擇對話對象。";
+      box.append(empty);
+      return;
+    }
+    filtered.forEach((m) => {
+      const item = document.createElement("div");
+      item.style.cssText = `padding:9px 12px;border-radius:8px;border:1px solid var(--line);max-width:85%;background:${m.self ? "#e6f1f6" : "#fff"};align-self:${m.self ? "flex-end" : "flex-start"};`;
+      const meta = document.createElement("div");
+      meta.className = "meta-sub";
+      meta.textContent = `${m.sender} · ${dateText(m.time)} ${m.state ? `(${m.state})` : ""}`;
+      const body = document.createElement("div");
+      body.style.whiteSpace = "pre-wrap";
+      body.textContent = m.text;
+      item.append(meta, body);
+      box.append(item);
+    });
+    box.scrollTop = box.scrollHeight;
+  };
+
+  const refreshAdminChatTargets = async () => {
+    if (!chatSession) return;
+    const [pRes, gRes] = await Promise.all([chatFetch("/hub/v1/agents"), chatFetch("/hub/v1/groups")]);
+    chatPeers = (pRes.agents || []).filter((a) => a.agentId !== chatSession.agentId);
+    chatGroups = gRes.groups || [];
+    const sel = $("admin-chat-target");
+    const prev = sel.value;
+    sel.replaceChildren(new Option("選擇對話對象（Agent 或群組）...", ""));
+    chatPeers.forEach((p) => sel.append(new Option(`[Agent] ${p.displayName || p.agentId} (${p.state})`, `peer:${p.agentId}`)));
+    chatGroups.forEach((g) => sel.append(new Option(`[群組] # ${g.name || g.groupId}`, `group:${g.groupId}`)));
+    if (prev) sel.value = prev;
+  };
+
+  const handleAdminIncoming = async (item) => {
+    if (!chatSession || !item || typeof item.sequence !== "number") return;
+    if (item.sequence > chatLastSeq) chatLastSeq = item.sequence;
+    if (chatSeenSeqs.has(item.sequence)) return;
+    chatSeenSeqs.add(item.sequence);
+    chatFetch(`/hub/v1/agents/${encodeURIComponent(chatSession.agentId)}/inbox/${item.sequence}/ack`, { method: "POST", body: "{}" }).catch(() => {});
+    const thread = item.groupId ? `group:${item.groupId}` : `peer:${item.requesterAgentId}`;
+    chatTimeline.push({ thread, self: item.requesterAgentId === chatSession.agentId, sender: item.requesterAgentId, text: item.message, time: item.createdAt, state: `ACK #${item.sequence}` });
+    renderAdminChatTimeline();
+  };
+
+  const startAdminChatSSE = async () => {
+    if (!chatSession) return;
+    if (chatSseAbort) chatSseAbort.abort();
+    chatSseAbort = new AbortController();
+    const cur = chatSession;
+    $("admin-chat-sse-badge").className = "badge PENDING";
+    $("admin-chat-sse-badge").textContent = "SSE 連線中";
+    try {
+      const resp = await fetch(`/hub/v1/agents/${encodeURIComponent(cur.agentId)}/inbox/stream?afterSequence=${chatLastSeq}`, {
+        headers: { "Accept": "text/event-stream", "X-Agent-ID": cur.agentId, "Authorization": `Bearer ${cur.token}` },
+        signal: chatSseAbort.signal,
+        cache: "no-store",
+      });
+      if (!resp.ok || !resp.body) throw new Error(`HTTP ${resp.status}`);
+      $("admin-chat-sse-badge").className = "badge ONLINE";
+      $("admin-chat-sse-badge").textContent = "SSE 已連線";
+      const reader = resp.body.getReader();
+      const dec = new TextDecoder("utf-8");
+      let buf = "", evtType = "message", evtData = [];
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let idx;
+        while ((idx = buf.indexOf("\n")) !== -1) {
+          const line = buf.slice(0, idx).replace(/\r$/, "");
+          buf = buf.slice(idx + 1);
+          if (line === "") {
+            if (evtData.length && evtType === "task") { try { await handleAdminIncoming(JSON.parse(evtData.join("\n"))); } catch {} }
+            evtType = "message"; evtData = [];
+          } else if (line.startsWith("event:")) evtType = line.slice(6).trim();
+          else if (line.startsWith("data:")) evtData.push(line.slice(5).trimStart());
+        }
+      }
+    } catch {
+      if (chatSseAbort?.signal.aborted || chatSession !== cur) return;
+      $("admin-chat-sse-badge").className = "badge OFFLINE";
+      $("admin-chat-sse-badge").textContent = "SSE 已中斷";
+    }
+  };
+
+  const activateAdminChatSession = async (sess) => {
+    chatSession = sess;
+    chatSeenSeqs = new Set();
+    chatLastSeq = 0;
+    $("admin-chat-identity-info").textContent = `已連線：${sess.displayName} (${sess.agentId}) · Circle: ${sess.circleId || "public"}`;
+    $("btn-admin-chat-disconnect").hidden = false;
+    $("admin-chat-input").disabled = false;
+    $("btn-admin-chat-send").disabled = false;
+    await refreshAdminChatTargets();
+    const inbox = await chatFetch(`/hub/v1/agents/${encodeURIComponent(sess.agentId)}/inbox?afterSequence=0`).catch(() => ({ items: [] }));
+    for (const item of (inbox.items || [])) await handleAdminIncoming(item);
+    startAdminChatSSE();
+    renderAdminChatTimeline();
+  };
+
+  const initAdminChatFromStorage = () => {
+    if (chatSession) return;
+    try {
+      const scope = localStorage.getItem(CHAT_SCOPE_KEY);
+      const all = JSON.parse(localStorage.getItem(CHAT_PROFILE_KEY) || "{}");
+      if (scope && all[scope]) activateAdminChatSession(all[scope]).catch(() => {});
+    } catch {}
+  };
+
+  $("btn-admin-chat-connect").addEventListener("click", async () => {
+    try {
+      const customId = $("admin-chat-agent-id").value.trim();
+      const customTok = $("admin-chat-agent-token").value.trim();
+      const name = $("admin-chat-name").value.trim() || "OperatorConsole";
+      const key = $("admin-chat-key").value.trim();
+      const scopeKey = key ? `priv_${Math.abs(Array.from(key).reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0)).toString(16)}` : "public";
+      let sess;
+      if (customId && customTok) {
+        const probe = { agentId: customId, token: customTok, displayName: name, circleId: "public", scopeKey };
+        const info = await chatFetch(`/hub/v1/agents/${encodeURIComponent(customId)}`, {}, probe);
+        const ag = info.agent || info;
+        sess = { agentId: customId, token: customTok, displayName: ag.displayName || name, circleId: ag.circleId || "public", scopeKey };
+      } else {
+        const headers = { "Content-Type": "application/json" };
+        if (key) headers["X-Hub-Key"] = key;
+        const idem = (crypto.randomUUID ? crypto.randomUUID() : `admin-${Date.now()}`);
+        const resp = await fetch("/hub/v1/agents/register", { method: "POST", headers, body: JSON.stringify({ displayName: name, providerFamily: "browser", transportId: "http-json", capabilities: ["text/plain"], registrationIdempotencyKey: idem }) });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(data.error?.message || `HTTP ${resp.status}`);
+        sess = { agentId: data.identity.agentId, token: data.identity.agentToken, displayName: data.identity.displayName || name, circleId: data.identity.circleId || "public", scopeKey };
+      }
+      const all = JSON.parse(localStorage.getItem(CHAT_PROFILE_KEY) || "{}") || {};
+      all[sess.scopeKey] = sess;
+      localStorage.setItem(CHAT_PROFILE_KEY, JSON.stringify(all));
+      localStorage.setItem(CHAT_SCOPE_KEY, sess.scopeKey);
+      await activateAdminChatSession(sess);
+      status("對話身分已連線。", "success");
+    } catch (e) { status(e.message, "error"); }
+  });
+
+  $("btn-admin-chat-disconnect").addEventListener("click", () => {
+    if (chatSseAbort) chatSseAbort.abort();
+    if (chatSession) chatFetch(`/hub/v1/agents/${encodeURIComponent(chatSession.agentId)}/disconnect`, { method: "POST" }).catch(() => {});
+    chatSession = null;
+    $("admin-chat-sse-badge").className = "badge";
+    $("admin-chat-sse-badge").textContent = "未連線";
+    $("admin-chat-identity-info").textContent = "已中斷對話連線";
+    $("btn-admin-chat-disconnect").hidden = true;
+    $("admin-chat-input").disabled = true;
+    $("btn-admin-chat-send").disabled = true;
+  });
+
+  $("btn-admin-chat-refresh").addEventListener("click", () => refreshAdminChatTargets().catch((e) => status(e.message, "error")));
+  $("admin-chat-target").addEventListener("change", renderAdminChatTimeline);
+  $("btn-admin-chat-newgroup").addEventListener("click", async () => {
+    if (!chatSession) return;
+    const gName = prompt("請輸入新群組名稱:");
+    if (!gName || !gName.trim()) return;
+    try {
+      const res = await chatFetch("/hub/v1/groups", { method: "POST", body: JSON.stringify({ name: gName.trim() }) });
+      await refreshAdminChatTargets();
+      if (res.group) { $("admin-chat-target").value = `group:${res.group.groupId}`; renderAdminChatTimeline(); }
+    } catch (e) { status(e.message, "error"); }
+  });
+
+  $("btn-admin-chat-send").addEventListener("click", async () => {
+    if (!chatSession) return;
+    const targetVal = $("admin-chat-target").value;
+    const text = $("admin-chat-input").value.trim();
+    if (!targetVal || !text) return;
+    const idem = `admin-chat-${Date.now()}`;
+    try {
+      if (targetVal.startsWith("peer:")) {
+        const pid = targetVal.slice(5);
+        await chatFetch(`/hub/v1/agents/${encodeURIComponent(pid)}/tasks`, { method: "POST", body: JSON.stringify({ taskId: `task-${Date.now()}`, contextId: `ctx-${pid}`, idempotencyKey: idem, message: text }) });
+      } else if (targetVal.startsWith("group:")) {
+        const gid = targetVal.slice(6);
+        await chatFetch(`/hub/v1/groups/${encodeURIComponent(gid)}/messages`, { method: "POST", body: JSON.stringify({ contextId: `grp-${gid}`, idempotencyKey: idem, message: text }) });
+      }
+      chatTimeline.push({ thread: targetVal, self: true, sender: chatSession.displayName, text, time: new Date().toISOString(), state: "SENT" });
+      $("admin-chat-input").value = "";
+      renderAdminChatTimeline();
+    } catch (e) { status(e.message, "error"); }
+  });
 
   try {
     const params = new URLSearchParams(window.location.search);

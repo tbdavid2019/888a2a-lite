@@ -957,3 +957,65 @@ func TestHTTPServer_MultiCircleDynamicCircles(t *testing.T) {
 		t.Fatalf("dynamic circleID should start with 'circle-', got %q", regBody.Identity.CircleID)
 	}
 }
+
+func TestHostedWebChatAndAdminChatRoutes(t *testing.T) {
+	database, err := sqlite.Open(context.Background(), filepath.Join(t.TempDir(), "hub.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open: %v", err)
+	}
+	defer func() {
+		if err := database.Close(); err != nil {
+			t.Errorf("close database: %v", err)
+		}
+	}()
+
+	cfg := config.Config{
+		HubID:                  "public",
+		ListenAddr:             ":0",
+		DatabasePath:           filepath.Join(t.TempDir(), "unused.db"),
+		OperatorToken:          "op-secret",
+		RegistrationEnabled:    true,
+		RegistrationTTL:        time.Hour,
+		PeerLease:              90 * time.Second,
+		MaxRegisteredAgents:    10,
+		MaxTasksPerMinute:      20,
+		MaxConcurrentTasks:     4,
+		MaxPayloadBytes:        1 << 20,
+		RegistrationPerMinute:  20,
+		StandardGatewayEnabled: true,
+	}
+	handler := NewHTTPServer(New(sqlite.NewRepository(database), cfg)).Handler()
+
+	for _, path := range []string{"/", "/chat", "/chat/agent-123", "/group", "/group/grp-123"} {
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s = %d, want 200", path, rec.Code)
+		}
+		if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+			t.Fatalf("GET %s content-type = %q, want text/html", path, ct)
+		}
+		if csp := rec.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "script-src 'nonce-") {
+			t.Fatalf("GET %s missing CSP nonce header: %q", path, csp)
+		}
+		body := rec.Body.String()
+		if strings.Contains(body, "{{CSP_NONCE}}") {
+			t.Fatalf("GET %s left unreplaced CSP nonce placeholder", path)
+		}
+		if !strings.Contains(body, "888a2a-lite · Agent 對話大廳") {
+			t.Fatalf("GET %s missing hosted chat title", path)
+		}
+	}
+
+	adminRec := httptest.NewRecorder()
+	handler.ServeHTTP(adminRec, httptest.NewRequest(http.MethodGet, "/admin/chat", nil))
+	if adminRec.Code != http.StatusOK || !strings.Contains(adminRec.Body.String(), "線上對話") {
+		t.Fatalf("GET /admin/chat = %d, missing chat tab", adminRec.Code)
+	}
+
+	missRec := httptest.NewRecorder()
+	handler.ServeHTTP(missRec, httptest.NewRequest(http.MethodGet, "/does-not-exist", nil))
+	if missRec.Code != http.StatusNotFound {
+		t.Fatalf("GET /does-not-exist = %d, want 404", missRec.Code)
+	}
+}
