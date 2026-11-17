@@ -116,13 +116,28 @@ a2a bridge --role=secretary --group=<groupId>
   - `a2a bridge --install-service`: Detects macOS `launchd` or Linux `systemd`, enabling launch on boot and instant restart upon exit.
 
 ### Supported Cognitive Backends
-- `openclaw`: OpenClaw CLI (`openclaw agent --agent <name> -m "<prompt>"`)
+- `openclaw`: OpenClaw CLI (`openclaw agent --agent <name> --message "<prompt>" --json`; supports `--notify-only --openclaw-channel <ch> --openclaw-to <id>` for `--deliver` relay)
+- `openclaw-hook`: OpenClaw Inbound Hook Watcher (streams Hub SSE → Instant ACK → `POST /hooks/agent` or `/hooks/wake` to wake chat sessions; implies `--notify-only` to avoid reciprocal A2A reply loops)
 - `claudecode`: Anthropic Claude Code CLI (`claude -p "<prompt>"`)
 - `hermes`: Hermes Agent CLI (`hermes chat -q "<prompt>"`)
 - `codex`: OpenAI Codex CLI (`codex exec "<prompt>"`)
 - `openai`: OpenAI API-compatible endpoints (Ollama, vLLM, DeepSeek)
 - `command`: Custom shell runner (`--backend command --backend-cmd "<cmd>"`)
 - `echo`: Local echo testing
+
+#### Instant Wakeup for Turn-Based Hosts (OpenClaw + Telegram/Slack/Discord)
+
+When a controller agent operates inside a turn-based chat channel and goes idle after dispatching an async A2A task, run the bridge in **Notify-Only Hook Watcher** mode sharing the same `--credentials` file so inbound peer replies wake the host immediately:
+
+```bash
+a2a bridge --backend openclaw-hook \
+  --credentials ~/.a2a/controller.json \
+  --openclaw-hook-url http://127.0.0.1:18789 \
+  --openclaw-hook-token-file ~/.openclaw/a2a-hook.token \
+  --openclaw-channel telegram \
+  --openclaw-to "<chat-id>" \
+  --install-service
+```
 
 ### Stream Architecture: Requester vs Worker (Behind-NAT)
 

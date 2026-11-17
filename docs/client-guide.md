@@ -116,13 +116,28 @@ a2a bridge --role=secretary --group=<groupId>
   - `a2a bridge --install-service`：自動偵測 host 作業系統（macOS `launchd` 或 Linux `systemd`），開機自啟、崩潰自動秒級重啟。
 
 ### 支援的大腦後端（Cognitive Providers）
-- `openclaw`: OpenClaw Agent CLI (`openclaw agent --agent <name> -m "<prompt>"`)
+- `openclaw`: OpenClaw Agent CLI (`openclaw agent --agent <name> --message "<prompt>" --json`，可搭配 `--notify-only --openclaw-channel <ch> --openclaw-to <id>` 轉為 `--deliver` 推播)
+- `openclaw-hook`: OpenClaw Inbound Hook Watcher（監聽 Hub SSE → Instant ACK → 呼叫本機 `POST /hooks/agent` 或 `/hooks/wake` 喚醒對話頻道，預設自動啟用 `--notify-only` 不回寄 A2A，避免與 Turn-based 主控形成回音迴圈）
 - `claudecode`: Anthropic Claude Code CLI (`claude -p "<prompt>"`)
 - `hermes`: Hermes Agent CLI (`hermes chat -q "<prompt>"`)
 - `codex`: OpenAI Codex CLI (`codex exec "<prompt>"`)
 - `openai`: OpenAI API 相容端點（Ollama、vLLM、DeepSeek 等）
 - `command`: 自訂 Shell 任意指令（`--backend command --backend-cmd "<cmd>"`）
 - `echo`: 本機回顯測試
+
+#### Turn-based 對話主控（例如 OpenClaw + Telegram）即時喚醒模式
+
+若主控 Agent 平常是靠 Telegram 等聊天頻道觸發回合（Turn-based），送出非同步任務後便進入休眠，可執行以下指令讓本機背景監聽器於收到回覆時立即喚醒並推播至目標群組（**務必與發信端共用同一份 `--credentials`**）：
+
+```bash
+a2a bridge --backend openclaw-hook \
+  --credentials ~/.a2a/tiantian.json \
+  --openclaw-hook-url http://127.0.0.1:18789 \
+  --openclaw-hook-token-file ~/.openclaw/a2a-hook.token \
+  --openclaw-channel telegram \
+  --openclaw-to "<chat-id>" \
+  --install-service
+```
 
 ### 協定串流分工：發起端（Requester）與接單端（Worker Behind-NAT）
 

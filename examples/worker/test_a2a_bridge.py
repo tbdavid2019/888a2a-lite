@@ -1496,6 +1496,171 @@ class DurableBridgeTests(unittest.TestCase):
             expected_sig = hmac.new(secret.encode("utf-8"), json.dumps(payload, ensure_ascii=False).encode("utf-8"), hashlib.sha256).hexdigest()
             self.assertEqual(sig_header, f"sha256={expected_sig}")
 
+    def test_openclaw_hook_url_validation_and_normalization(self):
+        self.assertEqual(
+            bridge.validate_openclaw_hook_url("http://127.0.0.1:18789", "agent"),
+            "http://127.0.0.1:18789/hooks/agent",
+        )
+        self.assertEqual(
+            bridge.validate_openclaw_hook_url("http://localhost:18789/hooks/wake/", "wake"),
+            "http://localhost:18789/hooks/wake",
+        )
+        self.assertEqual(
+            bridge.validate_openclaw_hook_url("https://gateway.example.com/openclaw", "agent"),
+            "https://gateway.example.com/openclaw/hooks/agent",
+        )
+        with self.assertRaises(ValueError):
+            bridge.validate_openclaw_hook_url("http://192.168.1.50:18789", "agent")
+        with self.assertRaises(ValueError):
+            bridge.OpenClawHookBackend(hook_token="tok", channel="telegram", to="")
+
+    def test_openclaw_hook_backend_agent_delivery_and_wake(self):
+        backend = bridge.OpenClawHookBackend(
+            hook_url="http://127.0.0.1:18789",
+            hook_token="hook-secret",
+            hook_mode="agent",
+            agent_profile="tiantian",
+            channel="telegram",
+            to="-1001234567890",
+            account_id="bot-main",
+        )
+        with mock.patch("urllib.request.urlopen") as mock_urlopen:
+            mock_resp = mock.MagicMock()
+            mock_resp.status = 200
+            mock_resp.read.return_value = b'{"ok": true, "runId": "run-1"}'
+            mock_resp.__enter__.return_value = mock_resp
+            mock_urlopen.return_value = mock_resp
+
+            res = backend.execute("蜜蜜已完成報表", "agent-mimi", {"sequence": 42, "taskId": "task-42"})
+            self.assertEqual(res, "[[A2A_NOTIFIED]]")
+            req = mock_urlopen.call_args[0][0]
+            self.assertEqual(req.full_url, "http://127.0.0.1:18789/hooks/agent")
+            self.assertEqual(req.get_header("Authorization"), "Bearer hook-secret")
+            body = json.loads(req.data.decode("utf-8"))
+            self.assertEqual(body["agentId"], "tiantian")
+            self.assertTrue(body["deliver"])
+            self.assertEqual(body["channel"], "telegram")
+            self.assertEqual(body["to"], "-1001234567890")
+            self.assertEqual(body["accountId"], "bot-main")
+            self.assertEqual(body["idempotencyKey"], "a2a-hub-seq-42")
+            self.assertIn("UNTRUSTED_A2A_INBOUND", body["message"])
+            self.assertIn("蜜蜜已完成報表", body["message"])
+
+        wake_backend = bridge.OpenClawHookBackend(
+            hook_url="http://127.0.0.1:18789",
+            hook_token="hook-secret",
+            hook_mode="wake",
+        )
+        with mock.patch("urllib.request.urlopen") as mock_urlopen:
+            mock_resp = mock.MagicMock()
+            mock_resp.status = 200
+            mock_resp.read.return_value = b'{"ok": true}'
+            mock_resp.__enter__.return_value = mock_resp
+            mock_urlopen.return_value = mock_resp
+
+            res = wake_backend.execute("wake ping", "agent-mimi", {"sequence": 43})
+            self.assertEqual(res, "[[A2A_NOTIFIED]]")
+            req = mock_urlopen.call_args[0][0]
+            self.assertEqual(req.full_url, "http://127.0.0.1:18789/hooks/wake")
+            body = json.loads(req.data.decode("utf-8"))
+            self.assertEqual(body["mode"], "now")
+            self.assertIn("wake ping", body["text"])
+
+        with mock.patch("urllib.request.urlopen", side_effect=urllib.error.URLError("connection refused")):
+            self.assertIsNone(backend.execute("retry me", "agent-mimi", {"sequence": 44}))
+
+    def test_notify_only_suppresses_reciprocal_reply_and_completes_standard(self):
+        class Hub:
+            agent_id = "tiantian"
+            def __init__(self):
+                self.sent = []
+                self.updates = []
+            def ack_task(self, sequence): return True
+            def send_task(self, *args, **kwargs):
+                self.sent.append((args, kwargs))
+                return {"state": "PENDING"}
+            def submit_standard_update(self, task_id, update):
+                self.updates.append((task_id, update))
+                return {"task": {"id": task_id}}
+
+        class Notifier:
+            def __init__(self):
+                self.calls = []
+            def execute(self, message, sender_id, context):
+                self.calls.append((message, sender_id, context))
+                return "[[A2A_NOTIFIED]]"
+
+        with tempfile.TemporaryDirectory() as directory:
+            queue = bridge.DurableWorkQueue(os.path.join(directory, "q.db"), scope="hub/tiantian")
+            queue.enqueue({"sequence": 21, "taskId": "reply-mimi-1", "requesterAgentId": "mimi", "contextId": "ctx-1", "message": "任務完成"})
+            queue.enqueue({"sequence": 22, "taskId": "std-task-2", "protocol": "A2A/1.0", "turnId": "turn-2", "taskRevision": 1, "requesterAgentId": "mimi", "contextId": "ctx-2", "message": "標準任務完成"})
+            hub = Hub()
+            notifier = Notifier()
+
+            bridge.process_queued_task(hub, notifier, queue, queue.next(), "Tiantian", notify_only=True)
+            bridge.process_queued_task(hub, notifier, queue, queue.next(), "Tiantian", notify_only=True)
+
+            self.assertEqual(len(hub.sent), 0)
+            self.assertEqual(len(notifier.calls), 2)
+            self.assertEqual(notifier.calls[0][2]["sequence"], 21)
+            self.assertEqual(len(hub.updates), 1)
+            self.assertEqual(hub.updates[0][1]["state"], "TASK_STATE_COMPLETED")
+            self.assertNotIn("message", hub.updates[0][1])
+            with queue._db() as db:
+                self.assertEqual(db.execute("SELECT state FROM work WHERE sequence=21").fetchone()[0], "done")
+                self.assertEqual(db.execute("SELECT state FROM work WHERE sequence=22").fetchone()[0], "done")
+
+    def test_openclaw_cli_backend_with_deliver_flags(self):
+        backend = bridge.OpenClawBackend(
+            agent_profile="tiantian",
+            deliver=True,
+            reply_channel="telegram",
+            reply_to="-100999",
+            notify_only=True,
+        )
+        with mock.patch("subprocess.run") as mock_run:
+            mock_run.return_value = mock.Mock(returncode=0, stdout='{"response": "已轉報"}', stderr="")
+            res = backend.execute("蜜蜜回信", "mimi", {})
+            self.assertEqual(res, "已轉報")
+            cmd = mock_run.call_args[0][0]
+            self.assertIn("--deliver", cmd)
+            self.assertIn("--reply-channel", cmd)
+            self.assertIn("telegram", cmd)
+            self.assertIn("--reply-to", cmd)
+            self.assertIn("-100999", cmd)
+            self.assertIn("通知轉發模式", cmd[cmd.index("--message") + 1])
+
+    def test_main_openclaw_hook_implies_notify_only_and_reads_token_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cred_path = os.path.join(directory, "credentials.json")
+            with open(cred_path, "w") as f:
+                json.dump({"identity": {"agentId": "tiantian", "agentToken": "tok"}}, f)
+            hook_token_path = os.path.join(directory, "hook.token")
+            with open(hook_token_path, "w") as f:
+                f.write("secret-hook-tok\n")
+            queue_path = os.path.join(directory, "q.db")
+            with mock.patch.object(bridge, "run_bridge_listener") as listener, mock.patch.object(
+                bridge.sys,
+                "argv",
+                [
+                    "bridge",
+                    "--credentials", cred_path,
+                    "--queue-db", queue_path,
+                    "--backend", "openclaw-hook",
+                    "--openclaw-hook-token-file", hook_token_path,
+                    "--openclaw-channel", "telegram",
+                    "--openclaw-to", "-100111222",
+                    "--name", "Tiantian",
+                ],
+            ):
+                bridge.main()
+            self.assertTrue(listener.call_args.kwargs["notify_only"])
+            backend = listener.call_args.args[1]
+            self.assertIsInstance(backend, bridge.OpenClawHookBackend)
+            self.assertEqual(backend.hook_token, "secret-hook-tok")
+            self.assertEqual(backend.channel, "telegram")
+            self.assertEqual(backend.to, "-100111222")
+
 
 def json_item(row):
     import json

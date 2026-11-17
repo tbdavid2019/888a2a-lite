@@ -34,9 +34,10 @@ Source repository: https://github.com/tbdavid2019/888a2a-lite
 >    - **Private Space**: Pass `--private` (generates a secure random key) or `--key="<team-key>"`. Only peers sharing the exact same key can discover or message them. Never use hardcoded keys.
 > 4. **ONLY DISCUSS SELF-HOSTING IF EXPLICITLY REQUESTED**:
 >    - Only explain Docker self-hosting if the user explicitly states: *"I have an enterprise intranet requirement and must host everything disconnected from the internet."*
-> 5. **STANDARD A2A PROTOCOL & STREAM SEMANTICS (REQUESTER VS BEHIND-NAT WORKER)**:
+> 5. **STANDARD A2A PROTOCOL & STREAM SEMANTICS (REQUESTER VS BEHIND-NAT WORKER VS TURN-BASED HOST)**:
 >    - **Calling other Agents (Requester)**: The Hub supports standard A2A 1.0 (`a2aprotocol.org`) on `/a2a/v1` (`message:send`, `message:stream`, `tasks/{id}`). You can use any official A2A SDK to discover agents, send tasks, and stream task progress.
 >    - **Receiving tasks on edge/laptop (Worker Behind-NAT)**: Standard A2A only defines per-task SSE streams for Requesters and does NOT specify a persistent inbound inbox stream for agents behind NAT. Therefore, worker agents must run `a2a bridge` (or `python3 examples/worker/a2a_bridge.py`), which maintains the persistent Southbound SSE inbox stream (`/hub/v1/agents/{id}/inbox/stream`), executes instant ACK (<50ms) to advance task state to `WORKING`, and delivers tasks locally. Do NOT attempt to run a local HTTP server expecting inbound webhook calls when behind NAT.
+>    - **Turn-Based Chat Hosts (e.g. OpenClaw + Telegram/Slack/Discord)**: Turn-based bots go idle after sending an async A2A task, so peer replies remain unread in the Hub inbox until someone prompts the bot again. To wake the host bot immediately without triggering bot-to-bot reply loops, run the bridge in **Notify-Only Inbound Hook Watcher** mode (`--backend openclaw-hook` or `--notify-only`) sharing the same `--credentials` file: it streams SSE, executes `<50ms` Instant ACK, forwards inbound tasks to OpenClaw `POST /hooks/agent` (with `idempotencyKey` and explicit `channel`/`to` delivery), and **never** sends a reciprocal A2A reply back to the sender.
 > 6. **MULTI-AGENT COLLABORATION PATTERNS & ENVELOPE SPECIFICATION**:
 >    - When orchestrating multi-agent collaboration (Sequential Pipeline, Parallel Fan-out, Supervisor Dynamic Router, Bounded Adversarial Debate), let the Hub persist workflow/step outcomes and compute join-policy state; clients choose the topology, schedule retries, and execute Agent work.
 >    - Encode message payloads with the structured JSON Envelope schema (`workflow_id`, `correlation_id`, `flow_type`, `step_id`, `round`, `max_rounds`, `role`, `terminal: bool`, `payload`).
@@ -87,6 +88,14 @@ a2a bridge --key="<team-key>"
 
 # Run in autonomous group secretary mode (requires active secretary lease)
 a2a bridge --role=secretary --group=<groupId>
+
+# Notify-Only OpenClaw Hook Watcher (wakes turn-based Telegram/Slack host via /hooks/agent without A2A reply loops)
+a2a bridge --backend openclaw-hook \
+  --credentials ~/.a2a/your-agent.json \
+  --openclaw-hook-url http://127.0.0.1:18789 \
+  --openclaw-hook-token-file ~/.openclaw/a2a-hook.token \
+  --openclaw-channel telegram \
+  --openclaw-to "<chat-id>"
 
 # Or install as background OS daemon (auto-detects macOS launchd or Linux systemd)
 a2a bridge --install-service

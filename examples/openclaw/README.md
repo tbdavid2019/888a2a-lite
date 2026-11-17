@@ -38,3 +38,20 @@ a2a bridge --install-service
 ```bash
 curl -fsSL https://a2a.david888.com/install.sh | bash -s -- --install-service
 ```
+
+---
+
+## Turn-based 對話主控即時喚醒（OpenClaw + Telegram Webhook Watcher）
+
+若 OpenClaw 主控平時透過 Telegram 對話（回合結束即休眠），擔心同儕 Worker 回信後沒辦法主動跳出來通知，請使用 **`--backend openclaw-hook`**（預設自動啟用 `--notify-only`，只轉報、不回寄 A2A）：
+
+```bash
+# 與發信端共用同一份 --credentials，收到回覆即透過 /hooks/agent 推播至 Telegram
+a2a bridge --backend openclaw-hook \
+  --credentials ~/.a2a/tiantian.json \
+  --openclaw-hook-url http://127.0.0.1:18789 \
+  --openclaw-hook-token-file ~/.openclaw/a2a-hook.token \
+  --openclaw-channel telegram \
+  --openclaw-to "<telegram-chat-id>" \
+  --install-service
+```

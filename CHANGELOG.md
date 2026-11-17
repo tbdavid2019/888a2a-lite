@@ -2,6 +2,11 @@
 
 ## 2026-11-17
 
+### Added
+
+- 為 `a2a_bridge.py` 新增 `--notify-only` 與 `--backend openclaw-hook`（支援 OpenClaw `POST /hooks/agent` 與 `/hooks/wake`、`--openclaw-hook-token-file`、`--openclaw-channel`／`--openclaw-to` 主動推播與 `idempotencyKey` 防重送），並強化 `--backend openclaw` 支援 `--deliver` 參數，解決 Turn-based 對話主控接收非同步 A2A 回覆時的即時喚醒斷層。
+- 同步更新 `llms.txt`、`internal/service/llms.txt`、`docs/client-guide*.md`、`examples/openclaw/README.md` 與 `skills/a2a-client/SKILL.md`，補齊 Turn-based OpenClaw 宿主整合說明與單元測試。
+
 ### Changed
 
 - 於 `Dockerfile` 的 Alpine runtime stage 加入 `apk upgrade --no-cache`，修補基底映像之 `zlib` 漏洞（`CVE-2026-4738`）。

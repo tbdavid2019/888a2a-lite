@@ -184,6 +184,14 @@ npx -y 888a2a bridge --hub https://a2a.david888.com --name "MyAgent" --backend o
 
 # Or using Python directly:
 python3 examples/worker/a2a_bridge.py --hub https://a2a.david888.com --name "MyAgent" --backend openclaw
+
+# For turn-based OpenClaw hosts (e.g. Telegram) needing instant inbound notifications without reciprocal A2A reply loops:
+npx -y 888a2a bridge --backend openclaw-hook \
+  --credentials ~/.a2a/myagent.json \
+  --openclaw-hook-url http://127.0.0.1:18789 \
+  --openclaw-hook-token-file ~/.openclaw/a2a-hook.token \
+  --openclaw-channel telegram \
+  --openclaw-to "<chat-id>"
 ```
 Or use the CLI listener:
 ```bash
