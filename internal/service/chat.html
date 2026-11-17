@@ -43,7 +43,7 @@
 
     .app {
       display: grid;
-      grid-template-rows: 56px auto 1fr;
+      grid-template-rows: minmax(56px, auto) auto 1fr;
       height: 100dvh;
     }
 
@@ -52,7 +52,7 @@
       align-items: center;
       justify-content: space-between;
       gap: 12px;
-      padding: 0 18px;
+      padding: 8px 18px;
       background: var(--surface);
       border-bottom: 1px solid var(--line);
       z-index: 20;
@@ -193,6 +193,10 @@
       display: grid;
       grid-template-columns: 300px 1fr;
       min-height: 0;
+    }
+
+    .sidebar-backdrop {
+      display: none;
     }
 
     .sidebar {
@@ -343,6 +347,8 @@
       padding: 16px 22px;
       background: var(--surface-alt);
       border-bottom: 1px solid var(--line);
+      overflow-y: auto;
+      max-height: 55dvh;
     }
 
     .connect-box {
@@ -371,6 +377,7 @@
       border-radius: 6px;
       font-size: 12.5px;
     }
+
     .mode-btn:hover:not(:disabled) {
       background: rgba(255, 255, 255, 0.7);
       color: var(--ink);
@@ -412,9 +419,7 @@
       min-height: 60px;
     }
 
-    .chat-header-info {
-      min-width: 0;
-    }
+    .chat-header-info { min-width: 0; }
 
     .chat-header-title {
       font-size: 15.5px;
@@ -422,12 +427,14 @@
       display: flex;
       align-items: center;
       gap: 8px;
+      flex-wrap: wrap;
     }
 
     .chat-header-sub {
       font-size: 12.5px;
       color: var(--muted);
       margin-top: 2px;
+      word-break: break-all;
     }
 
     .chat-header-actions {
@@ -585,21 +592,31 @@
       font-size: 12px;
       color: var(--muted);
       gap: 8px;
+      flex-wrap: wrap;
     }
 
     .status-msg.error { color: var(--err-fg); font-weight: 600; }
     .status-msg.ok { color: var(--ok-fg); font-weight: 600; }
 
     .mobile-menu-btn { display: none; }
-
     .hidden { display: none !important; }
 
     @media (max-width: 820px) {
+      .topbar { padding: 8px 12px; flex-wrap: wrap; }
+      .brand-title { font-size: 14.5px; }
+      #hub-mode-pill { display: none; }
       .workspace { grid-template-columns: 1fr; }
       .mobile-menu-btn { display: inline-flex; }
+      .sidebar-backdrop.open {
+        display: block;
+        position: fixed;
+        inset: 0;
+        background: rgba(22, 32, 42, 0.36);
+        z-index: 35;
+      }
       .sidebar {
         position: fixed;
-        top: 56px;
+        top: 0;
         bottom: 0;
         left: 0;
         width: min(320px, 88vw);
@@ -617,7 +634,7 @@
 <div class="app">
   <header class="topbar">
     <div class="brand">
-      <button id="btn-mobile-menu" class="secondary mobile-menu-btn" type="button" aria-label="開啟側邊欄">
+      <button id="btn-mobile-menu" class="secondary mobile-menu-btn" type="button" aria-label="開啟側邊欄" aria-expanded="false" aria-controls="sidebar">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
       </button>
       <div class="brand-mark" aria-hidden="true">
@@ -641,6 +658,7 @@
   </div>
 
   <div class="workspace">
+    <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
     <aside id="sidebar" class="sidebar" aria-label="通訊錄與群組">
       <div class="sidebar-section">
         <div id="identity-card" class="identity-card">
@@ -678,7 +696,7 @@
           <button id="btn-toggle-new-group" class="ghost" type="button" style="padding:2px 6px;font-size:12px">+ 新增</button>
         </div>
         <div id="new-group-panel" class="inline-panel hidden">
-          <input id="new-group-name" type="text" maxlength="64" placeholder="群組名稱，例如：專案協作室">
+          <input id="new-group-name" type="text" maxlength="64" placeholder="群組名稱，例如：專案協作室" aria-label="新群組名稱">
           <div class="field-row">
             <button id="btn-create-group" type="button" style="flex:1">建立群組</button>
             <button id="btn-cancel-group" class="secondary" type="button">取消</button>
@@ -691,6 +709,15 @@
     <main class="main-pane">
       <section id="connect-strip" class="connect-strip">
         <div class="connect-box">
+          <div id="saved-profiles-row" class="field hidden" style="margin-bottom:10px;">
+            <label for="saved-profile-select">已儲存的瀏覽器身分</label>
+            <div class="field-row">
+              <select id="saved-profile-select"></select>
+              <button id="btn-use-saved" class="secondary" type="button">切換</button>
+              <button id="btn-forget-saved" class="danger" type="button">移除</button>
+            </div>
+          </div>
+
           <div class="mode-switch" role="tablist" aria-label="連線方式">
             <button id="mode-register" class="mode-btn active" type="button" role="tab" aria-selected="true">新身分快速加入</button>
             <button id="mode-resume" class="mode-btn" type="button" role="tab" aria-selected="false">接續既有 Agent ID / Token</button>
@@ -725,7 +752,7 @@
             </div>
             <div class="field">
               <label for="resume-key">Circle 備註（選填）</label>
-              <input id="resume-key" type="password" autocomplete="off" placeholder="選填：供本機區分私密圈">
+              <input id="resume-key" type="text" autocomplete="off" placeholder="選填：供本機辨識用">
             </div>
           </div>
 
@@ -748,28 +775,22 @@
 
       <div id="invite-panel" class="inline-panel hidden" style="margin:0;border-radius:0;border-left:0;border-right:0;background:var(--surface-alt);padding:10px 20px;">
         <div class="field-row" style="align-items:center;flex-wrap:wrap">
-          <select id="invite-agent-select" style="max-width:300px"></select>
+          <select id="invite-agent-select" style="max-width:300px" aria-label="選擇要邀請的 Agent"></select>
           <button id="btn-send-invite" type="button">送出群組邀請</button>
           <button id="btn-close-invite" class="secondary" type="button">收起</button>
         </div>
       </div>
 
-      <div id="messages-scroll" class="messages-scroll" aria-live="polite">
-        <div id="empty-state" class="empty-state">
-          <h2>直接從瀏覽器與線上 Agent 協作</h2>
-          <p>上方輸入暱稱與選填的私密 Circle Key 連線後，就能探索同圈線上 Agent、展開 1 對 1 私聊或建立多 Agent 群組，透過即時 SSE 接收回覆。</p>
-          <p class="mono-sub">想連接本機 OpenClaw / Hermes / Codex 常駐執行？請於本機執行 a2a bridge</p>
-        </div>
-      </div>
+      <div id="messages-scroll" class="messages-scroll"></div>
 
       <div class="composer-wrap">
         <div id="mention-popover" class="mention-popover" role="listbox" aria-label="@ 指名補全"></div>
         <div class="composer-row">
-          <textarea id="composer-input" class="composer-input" rows="2" placeholder="輸入訊息...（在群組或對話輸入 @ 可指名特定 Agent，Enter 送出）" disabled></textarea>
+          <textarea id="composer-input" class="composer-input" rows="2" aria-label="對話訊息輸入框" placeholder="輸入訊息...（在群組或對話輸入 @ 可指名特定 Agent，Enter 送出）" disabled></textarea>
           <button id="btn-send" type="button" disabled>送出</button>
         </div>
         <div class="composer-hint">
-          <span id="composer-status" class="status-msg">Enter 送出 · Shift+Enter 換行 · 輸入 @ 觸發補全</span>
+          <span id="composer-status" class="status-msg" role="status" aria-live="polite">Enter 送出 · Shift+Enter 換行 · 輸入 @ 觸發補全</span>
           <span id="composer-target-hint" class="mono-sub"></span>
         </div>
       </div>
@@ -781,18 +802,20 @@
 (() => {
   "use strict";
   const PROFILE_KEY = "a2a_lite_web_profiles_v1";
-  const ACTIVE_SCOPE_KEY = "a2a_lite_web_active_scope_v1";
+  const ACTIVE_PROFILE_KEY = "a2a_lite_web_active_profile_v1";
   const HISTORY_PREFIX = "a2a_lite_web_history_v1:";
+  const MAX_TRACKED_SEQS = 1000;
   const $ = (id) => document.getElementById(id);
 
-  let session = null; // { agentId, token, displayName, circleId, scopeKey }
+  let session = null; // { profileId, agentId, token, displayName, circleId, note }
+  let sessionEpoch = 0;
   let connectMode = "register";
   let peers = [];
   let groups = [];
   let invitations = [];
   let groupRoster = [];
   let activeChat = null; // { type: "peer" | "group", id: string, title: string }
-  let seenSeqs = new Set();
+  let ackedSeqs = new Set();
   let seenGroupMsgIds = new Set();
   let lastSeq = 0;
   let sseAbort = null;
@@ -802,8 +825,10 @@
   let reconnectDelay = 1000;
   let mentionItems = [];
   let mentionIndex = 0;
+  let pendingSend = null; // { threadKey, text, idempotencyKey, taskId }
+  const unreadCounts = {};
 
-  const esc = (s) => String(s || "").replace(/[&<>'"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[c]));
+  const esc = (s) => String(s ?? "").replace(/[&<>'"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[c]));
   const fmtTime = (iso) => {
     if (!iso) return "";
     try { return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }); }
@@ -823,62 +848,115 @@
     $("sse-pill-text").textContent = text;
   }
 
-  function scopeForKey(sharedKey) {
-    const k = (sharedKey || "").trim();
-    if (!k) return "public";
-    let h = 0;
-    for (let i = 0; i < k.length; i++) h = ((h << 5) - h + k.charCodeAt(i)) | 0;
-    return "priv_" + Math.abs(h).toString(16);
+  function trackBounded(setObj, val) {
+    setObj.add(val);
+    if (setObj.size > MAX_TRACKED_SEQS) {
+      const first = setObj.values().next().value;
+      setObj.delete(first);
+    }
+  }
+
+  function profileIdFor(circleId, agentId) {
+    return `${circleId || "public"}:${agentId}`;
   }
 
   function loadProfiles() {
-    try { return JSON.parse(localStorage.getItem(PROFILE_KEY) || "{}") || {}; }
-    catch { return {}; }
+    try {
+      const raw = JSON.parse(localStorage.getItem(PROFILE_KEY) || "{}") || {};
+      const cleaned = {};
+      Object.entries(raw).forEach(([k, v]) => {
+        if (v && v.agentId && v.token) {
+          const pid = profileIdFor(v.circleId, v.agentId);
+          cleaned[pid] = { ...v, profileId: pid };
+        }
+      });
+      return cleaned;
+    } catch { return {}; }
+  }
+
+  function renderSavedProfilesPicker() {
+    const all = loadProfiles();
+    const entries = Object.values(all);
+    const row = $("saved-profiles-row");
+    const sel = $("saved-profile-select");
+    sel.replaceChildren();
+    if (!entries.length) {
+      row.classList.add("hidden");
+      return;
+    }
+    entries.forEach((p) => {
+      const circleLabel = p.circleId && p.circleId !== "public" ? (p.note ? `${p.note} (${p.circleId})` : p.circleId) : "Public";
+      sel.append(new Option(`${p.displayName || p.agentId} · ${circleLabel}`, p.profileId));
+    });
+    if (session && all[session.profileId]) sel.value = session.profileId;
+    row.classList.remove("hidden");
   }
 
   function saveProfile(prof) {
     const all = loadProfiles();
-    all[prof.scopeKey] = prof;
+    const pid = profileIdFor(prof.circleId, prof.agentId);
+    const stored = { ...prof, profileId: pid };
+    all[pid] = stored;
     localStorage.setItem(PROFILE_KEY, JSON.stringify(all));
-    localStorage.setItem(ACTIVE_SCOPE_KEY, prof.scopeKey);
+    localStorage.setItem(ACTIVE_PROFILE_KEY, pid);
+    renderSavedProfilesPicker();
+    return stored;
   }
 
-  function removeProfile(scopeKey) {
+  function removeProfile(pid) {
     const all = loadProfiles();
-    delete all[scopeKey];
+    delete all[pid];
     localStorage.setItem(PROFILE_KEY, JSON.stringify(all));
-    if (localStorage.getItem(ACTIVE_SCOPE_KEY) === scopeKey) {
-      localStorage.removeItem(ACTIVE_SCOPE_KEY);
+    if (localStorage.getItem(ACTIVE_PROFILE_KEY) === pid) {
+      localStorage.removeItem(ACTIVE_PROFILE_KEY);
     }
+    renderSavedProfilesPicker();
   }
 
-  function historyKey() {
-    if (!session) return "";
-    return `${HISTORY_PREFIX}${session.circleId || session.scopeKey}:${session.agentId}`;
+  function historyKey(targetSession = session) {
+    if (!targetSession) return "";
+    return `${HISTORY_PREFIX}${targetSession.circleId || "public"}:${targetSession.agentId}`;
   }
 
-  function loadHistory() {
-    const k = historyKey();
+  function loadHistory(targetSession = session) {
+    const k = historyKey(targetSession);
     if (!k) return {};
     try { return JSON.parse(localStorage.getItem(k) || "{}") || {}; }
     catch { return {}; }
   }
 
-  function saveHistory(store) {
-    const k = historyKey();
-    if (!k) return;
+  function saveHistory(store, targetSession = session) {
+    const k = historyKey(targetSession);
+    if (!k) return false;
     localStorage.setItem(k, JSON.stringify(store));
+    return true;
   }
 
-  function appendLocalMessage(threadKey, entry) {
-    const store = loadHistory();
+  function appendLocalMessage(threadKey, entry, targetSession = session) {
+    const store = loadHistory(targetSession);
     const list = store[threadKey] || [];
-    if (entry.dedupKey && list.some((m) => m.dedupKey === entry.dedupKey)) return false;
+    if (entry.dedupKey && list.some((m) => m.dedupKey === entry.dedupKey)) return true;
     list.push(entry);
     if (list.length > 200) list.splice(0, list.length - 200);
     store[threadKey] = list;
-    saveHistory(store);
-    return true;
+    return saveHistory(store, targetSession);
+  }
+
+  function buildEmptyState(title, desc, sub = "") {
+    const box = document.createElement("div");
+    box.className = "empty-state";
+    const h = document.createElement("h2");
+    h.textContent = title;
+    const p = document.createElement("p");
+    p.textContent = desc;
+    box.append(h, p);
+    if (sub) {
+      const s = document.createElement("p");
+      s.className = "mono-sub";
+      s.textContent = sub;
+      box.append(s);
+    }
+    return box;
   }
 
   async function hubFetch(path, options = {}, authSession = session) {
@@ -901,8 +979,7 @@
   async function loadHubBanner() {
     try {
       const st = await hubFetch("/hub/v1/status", {}, null);
-      const pill = $("hub-mode-pill");
-      pill.textContent = `${st.mode || "PUBLIC"} · ${st.registeredAgents || 0} Agents`;
+      $("hub-mode-pill").textContent = `${st.mode || "PUBLIC"} · ${st.registeredAgents || 0} Agents`;
     } catch {
       $("hub-mode-pill").textContent = "Hub 狀態未知";
     }
@@ -927,12 +1004,69 @@
     $("panel-resume").classList.toggle("hidden", mode !== "resume");
   }
 
-  async function connectWithSession(newSession) {
+  function stopLoops() {
+    if (sseAbort) { sseAbort.abort(); sseAbort = null; }
+    if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    setSsePill("warn", "未連線");
+  }
+
+  function resetDisconnectedUI(message = "", kind = "") {
+    sessionEpoch += 1;
     stopLoops();
-    session = newSession;
-    seenSeqs = new Set();
+    session = null;
+    activeChat = null;
+    peers = [];
+    groups = [];
+    invitations = [];
+    groupRoster = [];
+    pendingSend = null;
+    Object.keys(unreadCounts).forEach((k) => delete unreadCounts[k]);
+    $("self-name").textContent = "尚未連線";
+    $("self-id").textContent = "請填寫暱稱與 Circle Key 連線";
+    $("self-actions").classList.add("hidden");
+    $("btn-disconnect").classList.add("hidden");
+    $("circle-pill").classList.add("hidden");
+    $("connect-strip").classList.remove("hidden");
+    $("chat-header").classList.add("hidden");
+    $("invite-panel").classList.add("hidden");
+    $("composer-input").disabled = true;
+    $("btn-send").disabled = true;
+    if (message) setStatus("connect-status", message, kind);
+    renderSidebar();
+    renderChatArea();
+  }
+
+  async function connectWithSession(newSession) {
+    sessionEpoch += 1;
+    const myEpoch = sessionEpoch;
+    stopLoops();
+
+    session = null;
+    activeChat = null;
+    peers = [];
+    groups = [];
+    invitations = [];
+    groupRoster = [];
+    pendingSend = null;
+    Object.keys(unreadCounts).forEach((k) => delete unreadCounts[k]);
+    ackedSeqs = new Set();
     seenGroupMsgIds = new Set();
     lastSeq = 0;
+
+    // Validate credentials and load initial roster before committing connected UI state
+    const [peersResp, groupsResp, invResp] = await Promise.all([
+      hubFetch("/hub/v1/agents", {}, newSession),
+      hubFetch("/hub/v1/groups", {}, newSession),
+      hubFetch("/hub/v1/groups/invitations", {}, newSession),
+    ]);
+    if (myEpoch !== sessionEpoch) return;
+
+    session = newSession;
+    peers = (peersResp.agents || []).filter((a) => a.agentId !== session.agentId);
+    groups = groupsResp.groups || [];
+    invitations = (invResp.invitations || []).filter((inv) => inv.state === "PENDING");
 
     $("self-name").textContent = session.displayName || session.agentId;
     $("self-id").textContent = session.agentId;
@@ -946,26 +1080,25 @@
     $("composer-input").disabled = false;
     $("btn-send").disabled = false;
 
-    await refreshRosterAndGroups();
-    await catchupInbox();
-    startSSE();
+    renderSavedProfilesPicker();
+    renderSidebar();
+    await catchupInbox(myEpoch);
+    if (myEpoch !== sessionEpoch) return;
+
+    startSSE(myEpoch);
     heartbeatTimer = setInterval(() => {
-      if (session) hubFetch(`/hub/v1/agents/${session.agentId}/heartbeat`, { method: "POST" }).catch(() => {});
+      if (session && myEpoch === sessionEpoch) {
+        hubFetch(`/hub/v1/agents/${encodeURIComponent(session.agentId)}/heartbeat`, { method: "POST" }, session).catch(() => {});
+      }
     }, 45000);
     pollTimer = setInterval(() => {
-      if (session) refreshRosterAndGroups().catch(() => {});
+      if (session && myEpoch === sessionEpoch) {
+        refreshRosterAndGroups(myEpoch).catch(() => {});
+      }
     }, 15000);
 
-    applyRouteFromURL();
-    renderChatArea();
-  }
-
-  function stopLoops() {
-    if (sseAbort) { sseAbort.abort(); sseAbort = null; }
-    if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
-    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-    setSsePill("warn", "未連線");
+    await applyRouteFromURL(myEpoch);
+    if (myEpoch === sessionEpoch) renderChatArea();
   }
 
   async function doConnect() {
@@ -992,31 +1125,34 @@
         }, null);
         const ident = data.identity || {};
         if (!ident.agentId || !ident.agentToken) throw new Error("Hub 未回傳完整憑證");
-        const prof = {
+        const prof = saveProfile({
           agentId: ident.agentId,
           token: ident.agentToken,
           displayName: ident.displayName || displayName,
           circleId: ident.circleId || "public",
-          scopeKey: scopeForKey(sharedKey),
-        };
-        saveProfile(prof);
+          note: sharedKey ? "私密圈" : "",
+        });
         setStatus("connect-status", "已成功連線！", "ok");
         await connectWithSession(prof);
       } else {
         const agentId = $("resume-agent-id").value.trim();
         const token = $("resume-token").value.trim();
         const displayName = $("resume-name").value.trim();
-        const sharedKey = $("resume-key").value.trim();
+        const note = $("resume-key").value.trim();
         if (!agentId || !token) throw new Error("請輸入 Agent ID 與 Agent Token");
-        const probeSession = { agentId, token, displayName: displayName || agentId, circleId: "public", scopeKey: scopeForKey(sharedKey) };
+        const probeSession = { agentId, token, displayName: displayName || agentId, circleId: "public", note };
         setStatus("connect-status", "正在驗證 Agent 憑證...");
         const selfCard = await hubFetch(`/hub/v1/agents/${encodeURIComponent(agentId)}`, {}, probeSession);
         const agentObj = selfCard.agent || selfCard;
-        probeSession.displayName = displayName || agentObj.displayName || agentId;
-        probeSession.circleId = agentObj.circleId || "public";
-        saveProfile(probeSession);
+        const prof = saveProfile({
+          agentId,
+          token,
+          displayName: displayName || agentObj.displayName || agentId,
+          circleId: agentObj.circleId || "public",
+          note,
+        });
         setStatus("connect-status", "憑證驗證成功！", "ok");
-        await connectWithSession(probeSession);
+        await connectWithSession(prof);
       }
     } catch (err) {
       setStatus("connect-status", err.message || "連線失敗", "error");
@@ -1025,26 +1161,28 @@
     }
   }
 
-  async function refreshRosterAndGroups() {
-    if (!session) return;
+  async function refreshRosterAndGroups(expectedEpoch = sessionEpoch) {
+    if (!session || expectedEpoch !== sessionEpoch) return;
+    const current = session;
     const [peersResp, groupsResp, invResp] = await Promise.all([
-      hubFetch("/hub/v1/agents"),
-      hubFetch("/hub/v1/groups"),
-      hubFetch("/hub/v1/groups/invitations"),
+      hubFetch("/hub/v1/agents", {}, current),
+      hubFetch("/hub/v1/groups", {}, current),
+      hubFetch("/hub/v1/groups/invitations", {}, current),
     ]);
-    peers = (peersResp.agents || []).filter((a) => a.agentId !== session.agentId);
+    if (expectedEpoch !== sessionEpoch || session !== current) return;
+    peers = (peersResp.agents || []).filter((a) => a.agentId !== current.agentId);
     groups = groupsResp.groups || [];
     invitations = (invResp.invitations || []).filter((inv) => inv.state === "PENDING");
     if (activeChat && activeChat.type === "group") {
       try {
-        const r = await hubFetch(`/hub/v1/groups/${encodeURIComponent(activeChat.id)}/roster`);
-        groupRoster = r.members || [];
-      } catch { groupRoster = []; }
+        const r = await hubFetch(`/hub/v1/groups/${encodeURIComponent(activeChat.id)}/roster`, {}, current);
+        if (expectedEpoch === sessionEpoch && session === current) groupRoster = r.members || [];
+      } catch {
+        if (expectedEpoch === sessionEpoch) groupRoster = [];
+      }
     }
     renderSidebar();
   }
-
-  const unreadCounts = {};
 
   function renderSidebar() {
     const q = $("roster-search").value.trim().toLowerCase();
@@ -1097,8 +1235,16 @@
       acceptBtn.textContent = "接受加入";
       acceptBtn.style.padding = "5px 8px";
       acceptBtn.addEventListener("click", async () => {
-        await hubFetch(`/hub/v1/groups/invitations/${inv.invitationId}/accept`, { method: "POST", body: "{}" });
-        await refreshRosterAndGroups();
+        acceptBtn.disabled = true;
+        try {
+          await hubFetch(`/hub/v1/groups/invitations/${inv.invitationId}/accept`, { method: "POST", body: "{}" });
+          await refreshRosterAndGroups();
+          setStatus("composer-status", `已加入群組 ${inv.groupId}。`, "ok");
+        } catch (err) {
+          setStatus("composer-status", `接受邀請失敗：${err.message}`, "error");
+        } finally {
+          acceptBtn.disabled = false;
+        }
       });
       row.append(acceptBtn);
       invList.append(row);
@@ -1136,7 +1282,11 @@
     }
   }
 
-  function closeMobileSidebar() { $("sidebar").classList.remove("open"); }
+  function setMobileSidebarOpen(open) {
+    $("sidebar").classList.toggle("open", open);
+    $("sidebar-backdrop").classList.toggle("open", open);
+    $("btn-mobile-menu").setAttribute("aria-expanded", String(open));
+  }
 
   function selectPeer(peer, pushUrl = true) {
     activeChat = { type: "peer", id: peer.agentId, title: peer.displayName || peer.agentId, peer };
@@ -1145,48 +1295,62 @@
     if (pushUrl && window.history?.pushState) {
       window.history.pushState({ chat: activeChat }, "", `/chat/${encodeURIComponent(peer.agentId)}`);
     }
-    closeMobileSidebar();
+    setMobileSidebarOpen(false);
     renderSidebar();
     renderChatArea();
   }
 
-  async function selectGroup(group, pushUrl = true) {
+  async function selectGroup(group, pushUrl = true, expectedEpoch = sessionEpoch) {
+    if (!session || expectedEpoch !== sessionEpoch) return;
     activeChat = { type: "group", id: group.groupId, title: group.name || group.groupId, group };
     delete unreadCounts[`group:${group.groupId}`];
     $("invite-panel").classList.add("hidden");
     if (pushUrl && window.history?.pushState) {
       window.history.pushState({ chat: activeChat }, "", `/group/${encodeURIComponent(group.groupId)}`);
     }
-    closeMobileSidebar();
-    await refreshGroupHistory(group.groupId);
-    await refreshRosterAndGroups();
-    renderChatArea();
+    setMobileSidebarOpen(false);
+    await refreshGroupHistory(group.groupId, expectedEpoch);
+    await refreshRosterAndGroups(expectedEpoch);
+    if (expectedEpoch === sessionEpoch) renderChatArea();
   }
 
-  async function refreshGroupHistory(groupId) {
-    if (!session) return;
+  async function refreshGroupHistory(groupId, expectedEpoch = sessionEpoch) {
+    if (!session || expectedEpoch !== sessionEpoch) return;
+    const current = session;
     try {
-      const data = await hubFetch(`/hub/v1/groups/${encodeURIComponent(groupId)}/history?afterId=0&limit=100`);
-      const store = loadHistory();
+      const store = loadHistory(current);
       const tKey = `group:${groupId}`;
       const existing = store[tKey] || [];
       const byId = new Map(existing.map((m) => [m.dedupKey, m]));
-      (data.messages || []).forEach((gm) => {
-        const dk = `gm:${gm.id}`;
-        seenGroupMsgIds.add(gm.id);
-        byId.set(dk, {
-          dedupKey: dk,
-          fromSelf: gm.senderAgentId === session.agentId,
-          senderId: gm.senderAgentId,
-          senderName: peerLabel(gm.senderAgentId),
-          text: gm.message,
-          createdAt: gm.createdAt,
-          state: "GROUP",
+      let afterId = 0;
+      while (expectedEpoch === sessionEpoch && session === current) {
+        const data = await hubFetch(`/hub/v1/groups/${encodeURIComponent(groupId)}/history?afterId=${afterId}&limit=100`, {}, current);
+        if (expectedEpoch !== sessionEpoch || session !== current) return;
+        const msgs = data.messages || [];
+        if (!msgs.length) break;
+        msgs.forEach((gm) => {
+          const msgId = gm.groupMessageId ?? gm.id;
+          const dk = msgId != null ? `gm:${msgId}` : `gm-ts:${gm.createdAt}:${gm.senderAgentId}`;
+          if (msgId != null) trackBounded(seenGroupMsgIds, msgId);
+          byId.set(dk, {
+            dedupKey: dk,
+            fromSelf: gm.senderAgentId === current.agentId,
+            senderId: gm.senderAgentId,
+            senderName: gm.sender?.displayName || peerLabel(gm.senderAgentId),
+            text: gm.message,
+            createdAt: gm.createdAt,
+            state: "GROUP",
+          });
         });
-      });
+        const nextId = Number(data.nextId || 0);
+        if (!nextId || nextId <= afterId) break;
+        afterId = nextId;
+      }
       store[tKey] = Array.from(byId.values()).slice(-200);
-      saveHistory(store);
-    } catch {}
+      saveHistory(store, current);
+    } catch (err) {
+      if (expectedEpoch === sessionEpoch) setStatus("composer-status", `載入群組歷史失敗：${err.message}`, "error");
+    }
   }
 
   function peerLabel(agentId) {
@@ -1205,7 +1369,13 @@
       $("chat-title").textContent = session ? "選擇一個 Agent 或群組" : "尚未連線";
       $("chat-sub").textContent = session ? "從左側點選在線節點進行 1 對 1 私聊，或建立群組展開多 Agent 協作。" : "請先於上方完成連線。";
       $("composer-target-hint").textContent = "";
-      scroll.replaceChildren($("empty-state").cloneNode(true));
+      scroll.replaceChildren(
+        buildEmptyState(
+          "直接從瀏覽器與線上 Agent 協作",
+          "上方輸入暱稱與選填的私密 Circle Key 連線後，就能探索同圈線上 Agent、展開 1 對 1 私聊或建立多 Agent 群組，透過即時 SSE 接收回覆。",
+          "想連接本機 OpenClaw / Hermes / Codex 常駐執行？請於本機執行 a2a bridge"
+        )
+      );
       return;
     }
 
@@ -1252,10 +1422,12 @@
     const items = loadHistory()[tKey] || [];
     scroll.replaceChildren();
     if (!items.length) {
-      const box = document.createElement("div");
-      box.className = "empty-state";
-      box.innerHTML = `<h2>開始與 ${esc(activeChat.title)} 對話</h2><p>${activeChat.type === "group" ? "輸入 @ 可指名特定群組成員回覆。" : "訊息會透過 Hub 佇列投遞，對方回覆將經由 SSE 即時顯示於此。"}</p>`;
-      scroll.append(box);
+      scroll.append(
+        buildEmptyState(
+          `開始與 ${activeChat.title} 對話`,
+          activeChat.type === "group" ? "輸入 @ 可指名特定群組成員回覆。" : "訊息會透過 Hub 佇列投遞，對方回覆將經由 SSE 即時顯示於此。"
+        )
+      );
       return;
     }
 
@@ -1275,72 +1447,120 @@
     scroll.scrollTop = scroll.scrollHeight;
   }
 
-  async function handleIncomingItem(item) {
-    if (!session || !item || typeof item.sequence !== "number") return;
-    if (item.sequence > lastSeq) lastSeq = item.sequence;
-    if (seenSeqs.has(item.sequence)) return;
-    seenSeqs.add(item.sequence);
+  async function handleIncomingItem(item, expectedEpoch = sessionEpoch) {
+    if (!session || expectedEpoch !== sessionEpoch || !item || typeof item.sequence !== "number") return;
+    const current = session;
+    const seq = item.sequence;
 
-    // Sub-50ms Instant ACK back to Hub
-    hubFetch(`/hub/v1/agents/${encodeURIComponent(session.agentId)}/inbox/${item.sequence}/ack`, { method: "POST", body: "{}" }).catch(() => {});
+    // 1. Persist locally FIRST before acknowledging on Hub
+    let persisted = false;
+    let shouldNotify = false;
+    let targetThread = "";
 
     if (item.groupId) {
-      if (item.groupMessageId && seenGroupMsgIds.has(item.groupMessageId)) return;
-      if (item.groupMessageId) seenGroupMsgIds.add(item.groupMessageId);
-      const tKey = `group:${item.groupId}`;
-      appendLocalMessage(tKey, {
-        dedupKey: item.groupMessageId ? `gm:${item.groupMessageId}` : `seq:${item.sequence}`,
-        fromSelf: item.requesterAgentId === session.agentId,
-        senderId: item.requesterAgentId,
-        senderName: peerLabel(item.requesterAgentId),
-        text: item.message,
-        createdAt: item.createdAt,
-        state: `SEQ #${item.sequence}`,
-      });
-      if (activeChat && activeChat.type === "group" && activeChat.id === item.groupId) {
-        renderChatArea();
+      targetThread = `group:${item.groupId}`;
+      const gmId = item.groupMessageId;
+      if (gmId && seenGroupMsgIds.has(gmId)) {
+        persisted = true;
       } else {
-        unreadCounts[tKey] = (unreadCounts[tKey] || 0) + 1;
-        renderSidebar();
+        if (gmId) trackBounded(seenGroupMsgIds, gmId);
+        const store = loadHistory(current);
+        const existing = store[targetThread] || [];
+        const dk = gmId ? `gm:${gmId}` : `seq:${seq}`;
+        shouldNotify = !existing.some((m) => m.dedupKey === dk);
+        persisted = appendLocalMessage(targetThread, {
+          dedupKey: dk,
+          fromSelf: item.requesterAgentId === current.agentId,
+          senderId: item.requesterAgentId,
+          senderName: peerLabel(item.requesterAgentId),
+          text: item.message,
+          createdAt: item.createdAt,
+          state: `SEQ #${seq}`,
+        }, current);
       }
     } else {
       const peerId = item.requesterAgentId;
-      const tKey = `peer:${peerId}`;
-      appendLocalMessage(tKey, {
-        dedupKey: `seq:${item.sequence}`,
+      targetThread = `peer:${peerId}`;
+      const store = loadHistory(current);
+      const existing = store[targetThread] || [];
+      const dk = `seq:${seq}`;
+      shouldNotify = !existing.some((m) => m.dedupKey === dk);
+      persisted = appendLocalMessage(targetThread, {
+        dedupKey: dk,
         fromSelf: false,
         senderId: peerId,
         senderName: peerLabel(peerId),
         text: item.message,
         createdAt: item.createdAt,
-        state: `ACK #${item.sequence}`,
-      });
-      if (activeChat && activeChat.type === "peer" && activeChat.id === peerId) {
+        state: `ACK #${seq}`,
+      }, current);
+    }
+
+    if (!persisted) {
+      setStatus("composer-status", "瀏覽器儲存空間寫入失敗，保留 Hub 待處理狀態以免遺失訊息。", "error");
+      return;
+    }
+
+    if (shouldNotify && expectedEpoch === sessionEpoch && session === current) {
+      if (activeChat && targetThread === `${activeChat.type}:${activeChat.id}`) {
         renderChatArea();
       } else {
-        unreadCounts[tKey] = (unreadCounts[tKey] || 0) + 1;
+        unreadCounts[targetThread] = (unreadCounts[targetThread] || 0) + 1;
         renderSidebar();
       }
     }
+
+    // 2. ACK only after durable local persistence succeeded
+    if (!ackedSeqs.has(seq)) {
+      try {
+        await hubFetch(`/hub/v1/agents/${encodeURIComponent(current.agentId)}/inbox/${seq}/ack`, { method: "POST", body: "{}" }, current);
+        if (expectedEpoch === sessionEpoch && session === current) {
+          trackBounded(ackedSeqs, seq);
+          if (seq > lastSeq) lastSeq = seq;
+        }
+      } catch {
+        // Leave lastSeq below un-ACKed item so next catch-up retries ACK
+      }
+    } else if (seq > lastSeq) {
+      lastSeq = seq;
+    }
   }
 
-  async function catchupInbox() {
-    if (!session) return;
+  async function catchupInbox(expectedEpoch = sessionEpoch) {
+    if (!session || expectedEpoch !== sessionEpoch) return;
+    const current = session;
+    let cursor = lastSeq;
     try {
-      const data = await hubFetch(`/hub/v1/agents/${encodeURIComponent(session.agentId)}/inbox?afterSequence=${lastSeq}`);
-      for (const item of (data.items || [])) {
-        await handleIncomingItem(item);
+      while (expectedEpoch === sessionEpoch && session === current) {
+        const data = await hubFetch(`/hub/v1/agents/${encodeURIComponent(current.agentId)}/inbox?afterSequence=${cursor}&limit=100`, {}, current);
+        if (expectedEpoch !== sessionEpoch || session !== current) return;
+        const items = data.items || [];
+        if (!items.length) break;
+        let maxBatchSeq = cursor;
+        for (const item of items) {
+          if (typeof item.sequence === "number" && item.sequence > maxBatchSeq) maxBatchSeq = item.sequence;
+          await handleIncomingItem(item, expectedEpoch);
+        }
+        if (maxBatchSeq <= cursor) break;
+        cursor = maxBatchSeq;
       }
     } catch {}
   }
 
-  async function startSSE() {
-    if (!session) return;
+  async function startSSE(expectedEpoch = sessionEpoch) {
+    if (!session || expectedEpoch !== sessionEpoch) return;
     if (sseAbort) sseAbort.abort();
     sseAbort = new AbortController();
     const currentSession = session;
     const signal = sseAbort.signal;
     setSsePill("warn", "SSE 連線中");
+    let authRejected = false;
+
+    const dispatchBufferedEvent = async (evtType, evtData) => {
+      if (evtData.length > 0 && evtType === "task") {
+        try { await handleIncomingItem(JSON.parse(evtData.join("\n")), expectedEpoch); } catch {}
+      }
+    };
 
     try {
       const resp = await fetch(`/hub/v1/agents/${encodeURIComponent(currentSession.agentId)}/inbox/stream?afterSequence=${lastSeq}`, {
@@ -1352,6 +1572,10 @@
         signal,
         cache: "no-store",
       });
+      if (resp.status === 401 || resp.status === 403) {
+        authRejected = true;
+        throw new Error(`HTTP ${resp.status}`);
+      }
       if (!resp.ok || !resp.body) {
         throw new Error(`HTTP ${resp.status}`);
       }
@@ -1364,18 +1588,13 @@
       let evtType = "message";
       let evtData = [];
 
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
+      const drainLines = async (flush = false) => {
         let idx;
         while ((idx = buf.indexOf("\n")) !== -1) {
           const line = buf.slice(0, idx).replace(/\r$/, "");
           buf = buf.slice(idx + 1);
           if (line === "") {
-            if (evtData.length > 0 && evtType === "task") {
-              try { await handleIncomingItem(JSON.parse(evtData.join("\n"))); } catch {}
-            }
+            await dispatchBufferedEvent(evtType, evtData);
             evtType = "message";
             evtData = [];
           } else if (line.startsWith(":")) {
@@ -1386,84 +1605,127 @@
             evtData.push(line.slice(5).trimStart());
           }
         }
+        if (flush && buf.trim()) {
+          const tail = buf.replace(/\r$/, "");
+          buf = "";
+          if (tail.startsWith("data:")) evtData.push(tail.slice(5).trimStart());
+        }
+        if (flush && evtData.length > 0) {
+          await dispatchBufferedEvent(evtType, evtData);
+          evtType = "message";
+          evtData = [];
+        }
+      };
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) {
+          buf += decoder.decode();
+          await drainLines(true);
+          break;
+        }
+        buf += decoder.decode(value, { stream: true });
+        await drainLines(false);
       }
-    } catch (err) {
-      if (signal.aborted || session !== currentSession) return;
-      setSsePill("err", `重連中 (${Math.round(reconnectDelay / 1000)}s)`);
+    } catch {
+      if (signal.aborted || expectedEpoch !== sessionEpoch || session !== currentSession) return;
     }
 
-    if (!signal.aborted && session === currentSession) {
-      reconnectTimer = setTimeout(() => {
-        if (session === currentSession) {
-          catchupInbox().then(startSSE);
-        }
-      }, reconnectDelay);
-      reconnectDelay = Math.min(reconnectDelay * 2, 15000);
+    if (signal.aborted || expectedEpoch !== sessionEpoch || session !== currentSession) return;
+    if (authRejected) {
+      setSsePill("err", "憑證失效");
+      setStatus("composer-status", "Agent 憑證已過期或被吊銷，請切換或重新註冊身分。", "error");
+      return;
     }
+
+    setSsePill("err", `重連中 (${Math.round(reconnectDelay / 1000)}s)`);
+    reconnectTimer = setTimeout(() => {
+      if (expectedEpoch === sessionEpoch && session === currentSession) {
+        catchupInbox(expectedEpoch).then(() => startSSE(expectedEpoch));
+      }
+    }, reconnectDelay);
+    reconnectDelay = Math.min(reconnectDelay * 2, 15000);
   }
 
   async function sendMessage() {
     if (!session || !activeChat) return;
+    const current = session;
+    const myEpoch = sessionEpoch;
+    const targetChat = activeChat;
+    const tKey = `${targetChat.type}:${targetChat.id}`;
     const input = $("composer-input");
     const text = input.value.trim();
     if (!text) return;
+
+    if (!pendingSend || pendingSend.threadKey !== tKey || pendingSend.text !== text) {
+      const uniq = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
+      pendingSend = { threadKey: tKey, text, idempotencyKey: `web-${uniq}`, taskId: `web-task-${uniq}` };
+    }
+    const reqMeta = pendingSend;
+
     const btn = $("btn-send");
     btn.disabled = true;
     input.disabled = true;
-    const idem = `web-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
     try {
-      if (activeChat.type === "peer") {
-        const taskId = `web-task-${Date.now()}`;
-        const res = await hubFetch(`/hub/v1/agents/${encodeURIComponent(activeChat.id)}/tasks`, {
+      if (targetChat.type === "peer") {
+        const res = await hubFetch(`/hub/v1/agents/${encodeURIComponent(targetChat.id)}/tasks`, {
           method: "POST",
           body: JSON.stringify({
-            taskId,
-            contextId: `web-ctx-${activeChat.id}`,
-            idempotencyKey: idem,
+            taskId: reqMeta.taskId,
+            contextId: `web-ctx-${targetChat.id}`,
+            idempotencyKey: reqMeta.idempotencyKey,
             message: text,
           }),
-        });
-        appendLocalMessage(`peer:${activeChat.id}`, {
-          dedupKey: `sent:${idem}`,
+        }, current);
+        appendLocalMessage(tKey, {
+          dedupKey: `sent:${reqMeta.idempotencyKey}`,
           fromSelf: true,
-          senderId: session.agentId,
-          senderName: session.displayName || session.agentId,
+          senderId: current.agentId,
+          senderName: current.displayName || current.agentId,
           text,
           createdAt: new Date().toISOString(),
           state: res.state || "PENDING",
-        });
+        }, current);
       } else {
-        const res = await hubFetch(`/hub/v1/groups/${encodeURIComponent(activeChat.id)}/messages`, {
+        const res = await hubFetch(`/hub/v1/groups/${encodeURIComponent(targetChat.id)}/messages`, {
           method: "POST",
           body: JSON.stringify({
-            contextId: `web-group-${activeChat.id}`,
-            idempotencyKey: idem,
+            contextId: `web-group-${targetChat.id}`,
+            idempotencyKey: reqMeta.idempotencyKey,
             message: text,
           }),
-        });
+        }, current);
         const gm = res.message || {};
-        if (gm.id) seenGroupMsgIds.add(gm.id);
-        appendLocalMessage(`group:${activeChat.id}`, {
-          dedupKey: gm.id ? `gm:${gm.id}` : `sent:${idem}`,
+        const gmId = gm.groupMessageId ?? gm.id;
+        if (gmId != null) trackBounded(seenGroupMsgIds, gmId);
+        appendLocalMessage(tKey, {
+          dedupKey: gmId != null ? `gm:${gmId}` : `sent:${reqMeta.idempotencyKey}`,
           fromSelf: true,
-          senderId: session.agentId,
-          senderName: session.displayName || session.agentId,
+          senderId: current.agentId,
+          senderName: current.displayName || current.agentId,
           text,
           createdAt: gm.createdAt || new Date().toISOString(),
           state: "SENT",
-        });
+        }, current);
       }
-      input.value = "";
-      hideMentionPopover();
-      setStatus("composer-status", "訊息已投遞至 Hub。", "ok");
-      renderChatArea();
+      pendingSend = null;
+      if (myEpoch === sessionEpoch && session === current) {
+        input.value = "";
+        hideMentionPopover();
+        setStatus("composer-status", "訊息已投遞至 Hub。", "ok");
+        if (activeChat && `${activeChat.type}:${activeChat.id}` === tKey) renderChatArea();
+      }
     } catch (err) {
-      setStatus("composer-status", err.message || "傳送失敗", "error");
+      if (myEpoch === sessionEpoch) {
+        setStatus("composer-status", `${err.message || "傳送失敗"}（再按一次送出將沿用相同冪等鍵重試）`, "error");
+      }
     } finally {
-      btn.disabled = false;
-      input.disabled = false;
-      input.focus();
+      if (myEpoch === sessionEpoch && session === current) {
+        btn.disabled = false;
+        input.disabled = false;
+        input.focus();
+      }
     }
   }
 
@@ -1495,6 +1757,8 @@
     mentionItems.forEach((p, idx) => {
       const btn = document.createElement("button");
       btn.type = "button";
+      btn.setAttribute("role", "option");
+      btn.setAttribute("aria-selected", String(idx === mentionIndex));
       btn.className = `mention-option ${idx === mentionIndex ? "selected" : ""}`.trim();
       btn.innerHTML = `<span>@${esc(p.displayName || p.agentId)}</span><span class="mono-sub">${esc(p.state || "")}</span>`;
       btn.addEventListener("mousedown", (e) => { e.preventDefault(); applyMention(p); });
@@ -1514,14 +1778,15 @@
     const before = input.value.slice(0, pos);
     const after = input.value.slice(pos);
     const label = peer.displayName || peer.agentId;
-    const replaced = before.replace(/@([^\s@]*)$/, `@${label} `);
+    const replaced = before.replace(/@([^\s@]*)$/, () => `@${label} `);
     input.value = replaced + after;
     input.selectionStart = input.selectionEnd = replaced.length;
     hideMentionPopover();
     input.focus();
   }
 
-  function applyRouteFromURL() {
+  async function applyRouteFromURL(expectedEpoch = sessionEpoch) {
+    if (!session || expectedEpoch !== sessionEpoch) return;
     const path = window.location.pathname;
     if (path.startsWith("/chat/")) {
       const id = decodeURIComponent(path.slice("/chat/".length));
@@ -1530,19 +1795,48 @@
     } else if (path.startsWith("/group/")) {
       const id = decodeURIComponent(path.slice("/group/".length));
       const g = groups.find((x) => x.groupId === id) || { groupId: id, name: id };
-      selectGroup(g, false);
+      await selectGroup(g, false, expectedEpoch);
     }
   }
 
   // Event wiring
-  $("btn-mobile-menu").addEventListener("click", () => $("sidebar").classList.toggle("open"));
+  $("btn-mobile-menu").addEventListener("click", () => {
+    const isOpen = $("sidebar").classList.contains("open");
+    setMobileSidebarOpen(!isOpen);
+  });
+  $("sidebar-backdrop").addEventListener("click", () => setMobileSidebarOpen(false));
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && $("sidebar").classList.contains("open")) setMobileSidebarOpen(false);
+  });
+
   $("btn-dismiss-announcement").addEventListener("click", () => $("announcement-bar").classList.remove("visible"));
   $("mode-register").addEventListener("click", () => switchConnectMode("register"));
   $("mode-resume").addEventListener("click", () => switchConnectMode("resume"));
   $("btn-connect").addEventListener("click", doConnect);
-  $("btn-toggle-connect").addEventListener("click", () => $("connect-strip").classList.toggle("hidden"));
+  $("btn-toggle-connect").addEventListener("click", () => {
+    renderSavedProfilesPicker();
+    $("connect-strip").classList.toggle("hidden");
+  });
+  $("btn-use-saved").addEventListener("click", async () => {
+    const pid = $("saved-profile-select").value;
+    const prof = loadProfiles()[pid];
+    if (!prof) return;
+    try {
+      await connectWithSession(prof);
+    } catch (err) {
+      setStatus("connect-status", err.message || "切換失敗", "error");
+    }
+  });
+  $("btn-forget-saved").addEventListener("click", () => {
+    const pid = $("saved-profile-select").value;
+    if (!pid) return;
+    const wasCurrent = session && session.profileId === pid;
+    removeProfile(pid);
+    if (wasCurrent) resetDisconnectedUI("已移除該本機憑證。", "ok");
+  });
+
   $("roster-search").addEventListener("input", renderSidebar);
-  $("btn-refresh-roster").addEventListener("click", () => refreshRosterAndGroups().catch(() => {}));
+  $("btn-refresh-roster").addEventListener("click", () => refreshRosterAndGroups().catch((e) => setStatus("composer-status", e.message, "error")));
 
   $("btn-gen-key").addEventListener("click", () => {
     const arr = new Uint8Array(16);
@@ -1555,43 +1849,54 @@
   $("btn-copy-creds").addEventListener("click", async () => {
     if (!session) return;
     const text = JSON.stringify({ agentId: session.agentId, agentToken: session.token, circleId: session.circleId }, null, 2);
-    await navigator.clipboard.writeText(text).catch(() => {});
-    setStatus("composer-status", "已複製當前瀏覽器 Agent 憑證 JSON。", "ok");
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const tmp = document.createElement("textarea");
+        tmp.value = text;
+        tmp.style.position = "fixed";
+        tmp.style.opacity = "0";
+        document.body.append(tmp);
+        tmp.select();
+        const ok = document.execCommand("copy");
+        tmp.remove();
+        if (!ok) throw new Error("瀏覽器拒絕剪貼簿存取");
+      }
+      setStatus("composer-status", "已複製當前瀏覽器 Agent 憑證 JSON。", "ok");
+    } catch (err) {
+      setStatus("composer-status", `複製失敗：${err.message || "請手動選取"}`, "error");
+    }
   });
 
   $("btn-disconnect").addEventListener("click", async () => {
     if (!session) return;
     const old = session;
-    stopLoops();
-    session = null;
-    activeChat = null;
-    removeProfile(old.scopeKey);
+    resetDisconnectedUI("已離線（已保留本機憑證以便稍後接續，或按上方移除）。", "ok");
     hubFetch(`/hub/v1/agents/${encodeURIComponent(old.agentId)}/disconnect`, { method: "POST" }, old).catch(() => {});
-    $("self-name").textContent = "尚未連線";
-    $("self-id").textContent = "請填寫暱稱與 Circle Key 連線";
-    $("self-actions").classList.add("hidden");
-    $("btn-disconnect").classList.add("hidden");
-    $("circle-pill").classList.add("hidden");
-    $("connect-strip").classList.remove("hidden");
-    $("chat-header").classList.add("hidden");
-    $("composer-input").disabled = true;
-    $("btn-send").disabled = true;
-    peers = []; groups = []; invitations = [];
-    renderSidebar();
-    renderChatArea();
   });
 
   $("btn-toggle-new-group").addEventListener("click", () => $("new-group-panel").classList.toggle("hidden"));
   $("btn-cancel-group").addEventListener("click", () => $("new-group-panel").classList.add("hidden"));
   $("btn-create-group").addEventListener("click", async () => {
     if (!session) return;
-    const name = $("new-group-name").value.trim();
+    const nameEl = $("new-group-name");
+    const name = nameEl.value.trim();
     if (!name) return;
-    const res = await hubFetch("/hub/v1/groups", { method: "POST", body: JSON.stringify({ name }) });
-    $("new-group-name").value = "";
-    $("new-group-panel").classList.add("hidden");
-    await refreshRosterAndGroups();
-    if (res.group) await selectGroup(res.group);
+    const btn = $("btn-create-group");
+    btn.disabled = true;
+    try {
+      const res = await hubFetch("/hub/v1/groups", { method: "POST", body: JSON.stringify({ name }) });
+      nameEl.value = "";
+      $("new-group-panel").classList.add("hidden");
+      await refreshRosterAndGroups();
+      if (res.group) await selectGroup(res.group);
+      setStatus("composer-status", `已建立群組 #${name}。`, "ok");
+    } catch (err) {
+      setStatus("composer-status", `建立群組失敗：${err.message}`, "error");
+    } finally {
+      btn.disabled = false;
+    }
   });
 
   $("btn-close-invite").addEventListener("click", () => $("invite-panel").classList.add("hidden"));
@@ -1599,12 +1904,20 @@
     if (!session || !activeChat || activeChat.type !== "group") return;
     const target = $("invite-agent-select").value;
     if (!target) return;
-    await hubFetch(`/hub/v1/groups/${encodeURIComponent(activeChat.id)}/invitations`, {
-      method: "POST",
-      body: JSON.stringify({ agentId: target }),
-    });
-    $("invite-panel").classList.add("hidden");
-    setStatus("composer-status", `已邀請 ${peerLabel(target)} 加入群組。`, "ok");
+    const btn = $("btn-send-invite");
+    btn.disabled = true;
+    try {
+      await hubFetch(`/hub/v1/groups/${encodeURIComponent(activeChat.id)}/invitations`, {
+        method: "POST",
+        body: JSON.stringify({ agentId: target }),
+      });
+      $("invite-panel").classList.add("hidden");
+      setStatus("composer-status", `已邀請 ${peerLabel(target)} 加入群組。`, "ok");
+    } catch (err) {
+      setStatus("composer-status", `邀請失敗：${err.message}`, "error");
+    } finally {
+      btn.disabled = false;
+    }
   });
 
   $("btn-send").addEventListener("click", sendMessage);
@@ -1622,16 +1935,22 @@
     }
   });
 
-  window.addEventListener("popstate", applyRouteFromURL);
+  window.addEventListener("popstate", () => { applyRouteFromURL().catch(() => {}); });
 
   // Boot
   loadHubBanner();
-  const activeScope = localStorage.getItem(ACTIVE_SCOPE_KEY);
+  renderSavedProfilesPicker();
+  renderChatArea();
+  const activePid = localStorage.getItem(ACTIVE_PROFILE_KEY);
   const profiles = loadProfiles();
-  if (activeScope && profiles[activeScope]) {
-    connectWithSession(profiles[activeScope]).catch(() => {
-      removeProfile(activeScope);
-      $("connect-strip").classList.remove("hidden");
+  if (activePid && profiles[activePid]) {
+    connectWithSession(profiles[activePid]).catch((err) => {
+      if (err && (err.status === 401 || err.status === 403)) {
+        removeProfile(activePid);
+        resetDisconnectedUI("既有瀏覽器憑證已失效或被吊銷，請重新加入。", "error");
+      } else {
+        resetDisconnectedUI(`暫時無法連線至 Hub（${err?.message || "網路錯誤"}），已保留本機憑證，可點「切換」重試。`, "error");
+      }
     });
   }
 })();

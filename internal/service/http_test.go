@@ -997,6 +997,12 @@ func TestHostedWebChatAndAdminChatRoutes(t *testing.T) {
 		}
 		if csp := rec.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "script-src 'nonce-") {
 			t.Fatalf("GET %s missing CSP nonce header: %q", path, csp)
+		} else {
+			start := strings.Index(csp, "script-src 'nonce-") + len("script-src 'nonce-")
+			end := strings.Index(csp[start:], "'")
+			if end <= 0 || !strings.Contains(rec.Body.String(), `<script nonce="`+csp[start:start+end]+`">`) {
+				t.Fatalf("GET %s HTML nonce does not match CSP header %q", path, csp)
+			}
 		}
 		body := rec.Body.String()
 		if strings.Contains(body, "{{CSP_NONCE}}") {
@@ -1011,6 +1017,15 @@ func TestHostedWebChatAndAdminChatRoutes(t *testing.T) {
 	handler.ServeHTTP(adminRec, httptest.NewRequest(http.MethodGet, "/admin/chat", nil))
 	if adminRec.Code != http.StatusOK || !strings.Contains(adminRec.Body.String(), "線上對話") {
 		t.Fatalf("GET /admin/chat = %d, missing chat tab", adminRec.Code)
+	}
+	if csp := adminRec.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "script-src 'nonce-") {
+		t.Fatalf("GET /admin/chat missing CSP nonce header: %q", csp)
+	} else {
+		start := strings.Index(csp, "script-src 'nonce-") + len("script-src 'nonce-")
+		end := strings.Index(csp[start:], "'")
+		if end <= 0 || !strings.Contains(adminRec.Body.String(), `<script nonce="`+csp[start:start+end]+`">`) {
+			t.Fatalf("GET /admin/chat HTML nonce does not match CSP header %q", csp)
+		}
 	}
 
 	missRec := httptest.NewRecorder()

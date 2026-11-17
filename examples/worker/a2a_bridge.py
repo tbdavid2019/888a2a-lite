@@ -1426,6 +1426,8 @@ class OpenClawBackend(AIBackend):
                 pass
 
             # Fallback to stdout text
+            if not stdout and (self.notify_only or self.deliver):
+                return "[[A2A_NOTIFIED]]"
             return stdout
 
         except subprocess.TimeoutExpired:
@@ -1449,6 +1451,10 @@ def validate_openclaw_hook_url(url, hook_mode="agent"):
         raise ValueError(f"Unsupported OpenClaw hook URL scheme '{parsed.scheme}'")
     if not hostname:
         raise ValueError("Invalid OpenClaw hook URL: missing hostname")
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError("OpenClaw hook URL must not embed credentials (userinfo)")
+    if parsed.query or parsed.fragment:
+        raise ValueError("OpenClaw hook URL must not include query parameters or fragments")
     is_loopback = hostname in ("127.0.0.1", "localhost", "::1")
     if not is_loopback:
         try:
@@ -1470,6 +1476,16 @@ def validate_openclaw_hook_url(url, hook_mode="agent"):
     return urllib.parse.urlunparse((scheme, parsed.netloc, target_path, "", "", ""))
 
 
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def _sanitize_meta_value(value, max_len=128):
+    text = re.sub(r"[\x00-\x1f\x7f\[\]]+", " ", str(value or "")).strip()
+    return text[:max_len]
+
+
 class OpenClawHookBackend(AIBackend):
     """Forward inbound A2A tasks/replies to OpenClaw Gateway /hooks/agent or /hooks/wake."""
 
@@ -1485,6 +1501,7 @@ class OpenClawHookBackend(AIBackend):
         session_key="",
         system_prompt="",
         timeout=20,
+        idempotency_scope="default",
     ):
         self.hook_mode = (hook_mode or "agent").strip().lower()
         self.endpoint_url = validate_openclaw_hook_url(hook_url, self.hook_mode)
@@ -1500,27 +1517,35 @@ class OpenClawHookBackend(AIBackend):
         self.session_key = (session_key or "").strip()
         self.system_prompt = (system_prompt or "").strip()
         self.timeout = max(5, int(timeout))
+        self.idempotency_scope = _sanitize_meta_value(idempotency_scope or "default", max_len=32) or "default"
+        self._opener = urllib.request.build_opener(_NoRedirectHandler())
+
+    def _build_metadata(self, sender_id, context):
+        ctx = context or {}
+        meta = {"sender": _sanitize_meta_value(sender_id)}
+        if ctx.get("taskId"):
+            meta["taskId"] = _sanitize_meta_value(ctx["taskId"])
+        if ctx.get("groupId"):
+            meta["groupId"] = _sanitize_meta_value(ctx["groupId"])
+        if ctx.get("contextId"):
+            meta["contextId"] = _sanitize_meta_value(ctx["contextId"])
+        if ctx.get("sequence") is not None:
+            meta["sequence"] = int(ctx["sequence"])
+        return meta
 
     def _build_message(self, message, sender_id, context):
         ctx = context or {}
-        meta = [f"sender={sender_id}"]
-        if ctx.get("taskId"):
-            meta.append(f"taskId={ctx['taskId']}")
-        if ctx.get("groupId"):
-            meta.append(f"groupId={ctx['groupId']}")
-        if ctx.get("contextId"):
-            meta.append(f"contextId={ctx['contextId']}")
-        if ctx.get("sequence") is not None:
-            meta.append(f"sequence={ctx['sequence']}")
+        meta_json = json.dumps(self._build_metadata(sender_id, ctx), ensure_ascii=False, sort_keys=True)
 
         parts = []
         if self.system_prompt:
             parts.append(self.system_prompt)
+        parts.append(f"[A2A_INBOUND_METADATA]\n{meta_json}\n[/A2A_INBOUND_METADATA]")
         if ctx.get("governance"):
             parts.append(ctx["governance"])
         else:
             parts.append(
-                "[UNTRUSTED_A2A_INBOUND " + " ".join(meta) + "]\n"
+                "[UNTRUSTED_A2A_INBOUND]\n"
                 + str(message)
                 + "\n[/UNTRUSTED_A2A_INBOUND]"
             )
@@ -1532,11 +1557,16 @@ class OpenClawHookBackend(AIBackend):
 
     def execute(self, message, sender_id, context):
         ctx = context or {}
-        formatted = self._build_message(message, sender_id, ctx)
 
         if self.hook_mode == "wake":
-            payload = {"text": formatted, "mode": "now"}
+            safe_sender = _sanitize_meta_value(sender_id, max_len=64) or "peer"
+            seq_label = f" seq={int(ctx['sequence'])}" if ctx.get("sequence") is not None else ""
+            payload = {
+                "text": f"A2A inbound message received from {safe_sender}{seq_label}. Check A2A inbox.",
+                "mode": "now",
+            }
         else:
+            formatted = self._build_message(message, sender_id, ctx)
             payload = {
                 "message": formatted,
                 "name": "A2A",
@@ -1547,9 +1577,9 @@ class OpenClawHookBackend(AIBackend):
             if self.session_key:
                 payload["sessionKey"] = self.session_key
             if ctx.get("sequence") is not None:
-                payload["idempotencyKey"] = f"a2a-hub-seq-{ctx['sequence']}"
+                payload["idempotencyKey"] = f"a2a-hub-{self.idempotency_scope}-seq-{ctx['sequence']}"
             elif ctx.get("taskId"):
-                payload["idempotencyKey"] = f"a2a-hub-task-{ctx['taskId']}"
+                payload["idempotencyKey"] = f"a2a-hub-{self.idempotency_scope}-task-{_sanitize_meta_value(ctx['taskId'], max_len=64)}"
             if self.channel and self.to:
                 payload["deliver"] = True
                 payload["channel"] = self.channel
@@ -1569,9 +1599,17 @@ class OpenClawHookBackend(AIBackend):
             method="POST",
         )
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            with self._opener.open(req, timeout=self.timeout) as resp:
                 if 200 <= resp.status < 300:
-                    resp.read(4096)
+                    raw = resp.read(4096)
+                    if raw:
+                        try:
+                            parsed = json.loads(raw.decode("utf-8", errors="replace"))
+                            if isinstance(parsed, dict) and parsed.get("ok") is False:
+                                print(f"[!] OpenClaw hook rejected run: {parsed.get('error', 'ok=false')}", file=sys.stderr)
+                                return None
+                        except json.JSONDecodeError:
+                            pass
                     return "[[A2A_NOTIFIED]]"
                 print(f"[!] OpenClaw hook returned unexpected HTTP {resp.status}.", file=sys.stderr)
                 return None
@@ -2097,7 +2135,7 @@ def process_queued_task(hub_client, backend, queue, row, agent_name, charter_cac
         hub_client.auto_accept_pending_invitations(charter_cache=charter_cache)
 
     # 4. Anti-Echo Storm Guard (Pre-Filter)
-    if is_pure_closing_statement(msg):
+    if not notify_only and is_pure_closing_statement(msg):
         print(f"[*] [Anti-Echo Guard] Received closing/standby statement from {sender_id}.")
         print("    -> Suppressing reciprocal reply. Conversation naturally concluded.")
         queue.finish(seq)
@@ -2105,7 +2143,7 @@ def process_queued_task(hub_client, backend, queue, row, agent_name, charter_cac
 
     # 5. Group Broadcast Discipline:
     # If it is a group broadcast and not addressed to this agent, do not auto-reply.
-    if is_group:
+    if is_group and not notify_only:
         addressed = (agent_name in msg or hub_client.agent_id in msg or "全員" in msg or "all" in msg.lower())
         if not addressed:
             print(f"[*] [Group Broadcast] Message not explicitly addressed to '{agent_name}'. Acknowledged without reply.")
@@ -4790,6 +4828,13 @@ def main():
 
     if args.backend == "openclaw-hook":
         args.notify_only = True
+        cli_hook_token_supplied = any(a == "--openclaw-hook-token" or a.startswith("--openclaw-hook-token=") for a in sys.argv[1:])
+        if args.install_service and cli_hook_token_supplied:
+            parser.error("--openclaw-hook-token cannot be used with --install-service; use --openclaw-hook-token-file instead")
+        if cli_hook_token_supplied:
+            print("[!] Warning: --openclaw-hook-token on CLI may be visible in process arguments; prefer --openclaw-hook-token-file or OPENCLAW_HOOK_TOKEN.", file=sys.stderr)
+        if args.openclaw_hook_mode == "wake" and (args.openclaw_channel or args.openclaw_to or args.openclaw_session_key or (args.backend_agent and args.backend_agent != "default")):
+            print("[!] Warning: --openclaw-hook-mode wake ignores --openclaw-channel/--openclaw-to/--openclaw-session-key/--backend-agent and sends a fixed wake notice.", file=sys.stderr)
         try:
             resolved_hook_token = resolve_openclaw_hook_token(args.openclaw_hook_token, args.openclaw_hook_token_file)
             OpenClawHookBackend(
@@ -4988,6 +5033,9 @@ def main():
     process_lock = acquire_process_lock(queue_path)
     queue = DurableWorkQueue(queue_path, scope=f"{args.hub.rstrip('/')}/{hub_client.agent_id}")
     charter_cache = CharterCache(hub_client, root=args.charter_cache_dir)
+
+    if args.backend == "openclaw-hook":
+        backend.idempotency_scope = queue_scope
 
     # Run the resilient listener
     try:

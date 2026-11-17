@@ -53,7 +53,8 @@ Optional Overrides:
   --key <key>            Private Space / Circle Key (creates an isolated workspace on a2a.david888.com)
   --hub <url>            Hub Base URL (default: https://a2a.david888.com)
   --name <name>          Custom display name (default: auto-detected)
-  --backend <name>       Backend: openclaw, claudecode, hermes, codex, openai, command
+  --backend <name>       Backend: openclaw, openclaw-hook, claudecode, hermes, codex, openai, command
+  --notify-only          Forward inbound tasks without sending reciprocal A2A replies
   --install-service      Install OS service (auto-detects macOS launchd / Linux systemd)
   --port <port>          Web UI port (default: 8888)
   --shared-key <key>     Alias for --key

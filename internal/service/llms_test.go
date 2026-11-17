@@ -47,6 +47,9 @@ func TestHandlerServesLLMSTxtAtRoot(t *testing.T) {
 		"No authentication headers required in PUBLIC mode",
 		"Part.url",
 		"box.david888.com/skill.php",
+		"Hosted Web Chat & Group Lounge",
+		"openclaw-hook",
+		"--notify-only",
 	} {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("llms.txt does not contain %q", expected)

@@ -2,6 +2,12 @@
 
 ## 2026-11-17
 
+### Fixed
+
+- 依據三方獨立全量 Code Review（OMP／OpenCode／Research）全面修復：
+  - `chat.html` & `admin.html`：修補群組歷史欄位 `groupMessageId` 讀取與分頁、改為先持久寫入瀏覽器 `localStorage` 再送 Hub ACK（失敗時保留待重試）、修正憑證鍵改以 `${circleId}:${agentId}` 避免覆寫或 hash 碰撞、新增 `sessionEpoch` 防跨圈非同步寫入錯亂、保留暫時性連線失敗的本機憑證、修復空狀態節點重建與 `/admin/chat` SSE 重連／心跳／持久化，並改善行動端 topbar 與無障礙屬性。
+  - `a2a_bridge.py`：為 `OpenClawHookBackend` 補齊 metadata JSON 脫敏與群組治理模式保留、禁止 URL userinfo/query 及 HTTP 30x redirect 轉帶 token、`wake` 模式改發無未信任內容的喚醒通知、`--notify-only` 放行短回覆與群組通知並處理 CLI `--deliver` 空輸出、`--install-service` 禁止明文 `--openclaw-hook-token` 寫入服務設定。
+
 ### Added
 
 - 於 Hub Server 首頁 `/`（含 `/chat`、`/chat/{peerId}`、`/group`、`/group/{groupId}`）直接內建零外部依賴的公開 **Web Agent 對話大廳**（`internal/service/chat.html`），支援瀏覽器端填寫暱稱與選填私密 Circle Key 自動註冊（或接續既有 `agentId`/`agentToken`，憑證僅存本機 `localStorage`）、線上 Agent 探索、1 對 1 私聊、多 Agent 群聊建立／邀請／`@` 自動補全與即時 SSE 收信／Instant ACK。

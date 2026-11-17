@@ -716,14 +716,54 @@
 
   // --- Embedded Interactive Chat (/admin/chat) ---
   const CHAT_PROFILE_KEY = "a2a_lite_web_profiles_v1";
-  const CHAT_SCOPE_KEY = "a2a_lite_web_active_scope_v1";
+  const CHAT_ACTIVE_KEY = "a2a_lite_web_active_profile_v1";
+  const CHAT_HISTORY_PREFIX = "a2a_lite_web_history_v1:";
   let chatSession = null;
+  let chatEpoch = 0;
   let chatPeers = [];
   let chatGroups = [];
-  let chatTimeline = [];
-  let chatSeenSeqs = new Set();
+  let chatAckedSeqs = new Set();
   let chatLastSeq = 0;
   let chatSseAbort = null;
+  let chatHeartbeatTimer = null;
+  let chatPollTimer = null;
+  let chatReconnectTimer = null;
+  let chatReconnectDelay = 1000;
+  let adminPendingSend = null;
+
+  const adminChatProfileId = (circleId, agentId) => `${circleId || "public"}:${agentId}`;
+  const adminChatHistKey = (sess = chatSession) => sess ? `${CHAT_HISTORY_PREFIX}${sess.circleId || "public"}:${sess.agentId}` : "";
+  const loadAdminHistory = (sess = chatSession) => {
+    const k = adminChatHistKey(sess);
+    if (!k) return {};
+    try { return JSON.parse(localStorage.getItem(k) || "{}") || {}; } catch { return {}; }
+  };
+  const appendAdminMessage = (threadKey, entry, sess = chatSession) => {
+    const k = adminChatHistKey(sess);
+    if (!k) return false;
+    try {
+      const store = loadAdminHistory(sess);
+      const list = store[threadKey] || [];
+      if (entry.dedupKey && list.some((m) => m.dedupKey === entry.dedupKey)) return true;
+      list.push(entry);
+      if (list.length > 200) list.splice(0, list.length - 200);
+      store[threadKey] = list;
+      localStorage.setItem(k, JSON.stringify(store));
+      return true;
+    } catch { return false; }
+  };
+  const adminPeerLabel = (id) => {
+    if (!id) return "Unknown";
+    if (chatSession && id === chatSession.agentId) return chatSession.displayName || id;
+    const found = chatPeers.find((p) => p.agentId === id);
+    return found ? (found.displayName || id) : id;
+  };
+  const stopAdminChatLoops = () => {
+    if (chatSseAbort) { chatSseAbort.abort(); chatSseAbort = null; }
+    if (chatHeartbeatTimer) { clearInterval(chatHeartbeatTimer); chatHeartbeatTimer = null; }
+    if (chatPollTimer) { clearInterval(chatPollTimer); chatPollTimer = null; }
+    if (chatReconnectTimer) { clearTimeout(chatReconnectTimer); chatReconnectTimer = null; }
+  };
 
   const chatFetch = async (path, options = {}, sess = chatSession) => {
     if (!sess) throw new Error("尚未連線對話身分");
@@ -733,7 +773,11 @@
     if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
     const resp = await fetch(path, { ...options, headers, cache: "no-store" });
     const body = await resp.json().catch(() => ({}));
-    if (!resp.ok) throw new Error(body.error?.message || `HTTP ${resp.status}`);
+    if (!resp.ok) {
+      const err = new Error(body.error?.message || `HTTP ${resp.status}`);
+      err.status = resp.status;
+      throw err;
+    }
     return body;
   };
 
@@ -741,20 +785,28 @@
     const box = $("admin-chat-timeline");
     box.replaceChildren();
     const targetVal = $("admin-chat-target").value;
-    const filtered = targetVal ? chatTimeline.filter((m) => m.thread === targetVal) : chatTimeline;
-    if (!filtered.length) {
+    if (!chatSession) {
+      const empty = document.createElement("div");
+      empty.className = "empty";
+      empty.textContent = "尚未連線對話身分。";
+      box.append(empty);
+      return;
+    }
+    const store = loadAdminHistory(chatSession);
+    const items = targetVal ? (store[targetVal] || []) : [];
+    if (!items.length) {
       const empty = document.createElement("div");
       empty.className = "empty";
       empty.textContent = targetVal ? "尚無訊息，請在下方輸入並傳送。" : "請先選擇對話對象。";
       box.append(empty);
       return;
     }
-    filtered.forEach((m) => {
+    items.forEach((m) => {
       const item = document.createElement("div");
-      item.style.cssText = `padding:9px 12px;border-radius:8px;border:1px solid var(--line);max-width:85%;background:${m.self ? "#e6f1f6" : "#fff"};align-self:${m.self ? "flex-end" : "flex-start"};`;
+      item.style.cssText = `padding:9px 12px;border-radius:8px;border:1px solid var(--line);max-width:85%;background:${m.fromSelf ? "#e6f1f6" : "#fff"};align-self:${m.fromSelf ? "flex-end" : "flex-start"};`;
       const meta = document.createElement("div");
       meta.className = "meta-sub";
-      meta.textContent = `${m.sender} · ${dateText(m.time)} ${m.state ? `(${m.state})` : ""}`;
+      meta.textContent = `${m.senderName || m.senderId} · ${dateText(m.createdAt)} ${m.state ? `(${m.state})` : ""}`;
       const body = document.createElement("div");
       body.style.whiteSpace = "pre-wrap";
       body.textContent = m.text;
@@ -764,92 +816,190 @@
     box.scrollTop = box.scrollHeight;
   };
 
-  const refreshAdminChatTargets = async () => {
-    if (!chatSession) return;
-    const [pRes, gRes] = await Promise.all([chatFetch("/hub/v1/agents"), chatFetch("/hub/v1/groups")]);
-    chatPeers = (pRes.agents || []).filter((a) => a.agentId !== chatSession.agentId);
+  const refreshAdminChatTargets = async (expectedEpoch = chatEpoch) => {
+    if (!chatSession || expectedEpoch !== chatEpoch) return;
+    const cur = chatSession;
+    const [pRes, gRes] = await Promise.all([chatFetch("/hub/v1/agents", {}, cur), chatFetch("/hub/v1/groups", {}, cur)]);
+    if (expectedEpoch !== chatEpoch || chatSession !== cur) return;
+    chatPeers = (pRes.agents || []).filter((a) => a.agentId !== cur.agentId);
     chatGroups = gRes.groups || [];
     const sel = $("admin-chat-target");
     const prev = sel.value;
     sel.replaceChildren(new Option("選擇對話對象（Agent 或群組）...", ""));
     chatPeers.forEach((p) => sel.append(new Option(`[Agent] ${p.displayName || p.agentId} (${p.state})`, `peer:${p.agentId}`)));
     chatGroups.forEach((g) => sel.append(new Option(`[群組] # ${g.name || g.groupId}`, `group:${g.groupId}`)));
-    if (prev) sel.value = prev;
+    if (prev && Array.from(sel.options).some((o) => o.value === prev)) sel.value = prev;
   };
 
-  const handleAdminIncoming = async (item) => {
-    if (!chatSession || !item || typeof item.sequence !== "number") return;
-    if (item.sequence > chatLastSeq) chatLastSeq = item.sequence;
-    if (chatSeenSeqs.has(item.sequence)) return;
-    chatSeenSeqs.add(item.sequence);
-    chatFetch(`/hub/v1/agents/${encodeURIComponent(chatSession.agentId)}/inbox/${item.sequence}/ack`, { method: "POST", body: "{}" }).catch(() => {});
+  const handleAdminIncoming = async (item, expectedEpoch = chatEpoch) => {
+    if (!chatSession || expectedEpoch !== chatEpoch || !item || typeof item.sequence !== "number") return;
+    const cur = chatSession;
+    const seq = item.sequence;
     const thread = item.groupId ? `group:${item.groupId}` : `peer:${item.requesterAgentId}`;
-    chatTimeline.push({ thread, self: item.requesterAgentId === chatSession.agentId, sender: item.requesterAgentId, text: item.message, time: item.createdAt, state: `ACK #${item.sequence}` });
-    renderAdminChatTimeline();
+    const dk = item.groupMessageId ? `gm:${item.groupMessageId}` : `seq:${seq}`;
+    const persisted = appendAdminMessage(thread, {
+      dedupKey: dk,
+      fromSelf: item.requesterAgentId === cur.agentId,
+      senderId: item.requesterAgentId,
+      senderName: adminPeerLabel(item.requesterAgentId),
+      text: item.message,
+      createdAt: item.createdAt,
+      state: `ACK #${seq}`,
+    }, cur);
+    if (!persisted) {
+      status("瀏覽器儲存空間無法寫入，保留 Hub 待處理狀態。", "error");
+      return;
+    }
+    if (expectedEpoch === chatEpoch && chatSession === cur) renderAdminChatTimeline();
+    if (!chatAckedSeqs.has(seq)) {
+      try {
+        await chatFetch(`/hub/v1/agents/${encodeURIComponent(cur.agentId)}/inbox/${seq}/ack`, { method: "POST", body: "{}" }, cur);
+        if (expectedEpoch === chatEpoch && chatSession === cur) {
+          chatAckedSeqs.add(seq);
+          if (chatAckedSeqs.size > 1000) chatAckedSeqs.delete(chatAckedSeqs.values().next().value);
+          if (seq > chatLastSeq) chatLastSeq = seq;
+        }
+      } catch {}
+    } else if (seq > chatLastSeq) {
+      chatLastSeq = seq;
+    }
   };
 
-  const startAdminChatSSE = async () => {
-    if (!chatSession) return;
+  const catchupAdminInbox = async (expectedEpoch = chatEpoch) => {
+    if (!chatSession || expectedEpoch !== chatEpoch) return;
+    const cur = chatSession;
+    let cursor = chatLastSeq;
+    try {
+      while (expectedEpoch === chatEpoch && chatSession === cur) {
+        const inbox = await chatFetch(`/hub/v1/agents/${encodeURIComponent(cur.agentId)}/inbox?afterSequence=${cursor}&limit=100`, {}, cur);
+        if (expectedEpoch !== chatEpoch || chatSession !== cur) return;
+        const items = inbox.items || [];
+        if (!items.length) break;
+        let maxSeq = cursor;
+        for (const item of items) {
+          if (typeof item.sequence === "number" && item.sequence > maxSeq) maxSeq = item.sequence;
+          await handleAdminIncoming(item, expectedEpoch);
+        }
+        if (maxSeq <= cursor) break;
+        cursor = maxSeq;
+      }
+    } catch {}
+  };
+
+  const startAdminChatSSE = async (expectedEpoch = chatEpoch) => {
+    if (!chatSession || expectedEpoch !== chatEpoch) return;
     if (chatSseAbort) chatSseAbort.abort();
     chatSseAbort = new AbortController();
     const cur = chatSession;
+    const signal = chatSseAbort.signal;
+    let authRejected = false;
     $("admin-chat-sse-badge").className = "badge PENDING";
     $("admin-chat-sse-badge").textContent = "SSE 連線中";
+    const dispatch = async (evtType, evtData) => {
+      if (evtData.length && evtType === "task") {
+        try { await handleAdminIncoming(JSON.parse(evtData.join("\n")), expectedEpoch); } catch {}
+      }
+    };
     try {
       const resp = await fetch(`/hub/v1/agents/${encodeURIComponent(cur.agentId)}/inbox/stream?afterSequence=${chatLastSeq}`, {
         headers: { "Accept": "text/event-stream", "X-Agent-ID": cur.agentId, "Authorization": `Bearer ${cur.token}` },
-        signal: chatSseAbort.signal,
+        signal,
         cache: "no-store",
       });
+      if (resp.status === 401 || resp.status === 403) { authRejected = true; throw new Error(`HTTP ${resp.status}`); }
       if (!resp.ok || !resp.body) throw new Error(`HTTP ${resp.status}`);
+      chatReconnectDelay = 1000;
       $("admin-chat-sse-badge").className = "badge ONLINE";
       $("admin-chat-sse-badge").textContent = "SSE 已連線";
       const reader = resp.body.getReader();
       const dec = new TextDecoder("utf-8");
       let buf = "", evtType = "message", evtData = [];
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buf += dec.decode(value, { stream: true });
+      const drain = async (flush = false) => {
         let idx;
         while ((idx = buf.indexOf("\n")) !== -1) {
           const line = buf.slice(0, idx).replace(/\r$/, "");
           buf = buf.slice(idx + 1);
-          if (line === "") {
-            if (evtData.length && evtType === "task") { try { await handleAdminIncoming(JSON.parse(evtData.join("\n"))); } catch {} }
-            evtType = "message"; evtData = [];
-          } else if (line.startsWith("event:")) evtType = line.slice(6).trim();
+          if (line === "") { await dispatch(evtType, evtData); evtType = "message"; evtData = []; }
+          else if (line.startsWith("event:")) evtType = line.slice(6).trim();
           else if (line.startsWith("data:")) evtData.push(line.slice(5).trimStart());
         }
+        if (flush && buf.trim().startsWith("data:")) evtData.push(buf.trim().slice(5).trimStart());
+        if (flush && evtData.length) { await dispatch(evtType, evtData); evtData = []; }
+      };
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) { buf += dec.decode(); await drain(true); break; }
+        buf += dec.decode(value, { stream: true });
+        await drain(false);
       }
-    } catch {
-      if (chatSseAbort?.signal.aborted || chatSession !== cur) return;
-      $("admin-chat-sse-badge").className = "badge OFFLINE";
-      $("admin-chat-sse-badge").textContent = "SSE 已中斷";
+    } catch {}
+    if (signal.aborted || expectedEpoch !== chatEpoch || chatSession !== cur) return;
+    if (authRejected) {
+      $("admin-chat-sse-badge").className = "badge REVOKED";
+      $("admin-chat-sse-badge").textContent = "憑證失效";
+      status("對話 Agent 憑證已過期或被吊銷。", "error");
+      return;
     }
+    $("admin-chat-sse-badge").className = "badge PENDING";
+    $("admin-chat-sse-badge").textContent = `重連中 (${Math.round(chatReconnectDelay / 1000)}s)`;
+    chatReconnectTimer = setTimeout(() => {
+      if (expectedEpoch === chatEpoch && chatSession === cur) {
+        catchupAdminInbox(expectedEpoch).then(() => startAdminChatSSE(expectedEpoch));
+      }
+    }, chatReconnectDelay);
+    chatReconnectDelay = Math.min(chatReconnectDelay * 2, 15000);
   };
 
   const activateAdminChatSession = async (sess) => {
-    chatSession = sess;
-    chatSeenSeqs = new Set();
+    chatEpoch += 1;
+    const myEpoch = chatEpoch;
+    stopAdminChatLoops();
+    chatSession = null;
+    chatPeers = [];
+    chatGroups = [];
+    chatAckedSeqs = new Set();
     chatLastSeq = 0;
+    adminPendingSend = null;
+
+    await refreshAdminChatTargets(myEpoch);
+    if (myEpoch !== chatEpoch) return;
+    chatSession = sess;
+    await refreshAdminChatTargets(myEpoch);
+    if (myEpoch !== chatEpoch) return;
+
     $("admin-chat-identity-info").textContent = `已連線：${sess.displayName} (${sess.agentId}) · Circle: ${sess.circleId || "public"}`;
     $("btn-admin-chat-disconnect").hidden = false;
     $("admin-chat-input").disabled = false;
     $("btn-admin-chat-send").disabled = false;
-    await refreshAdminChatTargets();
-    const inbox = await chatFetch(`/hub/v1/agents/${encodeURIComponent(sess.agentId)}/inbox?afterSequence=0`).catch(() => ({ items: [] }));
-    for (const item of (inbox.items || [])) await handleAdminIncoming(item);
-    startAdminChatSSE();
+    await catchupAdminInbox(myEpoch);
+    if (myEpoch !== chatEpoch) return;
+    startAdminChatSSE(myEpoch);
+    chatHeartbeatTimer = setInterval(() => {
+      if (chatSession && myEpoch === chatEpoch) chatFetch(`/hub/v1/agents/${encodeURIComponent(chatSession.agentId)}/heartbeat`, { method: "POST" }, chatSession).catch(() => {});
+    }, 45000);
+    chatPollTimer = setInterval(() => {
+      if (chatSession && myEpoch === chatEpoch) refreshAdminChatTargets(myEpoch).catch(() => {});
+    }, 15000);
     renderAdminChatTimeline();
   };
 
   const initAdminChatFromStorage = () => {
     if (chatSession) return;
     try {
-      const scope = localStorage.getItem(CHAT_SCOPE_KEY);
+      const pid = localStorage.getItem(CHAT_ACTIVE_KEY);
       const all = JSON.parse(localStorage.getItem(CHAT_PROFILE_KEY) || "{}");
-      if (scope && all[scope]) activateAdminChatSession(all[scope]).catch(() => {});
+      if (pid && all[pid]) {
+        const cand = all[pid];
+        // Validate & connect without destroying credentials on transient errors
+        chatEpoch += 1;
+        const myEpoch = chatEpoch;
+        chatFetch("/hub/v1/agents", {}, cand).then(() => {
+          if (myEpoch === chatEpoch) {
+            chatSession = cand;
+            return activateAdminChatSession(cand);
+          }
+        }).catch(() => {});
+      }
     } catch {}
   };
 
@@ -859,13 +1009,13 @@
       const customTok = $("admin-chat-agent-token").value.trim();
       const name = $("admin-chat-name").value.trim() || "OperatorConsole";
       const key = $("admin-chat-key").value.trim();
-      const scopeKey = key ? `priv_${Math.abs(Array.from(key).reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0)).toString(16)}` : "public";
       let sess;
       if (customId && customTok) {
-        const probe = { agentId: customId, token: customTok, displayName: name, circleId: "public", scopeKey };
+        const probe = { agentId: customId, token: customTok, displayName: name, circleId: "public" };
         const info = await chatFetch(`/hub/v1/agents/${encodeURIComponent(customId)}`, {}, probe);
         const ag = info.agent || info;
-        sess = { agentId: customId, token: customTok, displayName: ag.displayName || name, circleId: ag.circleId || "public", scopeKey };
+        const cid = ag.circleId || "public";
+        sess = { profileId: adminChatProfileId(cid, customId), agentId: customId, token: customTok, displayName: ag.displayName || name, circleId: cid, note: key ? "私密圈" : "" };
       } else {
         const headers = { "Content-Type": "application/json" };
         if (key) headers["X-Hub-Key"] = key;
@@ -873,27 +1023,33 @@
         const resp = await fetch("/hub/v1/agents/register", { method: "POST", headers, body: JSON.stringify({ displayName: name, providerFamily: "browser", transportId: "http-json", capabilities: ["text/plain"], registrationIdempotencyKey: idem }) });
         const data = await resp.json().catch(() => ({}));
         if (!resp.ok) throw new Error(data.error?.message || `HTTP ${resp.status}`);
-        sess = { agentId: data.identity.agentId, token: data.identity.agentToken, displayName: data.identity.displayName || name, circleId: data.identity.circleId || "public", scopeKey };
+        const cid = data.identity.circleId || "public";
+        sess = { profileId: adminChatProfileId(cid, data.identity.agentId), agentId: data.identity.agentId, token: data.identity.agentToken, displayName: data.identity.displayName || name, circleId: cid, note: key ? "私密圈" : "" };
       }
       const all = JSON.parse(localStorage.getItem(CHAT_PROFILE_KEY) || "{}") || {};
-      all[sess.scopeKey] = sess;
+      all[sess.profileId] = sess;
       localStorage.setItem(CHAT_PROFILE_KEY, JSON.stringify(all));
-      localStorage.setItem(CHAT_SCOPE_KEY, sess.scopeKey);
+      localStorage.setItem(CHAT_ACTIVE_KEY, sess.profileId);
+      chatSession = sess;
       await activateAdminChatSession(sess);
       status("對話身分已連線。", "success");
     } catch (e) { status(e.message, "error"); }
   });
 
   $("btn-admin-chat-disconnect").addEventListener("click", () => {
-    if (chatSseAbort) chatSseAbort.abort();
-    if (chatSession) chatFetch(`/hub/v1/agents/${encodeURIComponent(chatSession.agentId)}/disconnect`, { method: "POST" }).catch(() => {});
+    chatEpoch += 1;
+    stopAdminChatLoops();
+    const old = chatSession;
     chatSession = null;
+    adminPendingSend = null;
+    if (old) chatFetch(`/hub/v1/agents/${encodeURIComponent(old.agentId)}/disconnect`, { method: "POST" }, old).catch(() => {});
     $("admin-chat-sse-badge").className = "badge";
     $("admin-chat-sse-badge").textContent = "未連線";
     $("admin-chat-identity-info").textContent = "已中斷對話連線";
     $("btn-admin-chat-disconnect").hidden = true;
     $("admin-chat-input").disabled = true;
     $("btn-admin-chat-send").disabled = true;
+    renderAdminChatTimeline();
   });
 
   $("btn-admin-chat-refresh").addEventListener("click", () => refreshAdminChatTargets().catch((e) => status(e.message, "error")));
@@ -909,24 +1065,55 @@
     } catch (e) { status(e.message, "error"); }
   });
 
-  $("btn-admin-chat-send").addEventListener("click", async () => {
+  const sendAdminChat = async () => {
     if (!chatSession) return;
+    const cur = chatSession;
+    const myEpoch = chatEpoch;
     const targetVal = $("admin-chat-target").value;
     const text = $("admin-chat-input").value.trim();
     if (!targetVal || !text) return;
-    const idem = `admin-chat-${Date.now()}`;
+    if (!adminPendingSend || adminPendingSend.thread !== targetVal || adminPendingSend.text !== text) {
+      const uniq = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
+      adminPendingSend = { thread: targetVal, text, idempotencyKey: `admin-${uniq}`, taskId: `admin-task-${uniq}` };
+    }
+    const reqMeta = adminPendingSend;
+    $("btn-admin-chat-send").disabled = true;
+    $("admin-chat-input").disabled = true;
     try {
       if (targetVal.startsWith("peer:")) {
         const pid = targetVal.slice(5);
-        await chatFetch(`/hub/v1/agents/${encodeURIComponent(pid)}/tasks`, { method: "POST", body: JSON.stringify({ taskId: `task-${Date.now()}`, contextId: `ctx-${pid}`, idempotencyKey: idem, message: text }) });
+        await chatFetch(`/hub/v1/agents/${encodeURIComponent(pid)}/tasks`, { method: "POST", body: JSON.stringify({ taskId: reqMeta.taskId, contextId: `ctx-${pid}`, idempotencyKey: reqMeta.idempotencyKey, message: text }) }, cur);
       } else if (targetVal.startsWith("group:")) {
         const gid = targetVal.slice(6);
-        await chatFetch(`/hub/v1/groups/${encodeURIComponent(gid)}/messages`, { method: "POST", body: JSON.stringify({ contextId: `grp-${gid}`, idempotencyKey: idem, message: text }) });
+        await chatFetch(`/hub/v1/groups/${encodeURIComponent(gid)}/messages`, { method: "POST", body: JSON.stringify({ contextId: `grp-${gid}`, idempotencyKey: reqMeta.idempotencyKey, message: text }) }, cur);
       }
-      chatTimeline.push({ thread: targetVal, self: true, sender: chatSession.displayName, text, time: new Date().toISOString(), state: "SENT" });
-      $("admin-chat-input").value = "";
-      renderAdminChatTimeline();
-    } catch (e) { status(e.message, "error"); }
+      appendAdminMessage(targetVal, {
+        dedupKey: `sent:${reqMeta.idempotencyKey}`,
+        fromSelf: true,
+        senderId: cur.agentId,
+        senderName: cur.displayName || cur.agentId,
+        text,
+        createdAt: new Date().toISOString(),
+        state: "SENT",
+      }, cur);
+      adminPendingSend = null;
+      if (myEpoch === chatEpoch && chatSession === cur) {
+        $("admin-chat-input").value = "";
+        renderAdminChatTimeline();
+      }
+    } catch (e) {
+      if (myEpoch === chatEpoch) status(`${e.message}（再按一次傳送將沿用相同冪等鍵重試）`, "error");
+    } finally {
+      if (myEpoch === chatEpoch && chatSession === cur) {
+        $("btn-admin-chat-send").disabled = false;
+        $("admin-chat-input").disabled = false;
+        $("admin-chat-input").focus();
+      }
+    }
+  };
+  $("btn-admin-chat-send").addEventListener("click", sendAdminChat);
+  $("admin-chat-input").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendAdminChat(); }
   });
 
   try {
