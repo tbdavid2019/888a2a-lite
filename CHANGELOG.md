@@ -4,6 +4,7 @@
 
 ### Changed
 
+- 於 `Dockerfile` 的 Alpine runtime stage 加入 `apk upgrade --no-cache`，修補基底映像之 `zlib` 漏洞（`CVE-2026-4738`）。
 - 升級 Go toolchain 至 `1.27.4`（同步更新 `go.mod`、`Dockerfile` 與 GitHub Actions CI／Docker publish workflows）。
 - 升級 `modernc.org/sqlite` 至 `v1.62.0` 並更新其相依模組與 `go.sum`（含 `modernc.org/libc v1.80.1`、`modernc.org/memory v1.12.1`、`golang.org/x/sys v0.49.0`、`github.com/dustin/go-humanize v1.1.0`、`github.com/ncruces/go-strftime v1.1.0`）。
 - 升級容器基底映像 `alpine:3.22` 至 `alpine:3.24`。

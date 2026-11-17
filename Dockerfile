@@ -11,7 +11,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldfl
 
 FROM alpine:3.24
 
-RUN addgroup -S lite && adduser -S -G lite lite && mkdir -p /data && chown -R lite:lite /data
+RUN apk upgrade --no-cache && addgroup -S lite && adduser -S -G lite lite && mkdir -p /data && chown -R lite:lite /data
 COPY --from=builder /out/888a2a-lite /usr/local/bin/888a2a-lite
 
 USER lite
