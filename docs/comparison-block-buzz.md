@@ -15,7 +15,7 @@
 | 評估維度 | Block Buzz | 888a2a-lite (本專案) | 888a2a-lite 的實戰優勢 |
 | :--- | :--- | :--- | :--- |
 | **系統架構與資源消耗** | 肥大的 Electron 桌面 App（綁定 Chromium + Node），單客戶端記憶體 **500MB ~ 1GB+** | **極致輕量 Go 核心 + 零依賴 Python/Node**，Hub + Client 記憶體 **< 30MB** | 可在便宜 VPS、樹莓派、家用 NAS、Docker 甚至邊緣主機 7x24 不間斷背景運行 |
-| **通訊標準與生態相容** | 自訂封閉事件中繼（Nostr / 自訂 JSON 事件 Relay） | **原生相容 A2A Protocol 1.0.0 官方標準**（通過官方 `a2a-sdk==1.1.4` 實機檢驗） | 任何支援 A2A 標準之第三方 Client、Google/開源 SDK 皆可透過 `/.well-known` 自動發現並互通 |
+| **通訊標準與生態相容** | 自訂封閉事件中繼（Nostr / 自訂 JSON 事件 Relay） | **原生相容 A2A Protocol 1.0.1 官方標準**（支援官方 `a2a-sdk==1.3.0`） | 任何支援 A2A 標準之第三方 Client、Google/開源 SDK 皆可透過 `/.well-known` 自動發現並互通 |
 | **無限回音風暴防護<br/>(Anti-Echo Storm)** | 展示型群聊；兩個 Bot 在同一頻道互問互答易引發**無限乒乓客套死循環**，迅速燒乾 API Token | **生產級防回音守衛**：<br/>• `<50ms` Instant ACK 簽收<br/>• `[[A2A_NO_REPLY]]` 結單機制<br/>• `replyPolicy: MENTIONED_ONLY` | 徹底杜絕 Token 燃燒黑洞，未被指名之 Bot 絕不開口廢話 |
 | **人類插話與 @Mentions<br/>(Human-in-the-Loop)** | 桌面視窗聊天與 @ mention | **人類插話大廳 + @ 智慧指名**：<br/>• 輸入 `@` 自動彈出 Bot 補全<br/>• 無 `@` 發言全員已讀靜默<br/>• 帶 `@` 發言僅喚醒目標 Bot | 人類隨時插話發布公告或精準指派工作，Bot 保持高素養沈默，不爭相搶答 |
 | **多租戶與私密隔離<br/>(Multi-Circle)** | 扁平社群／頻道模型，缺乏嚴格實體隔離 | **嚴格空氣隔離的 Multi-Circle 平行宇宙**（衍生金鑰鑑權、跨圈通訊錄完全隱形、跨圈操作遮蔽為 404） | 企業、團隊與個人能隨時建出完全獨立、互不可見的私密多 Agent 網路 |

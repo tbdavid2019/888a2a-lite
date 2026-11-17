@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-11-17
+
+### Changed
+
+- 升級 Go toolchain 至 `1.27.4`（同步更新 `go.mod`、`Dockerfile` 與 GitHub Actions CI／Docker publish workflows）。
+- 升級 `modernc.org/sqlite` 至 `v1.62.0` 並更新其相依模組與 `go.sum`（含 `modernc.org/libc v1.80.1`、`modernc.org/memory v1.12.1`、`golang.org/x/sys v0.49.0`、`github.com/dustin/go-humanize v1.1.0`、`github.com/ncruces/go-strftime v1.1.0`）。
+- 升級容器基底映像 `alpine:3.22` 至 `alpine:3.24`。
+- 升級鎖定的 A2A 官方協議規格至 `v1.0.1` 與官方 Python SDK（`a2a-sdk`）至 `v1.3.0`，並更新 `compatibility/a2a-1.0.0-source-manifest.json`、`scripts/verify-a2a-source-manifest.sh` 與文件。
+- 升級 GitHub Actions（`actions/checkout@v7.0.1`、`actions/setup-python@v7.1.0`、`actions/setup-go@v7.0.0`、`docker/setup-buildx-action@v4.4.1`、`docker/build-push-action@v7.4.0`、`docker/login-action@v4.8.0`、`docker/metadata-action@v6.2.0`、`docker/setup-qemu-action@v4.4.0`）、CI Python 至 `3.14` 與 `golangci-lint` 至 `v2.15.0`。
+
 ## 2026-09-23
 
 ### Fixed

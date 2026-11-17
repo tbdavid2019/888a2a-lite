@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM golang:1.25.6 AS builder
+FROM --platform=$BUILDPLATFORM golang:1.27.4 AS builder
 
 ARG TARGETOS
 ARG TARGETARCH
@@ -9,7 +9,7 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags='-s -w' -o /out/888a2a-lite ./cmd/888a2a-lite
 
-FROM alpine:3.22
+FROM alpine:3.24
 
 RUN addgroup -S lite && adduser -S -G lite lite && mkdir -p /data && chown -R lite:lite /data
 COPY --from=builder /out/888a2a-lite /usr/local/bin/888a2a-lite

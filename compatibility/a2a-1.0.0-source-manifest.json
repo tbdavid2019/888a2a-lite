@@ -1,27 +1,27 @@
 {
   "protocol": {
     "name": "A2A",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "repository": "https://github.com/a2aproject/A2A",
-    "tag": "v1.0.0",
-    "commit": "173695755607e884aa9acf8ce4feed90e32727a1",
+    "tag": "v1.0.1",
+    "commit": "3303592588e388e62e0f69f701af531d2f4e3991",
     "specification": {
       "path": "specification/a2a.proto",
-      "sha256": "4b74c0baa923ae0acb55474e548f1d6e5d3f83b80d757b65f8bf3e99a3c2257f"
+      "sha256": "e195bf96ab630c69797851970203e1b2b6b19528f2e9803b7d904b91a5104016"
     },
     "documentation": {
       "path": "docs/specification.md",
-      "sha256": "087c6f6272ec08a7fcd90eb16843bf97e25e0dcd155afa5779033d23d5ac377d"
+      "sha256": "627ccfe6ffb1be2c56811c3dcc18780deb419f41cdc98248095c939b2d9dc9cb"
     }
   },
   "officialSdk": {
     "language": "python",
     "package": "a2a-sdk",
-    "version": "1.1.4",
+    "version": "1.3.0",
     "repository": "https://github.com/a2aproject/a2a-python",
-    "tag": "v1.1.4",
-    "commit": "2d4d3048b245d2af854bad804f0e722ea9febc08",
-    "pyprojectSha256": "e6c8c885cb7a032d02211c8a62f78ce2c752514fd73edf0c2c0f46a995b5e790",
+    "tag": "v1.3.0",
+    "commit": "0d9dafb92328144384eca58a6e8ab80cb8f7d445",
+    "pyprojectSha256": "5cdf8fdd9f297018cba28c9f91308f122264cab237acc41ee7c54bbb1f6ee776",
     "requiredFeatures": [
       "http-json-rest-transport",
       "agent-card-resolution",
