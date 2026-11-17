@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <style>
+    .bg { fill: #146c94; }
+    .fg { stroke: #ffffff; }
+    .accent { fill: #75e6a8; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #1978a6; }
+    }
+  </style>
+  <rect class="bg" width="64" height="64" rx="14"/>
+  <path class="fg" d="M46 37a4 4 0 0 1-4 4H24l-8 7V21a4 4 0 0 1 4-4h22a4 4 0 0 1 4 4v16Z" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle class="accent" cx="27" cy="29" r="3"/>
+  <circle class="accent" cx="37" cy="29" r="3"/>
+</svg>

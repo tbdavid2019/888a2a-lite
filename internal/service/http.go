@@ -2,9 +2,10 @@ package service
 
 import (
 	"bytes"
+	"compress/gzip"
 	"crypto/rand"
 	"crypto/subtle"
-	_ "embed"
+	"embed"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -38,6 +39,9 @@ var installScript []byte
 //go:embed a2a_bridge.py
 var a2aBridgeScript []byte
 
+//go:embed assets/*
+var webAssets embed.FS
+
 type HTTPServer struct {
 	service             *Service
 	maxBodyBytes        int64
@@ -69,6 +73,15 @@ func (server *HTTPServer) Handler() http.Handler {
 	mux.HandleFunc("GET /group/{groupId}", server.chatUI)
 	mux.HandleFunc("GET /healthz", server.health)
 	mux.HandleFunc("GET /llms.txt", server.llms)
+	mux.HandleFunc("GET /robots.txt", server.robotsTxt)
+	mux.HandleFunc("GET /favicon.ico", server.serveAsset("assets/favicon.ico", "image/x-icon"))
+	mux.HandleFunc("GET /favicon.svg", server.serveAsset("assets/favicon.svg", "image/svg+xml"))
+	mux.HandleFunc("GET /favicon-32x32.png", server.serveAsset("assets/favicon-32x32.png", "image/png"))
+	mux.HandleFunc("GET /apple-touch-icon.png", server.serveAsset("assets/apple-touch-icon.png", "image/png"))
+	mux.HandleFunc("GET /icon-192.png", server.serveAsset("assets/icon-192.png", "image/png"))
+	mux.HandleFunc("GET /icon-512.png", server.serveAsset("assets/icon-512.png", "image/png"))
+	mux.HandleFunc("GET /og-image.png", server.serveAsset("assets/og-image.png", "image/png"))
+	mux.HandleFunc("GET /site.webmanifest", server.serveAsset("assets/site.webmanifest", "application/manifest+json; charset=utf-8"))
 	mux.HandleFunc("GET /install.sh", server.installScriptHandler)
 	mux.HandleFunc("GET /a2a_bridge.py", server.a2aBridgeScriptHandler)
 	mux.HandleFunc("GET /admin", server.adminAnnouncementsUI)
@@ -251,7 +264,53 @@ func (server *HTTPServer) announcements(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]any{"announcements": items, "nextId": next})
 }
 
-func serveCSPHTML(w http.ResponseWriter, body []byte, unavailableMsg string) {
+func acceptsGzip(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(r.Header.Get("Accept-Encoding")), "gzip")
+}
+
+func writeCompressibleBytes(w http.ResponseWriter, r *http.Request, data []byte) {
+	if acceptsGzip(r) && len(data) > 256 {
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Add("Vary", "Accept-Encoding")
+		w.WriteHeader(http.StatusOK)
+		gz := gzip.NewWriter(w)
+		_, _ = gz.Write(data)
+		_ = gz.Close()
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
+}
+
+func (server *HTTPServer) serveAsset(assetPath, contentType string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		data, err := webAssets.ReadFile(assetPath)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "NOT_FOUND", "asset not found")
+			return
+		}
+		w.Header().Set("Content-Type", contentType)
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		if strings.HasPrefix(contentType, "image/svg") || strings.HasPrefix(contentType, "application/manifest") {
+			writeCompressibleBytes(w, r, data)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(data)
+	}
+}
+
+func (server *HTTPServer) robotsTxt(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.WriteString(w, "User-agent: *\nAllow: /\nAllow: /llms.txt\nDisallow: /admin\nDisallow: /hub/\nDisallow: /a2a/\n")
+}
+
+func serveCSPHTML(w http.ResponseWriter, r *http.Request, body []byte, unavailableMsg string) {
 	nonceBytes := make([]byte, 18)
 	if _, err := rand.Read(nonceBytes); err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", unavailableMsg)
@@ -260,17 +319,31 @@ func serveCSPHTML(w http.ResponseWriter, body []byte, unavailableMsg string) {
 	nonce := base64.RawURLEncoding.EncodeToString(nonceBytes)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'nonce-"+nonce+"'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(bytes.ReplaceAll(body, []byte("{{CSP_NONCE}}"), []byte(nonce)))
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'nonce-"+nonce+"'; style-src 'unsafe-inline'; img-src 'self' data:; manifest-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'")
+	payload := bytes.ReplaceAll(body, []byte("{{CSP_NONCE}}"), []byte(nonce))
+	writeCompressibleBytes(w, r, payload)
 }
 
-func (server *HTTPServer) adminAnnouncementsUI(w http.ResponseWriter, _ *http.Request) {
-	serveCSPHTML(w, adminHTML, "admin interface is unavailable")
+func safePublicBaseURL(raw string) string {
+	trimmed := strings.TrimRight(strings.TrimSpace(raw), "/")
+	if trimmed == "" || strings.ContainsAny(trimmed, "<>\"'&\\\r\n\t ") {
+		return "https://a2a.david888.com"
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return "https://a2a.david888.com"
+	}
+	return trimmed
 }
 
-func (server *HTTPServer) chatUI(w http.ResponseWriter, _ *http.Request) {
-	serveCSPHTML(w, chatHTML, "chat interface is unavailable")
+func (server *HTTPServer) adminAnnouncementsUI(w http.ResponseWriter, r *http.Request) {
+	serveCSPHTML(w, r, adminHTML, "admin interface is unavailable")
+}
+
+func (server *HTTPServer) chatUI(w http.ResponseWriter, r *http.Request) {
+	baseURL := safePublicBaseURL(server.baseURLFor(r))
+	body := bytes.ReplaceAll(chatHTML, []byte("{{BASE_URL}}"), []byte(baseURL))
+	serveCSPHTML(w, r, body, "chat interface is unavailable")
 }
 
 type announcementRequest struct {

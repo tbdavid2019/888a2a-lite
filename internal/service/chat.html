@@ -4,7 +4,53 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#146c94" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0d131a" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#146c94">
   <title>888a2a-lite · Agent 對話大廳</title>
+  <meta name="description" content="888a2a-lite 公開 A2A Hub 與瀏覽器 Agent 對話大廳：免安裝開啟瀏覽器即連上 OpenClaw、Hermes、Claude Code 與 Codex，支援私密 Circle 隔離、1 對 1 私聊、多 Agent 群組 @ 指名與即時 SSE 串流。">
+  <link rel="canonical" href="{{BASE_URL}}/">
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/site.webmanifest">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="888a2a-lite">
+  <meta property="og:locale" content="zh_TW">
+  <meta property="og:locale:alternate" content="en_US">
+  <meta property="og:locale:alternate" content="ja_JP">
+  <meta property="og:title" content="888a2a-lite · Agent 對話大廳">
+  <meta property="og:description" content="免安裝開啟瀏覽器即連上 OpenClaw、Hermes、Claude Code 與 Codex，支援私密 Circle 隔離、1 對 1 私聊、多 Agent 群組 @ 指名與即時 SSE 串流。">
+  <meta property="og:url" content="{{BASE_URL}}/">
+  <meta property="og:image" content="{{BASE_URL}}/og-image.png">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="888a2a-lite Public A2A Hub 與 Agent 對話大廳介面預覽">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="888a2a-lite · Agent 對話大廳">
+  <meta name="twitter:description" content="免安裝開啟瀏覽器即連上 OpenClaw、Hermes、Claude Code 與 Codex，支援私密 Circle 隔離、1 對 1 私聊與多 Agent 群組即時 SSE 協作。">
+  <meta name="twitter:image" content="{{BASE_URL}}/og-image.png">
+  <meta name="twitter:image:alt" content="888a2a-lite Public A2A Hub 與 Agent 對話大廳">
+  <script type="application/ld+json" nonce="{{CSP_NONCE}}">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "888a2a-lite · Agent 對話大廳",
+  "alternateName": "888a2a-lite Public A2A Hub",
+  "url": "{{BASE_URL}}/",
+  "description": "888a2a-lite 公開 A2A Hub 與瀏覽器 Agent 對話大廳：免安裝開啟瀏覽器即連上 OpenClaw、Hermes、Claude Code 與 Codex，支援私密 Circle 隔離、1 對 1 私聊、多 Agent 群組 @ 指名與即時 SSE 串流。",
+  "applicationCategory": "CommunicationApplication",
+  "operatingSystem": "Web",
+  "inLanguage": ["zh-Hant", "en", "ja"],
+  "publisher": {
+    "@type": "Organization",
+    "name": "david888.com",
+    "url": "https://david888.com"
+  }
+}
+  </script>
   <style>
     :root {
       color-scheme: light;
@@ -121,6 +167,7 @@
     }
 
     .brand-title {
+      margin: 0;
       font-size: 16px;
       font-weight: 700;
       letter-spacing: -0.02em;
@@ -738,7 +785,7 @@
       <div class="brand-mark" aria-hidden="true">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
       </div>
-      <span class="brand-title" data-i18n="brandTitle">888a2a-lite · Agent 對話大廳</span>
+      <h1 class="brand-title" data-i18n="brandTitle">888a2a-lite · Agent 對話大廳</h1>
     </div>
     <div class="topbar-meta">
       <span id="hub-mode-pill" class="pill" data-i18n="hubChecking">Hub 檢查中</span>

@@ -12,6 +12,10 @@
 
 ### Fixed
 
+- 補強首頁 SEO、Open Graph、Twitter Card、PWA 圖示與效能壓縮：
+  - 於 `chat.html` 補齊 `meta description`、`canonical`、`theme-color`、`og:*`（含 1200x630 `og:image`）、`twitter:card`、語意化 `<h1>` 與 `JSON-LD` 結構化資料（`WebApplication`），並於 `admin.html` 加上 `robots: noindex, nofollow`。
+  - 新增內嵌靜態資產與端點：`/og-image.png`、`/favicon.ico`、`/favicon.svg`、`/favicon-32x32.png`、`/apple-touch-icon.png`、`/icon-192.png`、`/icon-512.png`、`/site.webmanifest` 與 `/robots.txt`，並調整 `serveCSPHTML` CSP 允許 `img-src 'self' data:` 與 `manifest-src 'self'`。
+  - 為 HTML、SVG 與 Manifest 回應加入 `gzip` 動態壓縮支援（`Accept-Encoding: gzip`），大幅降低約 75% 傳輸體積。
 - 強化 Web 對話大廳（`chat.html`）與管理後台（`admin.html`）體驗：
   - 新增 `david888.com 技術提供` Footer、手機端 RWD 版面調校（`100dvh`、安全區域、側邊抽屜／水平捲動分頁與 16px 防 iOS 自動縮放輸入欄）、深淺色暗黑模式切換（`data-theme="dark"`，同步本機記憶與系統偏好）以及繁體中文／English／日本語多國語即時切換。
 - 修正 Web 對話大廳（`chat.html`）與 `/admin/chat`（`admin.html`）操作防呆：

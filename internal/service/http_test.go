@@ -1005,8 +1005,8 @@ func TestHostedWebChatAndAdminChatRoutes(t *testing.T) {
 			}
 		}
 		body := rec.Body.String()
-		if strings.Contains(body, "{{CSP_NONCE}}") {
-			t.Fatalf("GET %s left unreplaced CSP nonce placeholder", path)
+		if strings.Contains(body, "{{CSP_NONCE}}") || strings.Contains(body, "{{BASE_URL}}") {
+			t.Fatalf("GET %s left unreplaced template placeholder", path)
 		}
 		if !strings.Contains(body, "888a2a-lite · Agent 對話大廳") {
 			t.Fatalf("GET %s missing hosted chat title", path)
@@ -1019,6 +1019,51 @@ func TestHostedWebChatAndAdminChatRoutes(t *testing.T) {
 		}
 		if !strings.Contains(body, "david888.com") || !strings.Contains(body, "技術提供") || !strings.Contains(body, `data-theme="dark"`) || !strings.Contains(body, `id="lang-select"`) {
 			t.Fatalf("GET %s missing footer, dark mode, or language switcher", path)
+		}
+		for _, seoMarker := range []string{
+			`<meta name="description"`,
+			`<meta property="og:description"`,
+			`<meta property="og:image"`,
+			`<meta property="og:url"`,
+			`<meta name="twitter:card"`,
+			`<link rel="canonical"`,
+			`<h1 class="brand-title"`,
+			`<link rel="apple-touch-icon"`,
+			`<link rel="icon" href="/favicon.ico"`,
+			`<link rel="manifest" href="/site.webmanifest"`,
+			`application/ld+json`,
+		} {
+			if !strings.Contains(body, seoMarker) {
+				t.Fatalf("GET %s missing SEO/OG marker %q", path, seoMarker)
+			}
+		}
+	}
+
+	// Verify gzip compression when client sends Accept-Encoding: gzip
+	gzReq := httptest.NewRequest(http.MethodGet, "/", nil)
+	gzReq.Header.Set("Accept-Encoding", "gzip")
+	gzRec := httptest.NewRecorder()
+	handler.ServeHTTP(gzRec, gzReq)
+	if gzRec.Code != http.StatusOK || gzRec.Header().Get("Content-Encoding") != "gzip" {
+		t.Fatalf("GET / with Accept-Encoding: gzip = %d, encoding=%q", gzRec.Code, gzRec.Header().Get("Content-Encoding"))
+	}
+
+	// Verify SEO/PWA static assets are served with correct Content-Type
+	for assetPath, wantCT := range map[string]string{
+		"/favicon.ico":          "image/x-icon",
+		"/favicon.svg":          "image/svg+xml",
+		"/favicon-32x32.png":    "image/png",
+		"/apple-touch-icon.png": "image/png",
+		"/icon-192.png":         "image/png",
+		"/icon-512.png":         "image/png",
+		"/og-image.png":         "image/png",
+		"/site.webmanifest":     "application/manifest+json",
+		"/robots.txt":           "text/plain",
+	} {
+		aRec := httptest.NewRecorder()
+		handler.ServeHTTP(aRec, httptest.NewRequest(http.MethodGet, assetPath, nil))
+		if aRec.Code != http.StatusOK || !strings.HasPrefix(aRec.Header().Get("Content-Type"), wantCT) || aRec.Body.Len() == 0 {
+			t.Fatalf("GET %s = %d ct=%q len=%d, want 200 %q", assetPath, aRec.Code, aRec.Header().Get("Content-Type"), aRec.Body.Len(), wantCT)
 		}
 	}
 
