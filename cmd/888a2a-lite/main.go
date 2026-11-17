@@ -116,7 +116,9 @@ func runServer(args []string) error {
 			case <-reaperCtx.Done():
 				return
 			case <-ticker.C:
-				_, _, _ = hubService.RunScheduledMaintenance(reaperCtx)
+				if _, _, err := hubService.RunScheduledMaintenance(reaperCtx); err != nil && reaperCtx.Err() == nil {
+					log.Printf("scheduled maintenance failed: %v", err)
+				}
 			}
 		}
 	}()

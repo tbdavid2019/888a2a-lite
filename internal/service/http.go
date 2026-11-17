@@ -1690,6 +1690,10 @@ func isTrustedProxyAddr(addr netip.Addr) bool {
 	return addr.IsLoopback() || addr.IsPrivate() || addr.IsLinkLocalUnicast()
 }
 
+func isPublicClientAddr(addr netip.Addr) bool {
+	return addr.IsValid() && !isTrustedProxyAddr(addr) && !addr.IsUnspecified() && !addr.IsMulticast()
+}
+
 func parseHeaderAddr(raw string) (netip.Addr, bool) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
@@ -1708,19 +1712,16 @@ func clientIP(r *http.Request) string {
 		remoteHost = host
 	}
 	if peerAddr, ok := parseHeaderAddr(remoteHost); ok && isTrustedProxyAddr(peerAddr) {
-		if cfAddr, ok := parseHeaderAddr(r.Header.Get("CF-Connecting-IP")); ok {
-			return cfAddr.String()
-		}
-		if realAddr, ok := parseHeaderAddr(r.Header.Get("X-Real-IP")); ok {
-			return realAddr.String()
-		}
 		if xff := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); xff != "" {
 			parts := strings.Split(xff, ",")
 			for i := len(parts) - 1; i >= 0; i-- {
-				if hopAddr, ok := parseHeaderAddr(parts[i]); ok && !isTrustedProxyAddr(hopAddr) {
+				if hopAddr, ok := parseHeaderAddr(parts[i]); ok && isPublicClientAddr(hopAddr) {
 					return hopAddr.String()
 				}
 			}
+		}
+		if realAddr, ok := parseHeaderAddr(r.Header.Get("X-Real-IP")); ok && isPublicClientAddr(realAddr) {
+			return realAddr.String()
 		}
 	}
 	return remoteHost

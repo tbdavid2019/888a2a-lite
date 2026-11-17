@@ -1148,14 +1148,103 @@ func TestDynamicCircleLimitAndScheduledCleanup(t *testing.T) {
 	if rec := registerWithKey("dyn-3", "dyn-key-3"); rec.Code != http.StatusCreated {
 		t.Fatalf("new dynamic circle after cleanup = %d (%s), want 201", rec.Code, rec.Body.String())
 	}
+	// Disabled dynamic circle must NOT be deleted by PruneEmptyCircles (tombstone stays banned)
+	var dyn3Resp struct {
+		Identity hub.AgentIdentity `json:"identity"`
+	}
+	if err := json.Unmarshal(registerWithKey("dyn-3", "dyn-key-3").Body.Bytes(), &dyn3Resp); err != nil {
+		t.Fatalf("decode dyn-3 identity: %v", err)
+	}
+	if _, err := svc.DisableCircle(ctx, "op-secret", dyn3Resp.Identity.CircleID); err != nil {
+		t.Fatalf("DisableCircle: %v", err)
+	}
+	currentTime = currentTime.Add(3 * time.Hour)
+	if _, _, err := svc.RunScheduledMaintenance(ctx); err != nil {
+		t.Fatalf("RunScheduledMaintenance after disable: %v", err)
+	}
+	if rec := registerWithKey("dyn-3-retry", "dyn-key-3"); rec.Code != http.StatusForbidden {
+		t.Fatalf("re-registering in disabled circle = %d (%s), want 403", rec.Code, rec.Body.String())
+	}
+}
+
+func TestPruneNonOwnerMemberWithGroupDeliveryFK(t *testing.T) {
+	ctx := context.Background()
+	database, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "hub.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open: %v", err)
+	}
+	defer func() { _ = database.Close() }()
+
+	currentTime := time.Date(2026, 11, 17, 9, 0, 0, 0, time.UTC)
+	cfg := config.Config{
+		HubID:                 "public",
+		ListenAddr:            ":0",
+		DatabasePath:          filepath.Join(t.TempDir(), "unused.db"),
+		OperatorToken:         "op-secret",
+		RegistrationEnabled:   true,
+		RegistrationTTL:       24 * time.Hour,
+		PeerLease:             time.Minute,
+		IdleAgentTTL:          time.Hour,
+		MaxRegisteredAgents:   10,
+		MaxTasksPerMinute:     20,
+		MaxConcurrentTasks:    4,
+		MaxPayloadBytes:       1 << 20,
+		RegistrationPerMinute: 50,
+	}
+	svc := New(sqlite.NewRepository(database), cfg)
+	svc.now = func() time.Time { return currentTime }
+
+	owner, _, err := svc.Register(ctx, hub.AgentDeclaration{DisplayName: "owner", ProviderFamily: "cli", TransportID: "http-json", Capabilities: []string{"text/plain"}, RegistrationIdempotency: "owner-1"})
+	if err != nil {
+		t.Fatalf("register owner: %v", err)
+	}
+	member, _, err := svc.Register(ctx, hub.AgentDeclaration{DisplayName: "member", ProviderFamily: "cli", TransportID: "http-json", Capabilities: []string{"text/plain"}, RegistrationIdempotency: "member-1"})
+	if err != nil {
+		t.Fatalf("register member: %v", err)
+	}
+	group, err := svc.CreateGroup(ctx, owner.AgentID, owner.AgentToken, "fk-group")
+	if err != nil {
+		t.Fatalf("CreateGroup: %v", err)
+	}
+	inv, err := svc.InviteToGroup(ctx, owner.AgentID, owner.AgentToken, group.GroupID, member.AgentID)
+	if err != nil {
+		t.Fatalf("InviteToGroup: %v", err)
+	}
+	if _, err := svc.AcceptInvitation(ctx, member.AgentID, member.AgentToken, group.GroupID, inv.InvitationID); err != nil {
+		t.Fatalf("AcceptInvitation: %v", err)
+	}
+	if _, _, err := svc.SendGroupMessage(ctx, owner.AgentID, owner.AgentToken, group.GroupID, hub.GroupMessageInput{Message: "hello member", IdempotencyKey: "gm-fk-1"}); err != nil {
+		t.Fatalf("SendGroupMessage: %v", err)
+	}
+
+	// Keep owner alive, let member go idle past IdleAgentTTL -> pruning member must not hit group_delivery FK error
+	currentTime = currentTime.Add(2 * time.Hour)
+	if _, err := svc.Heartbeat(ctx, owner.AgentID, owner.AgentToken); err != nil {
+		t.Fatalf("owner Heartbeat: %v", err)
+	}
+	prunedAgents, _, err := svc.RunScheduledMaintenance(ctx)
+	if err != nil {
+		t.Fatalf("RunScheduledMaintenance FK test: %v", err)
+	}
+	if prunedAgents != 1 {
+		t.Fatalf("expected 1 pruned idle member, got %d", prunedAgents)
+	}
 }
 
 func TestTrustedProxyClientIP(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/hub/v1/status", nil)
 	req.RemoteAddr = "172.17.0.1:45123"
+	req.Header.Set("CF-Connecting-IP", "1.1.1.1")
 	req.Header.Set("X-Forwarded-For", "198.51.100.42, 10.0.0.5")
 	if got := clientIP(req); got != "198.51.100.42" {
 		t.Fatalf("trusted proxy clientIP = %q, want 198.51.100.42", got)
+	}
+
+	privateHeaderReq := httptest.NewRequest(http.MethodGet, "/hub/v1/status", nil)
+	privateHeaderReq.RemoteAddr = "127.0.0.1:50000"
+	privateHeaderReq.Header.Set("X-Real-IP", "127.0.0.2")
+	if got := clientIP(privateHeaderReq); got != "127.0.0.1" {
+		t.Fatalf("private X-Real-IP should be ignored, got %q", got)
 	}
 
 	untrusted := httptest.NewRequest(http.MethodGet, "/hub/v1/status", nil)

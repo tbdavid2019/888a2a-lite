@@ -1006,6 +1006,9 @@ func (service *Service) audit(ctx context.Context, event hub.Event) {
 			event.CircleID = circle.PublicID
 		}
 	}
+	if event.CreatedAt.IsZero() {
+		event.CreatedAt = service.now().UTC()
+	}
 	event.Details = redactAuditDetails(event.Details)
 	if err := service.store.Events().AppendEvent(ctx, event); err != nil {
 		log.Printf("audit event failed type=%s", event.Type)

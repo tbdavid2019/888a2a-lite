@@ -143,7 +143,7 @@
       .filter-item { max-width:none !important; }
       #admin-chat-target { width:100% !important; min-width:0 !important; }
       input, textarea, select { font-size:16px; }
-      .compact-select { font-size:13px; min-height:36px; }
+      .compact-select { font-size:16px; min-height:36px; }
       .tab { padding:10px 12px; font-size:14px; }
       .app-footer { justify-content:center; text-align:center; }
     }
@@ -510,9 +510,11 @@
   const loadAnnouncements = async () => { const body = await api("/hub/v1/admin/announcements?afterId=0&limit=100"); renderAnnouncements(body.announcements || []); };
   const loadCircles = async () => {
     const body = await api("/hub/v1/admin/circles");
+    const lang = $("admin-lang-select") ? $("admin-lang-select").value : "zh-TW";
+    const allLabel = (ADMIN_I18N[lang] && ADMIN_I18N[lang].allCircles) || "全部 Circle";
     [$("filter-circle"), $("agent-filter-circle")].forEach((select) => {
       const current = select.value;
-      select.replaceChildren(new Option("全部 Circle", ""));
+      select.replaceChildren(new Option(allLabel, ""));
       (body.circles || []).forEach((circle) => {
         const label = circle.alias ? `${circle.alias} · ${circle.circleId}` : circle.circleId;
         select.append(new Option(`${label} (${circle.state})`, circle.circleId));
@@ -923,7 +925,7 @@
     }
     items.forEach((m) => {
       const item = document.createElement("div");
-      item.style.cssText = `padding:9px 12px;border-radius:8px;border:1px solid var(--line);max-width:85%;background:${m.fromSelf ? "#e6f1f6" : "#fff"};align-self:${m.fromSelf ? "flex-end" : "flex-start"};`;
+      item.style.cssText = `padding:9px 12px;border-radius:8px;border:1px solid var(--line);max-width:85%;background:${m.fromSelf ? "var(--direct-bg)" : "var(--panel)"};color:var(--ink);align-self:${m.fromSelf ? "flex-end" : "flex-start"};`;
       const meta = document.createElement("div");
       meta.className = "meta-sub";
       meta.textContent = `${m.senderName || m.senderId} · ${dateText(m.createdAt)} ${m.state ? `(${m.state})` : ""}`;
@@ -1301,6 +1303,7 @@
       timelineEmpty: "連線對話身分並選擇目標 Agent 或群組後，即可即時傳送訊息與接收 SSE 回覆。",
       chatInputPlaceholder: "輸入要發送給選定 Agent 或群組的訊息...", sendBtn: "傳送",
       footerTech: "技術提供", footerScope: "888a2a-lite · Operator Governance Console",
+      themeDarkAria: "切換至深色模式", themeLightAria: "切換至淺色模式",
     },
     "en": {
       htmlLang: "en", docTitle: "888a2a-lite · Admin Console",
@@ -1330,6 +1333,7 @@
       timelineEmpty: "Connect above and choose a target Agent or Group to exchange messages via live SSE.",
       chatInputPlaceholder: "Type a message for the selected Agent or Group...", sendBtn: "Send",
       footerTech: "· Technology Provider", footerScope: "888a2a-lite · Operator Governance Console",
+      themeDarkAria: "Switch to dark mode", themeLightAria: "Switch to light mode",
     },
     "ja": {
       htmlLang: "ja", docTitle: "888a2a-lite · 管理コンソール",
@@ -1359,21 +1363,35 @@
       timelineEmpty: "上で接続して宛先の Agent またはグループを選択すると SSE リアルタイム会話ができます。",
       chatInputPlaceholder: "選択中の Agent またはグループへ送信するメッセージを入力...", sendBtn: "送信",
       footerTech: "技術提供", footerScope: "888a2a-lite · Operator Governance Console",
+      themeDarkAria: "ダークモードへ切替", themeLightAria: "ライトモードへ切替",
     },
   };
+
+  function safeGetAdminLS(key) {
+    try { return localStorage.getItem(key); } catch { return null; }
+  }
+
+  function safeSetAdminLS(key, val) {
+    try { localStorage.setItem(key, val); } catch {}
+  }
 
   function applyAdminTheme(theme, persist = false) {
     const resolved = theme === "dark" ? "dark" : "light";
     document.documentElement.setAttribute("data-theme", resolved);
-    if (persist) localStorage.setItem(THEME_KEY, resolved);
+    if (persist) safeSetAdminLS(THEME_KEY, resolved);
     const isDark = resolved === "dark";
     $("admin-theme-moon").classList.toggle("hidden", isDark);
     $("admin-theme-sun").classList.toggle("hidden", !isDark);
+    const lang = $("admin-lang-select") ? $("admin-lang-select").value : "zh-TW";
+    const dict = ADMIN_I18N[lang] || ADMIN_I18N["zh-TW"];
+    const label = dict[isDark ? "themeLightAria" : "themeDarkAria"] || "";
+    $("btn-admin-theme").setAttribute("aria-label", label);
+    $("btn-admin-theme").setAttribute("title", label);
   }
 
   function applyAdminI18n(lang) {
     if (!ADMIN_I18N[lang]) lang = "zh-TW";
-    localStorage.setItem(LANG_KEY, lang);
+    safeSetAdminLS(LANG_KEY, lang);
     const dict = ADMIN_I18N[lang];
     document.documentElement.lang = dict.htmlLang;
     document.title = dict.docTitle;
@@ -1382,12 +1400,14 @@
       const k = el.getAttribute("data-i18n");
       if (k === "sseDisconnected" && chatSession) return;
       if (k === "chatIdentityEmpty" && chatSession) return;
+      if ((k === "createAnnouncement" || k === "publishBtn") && (editingId || revisionSourceId)) return;
       if (dict[k] !== undefined) el.textContent = dict[k];
     });
     document.querySelectorAll("[data-i18n-placeholder]").forEach((el) => {
       const k = el.getAttribute("data-i18n-placeholder");
       if (dict[k] !== undefined) el.setAttribute("placeholder", dict[k]);
     });
+    applyAdminTheme(document.documentElement.getAttribute("data-theme") || "light", false);
   }
 
   $("btn-admin-theme").addEventListener("click", () => {
@@ -1401,12 +1421,12 @@
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     if (mq.addEventListener) {
       mq.addEventListener("change", (e) => {
-        if (!localStorage.getItem(THEME_KEY)) applyAdminTheme(e.matches ? "dark" : "light", false);
+        if (!safeGetAdminLS(THEME_KEY)) applyAdminTheme(e.matches ? "dark" : "light", false);
       });
     }
   }
-  applyAdminTheme(localStorage.getItem(THEME_KEY) || ((window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) ? "dark" : "light"), false);
-  applyAdminI18n(localStorage.getItem(LANG_KEY) || "zh-TW");
+  applyAdminTheme(safeGetAdminLS(THEME_KEY) || ((window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) ? "dark" : "light"), false);
+  applyAdminI18n(safeGetAdminLS(LANG_KEY) || "zh-TW");
 
   window.addEventListener("popstate", () => {
     resolveRoute(false);

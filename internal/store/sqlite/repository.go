@@ -354,13 +354,13 @@ func (repository *Repository) cleanupAgentDependencies(ctx context.Context, tx *
 	if _, err := tx.executor().ExecContext(ctx, `DELETE FROM group_delivery WHERE group_message_id IN (SELECT id FROM group_message WHERE sender_agent_id = ?)`, agentID); err != nil {
 		return err
 	}
+	if _, err := tx.executor().ExecContext(ctx, `DELETE FROM group_delivery WHERE target_agent_id = ? OR sequence IN (SELECT sequence FROM inbox_item WHERE target_agent_id = ? OR requester_agent_id = ?)`, agentID, agentID, agentID); err != nil {
+		return err
+	}
 	if _, err := tx.executor().ExecContext(ctx, `DELETE FROM group_message WHERE sender_agent_id = ?`, agentID); err != nil {
 		return err
 	}
 	if _, err := tx.executor().ExecContext(ctx, `DELETE FROM inbox_item WHERE target_agent_id = ? OR requester_agent_id = ?`, agentID, agentID); err != nil {
-		return err
-	}
-	if _, err := tx.executor().ExecContext(ctx, `DELETE FROM group_delivery WHERE target_agent_id = ?`, agentID); err != nil {
 		return err
 	}
 	if _, err := tx.executor().ExecContext(ctx, `DELETE FROM group_member WHERE agent_id = ?`, agentID); err != nil {
@@ -395,7 +395,7 @@ func (repository *Repository) PruneIdleAgents(ctx context.Context, idleCutoff ti
 	cutoff := formatTime(idleCutoff)
 	return repository.pruneMatchingAgents(ctx, `
 SELECT agent_id FROM agent
-WHERE last_seen_at <= ? AND lease_expires_at <= ?`, cutoff, cutoff)
+WHERE COALESCE(last_seen_at, created_at) <= ? AND (lease_expires_at IS NULL OR lease_expires_at <= ?)`, cutoff, cutoff)
 }
 
 func (repository *Repository) pruneMatchingAgents(ctx context.Context, query string, args ...any) (int64, error) {

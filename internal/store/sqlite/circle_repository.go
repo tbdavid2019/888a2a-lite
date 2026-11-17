@@ -131,7 +131,9 @@ SELECT c.hub_id, c.circle_id
 FROM hub_circle c
 WHERE c.circle_id <> 'public'
   AND c.alias = ''
+  AND c.state = 'ACTIVE'
   AND c.created_at <= ?
+  AND NOT EXISTS (SELECT 1 FROM hub_circle_key k WHERE k.hub_id = c.hub_id AND k.circle_id = c.circle_id AND (k.version > 1 OR k.state = 'REVOKED'))
   AND NOT EXISTS (SELECT 1 FROM agent a WHERE a.hub_id = c.hub_id AND a.circle_id = c.circle_id)
   AND NOT EXISTS (SELECT 1 FROM agent_group g WHERE g.hub_id = c.hub_id AND g.circle_id = c.circle_id AND g.created_at > ?)
   AND NOT EXISTS (SELECT 1 FROM inbox_item i WHERE i.hub_id = c.hub_id AND i.circle_id = c.circle_id AND i.created_at > ?)

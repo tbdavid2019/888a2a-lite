@@ -23,7 +23,7 @@ func TestLoadUsesSafeAttachmentDefaults(t *testing.T) {
 	if loaded.AttachmentLimits.MaxURLLength <= 0 || loaded.AttachmentLimits.MaxParts <= 0 || loaded.AttachmentLimits.MaxMetadataBytes <= 0 {
 		t.Fatalf("Load() attachment limits = %+v", loaded.AttachmentLimits)
 	}
-	if loaded.MaxCircles != DefaultMaxCircles || loaded.EmptyCircleTTL != DefaultEmptyCircleTTL || loaded.IdleAgentTTL != DefaultIdleAgentTTL {
+	if loaded.MaxCircles != DefaultMaxCircles || loaded.EmptyCircleTTL != 24*time.Hour || loaded.IdleAgentTTL != 7*24*time.Hour {
 		t.Fatalf("Load() circle/idle defaults = (%d, %v, %v)", loaded.MaxCircles, loaded.EmptyCircleTTL, loaded.IdleAgentTTL)
 	}
 }

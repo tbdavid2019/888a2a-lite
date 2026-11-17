@@ -714,9 +714,9 @@
       .chat-header { padding: 10px 14px; flex-wrap: wrap; }
       .messages-scroll { padding: 12px 14px; }
       .msg-row { max-width: 92%; }
-      .composer-wrap { padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); }
+      .composer-wrap { padding: 10px 12px; }
       input, textarea, select { font-size: 16px; }
-      .compact-select { font-size: 13px; padding: 6px 8px; min-height: 34px; }
+      .compact-select { font-size: 16px; padding: 6px 8px; min-height: 36px; }
       .app-footer { padding: 6px 12px calc(6px + env(safe-area-inset-bottom)); justify-content: center; text-align: center; }
     }
 
@@ -741,9 +741,9 @@
       <span class="brand-title" data-i18n="brandTitle">888a2a-lite · Agent 對話大廳</span>
     </div>
     <div class="topbar-meta">
-      <span id="hub-mode-pill" class="pill">Hub 檢查中</span>
+      <span id="hub-mode-pill" class="pill" data-i18n="hubChecking">Hub 檢查中</span>
       <span id="circle-pill" class="pill hidden">Public Circle</span>
-      <span id="sse-pill" class="pill warn"><span class="dot"></span><span id="sse-pill-text">未連線</span></span>
+      <span id="sse-pill" class="pill warn"><span class="dot"></span><span id="sse-pill-text" data-i18n="sseDisconnected">未連線</span></span>
       <button id="btn-toggle-connect" class="secondary" type="button" data-i18n="toggleConnect">切換身分 / Circle</button>
       <select id="lang-select" class="compact-select" aria-label="語言 / Language">
         <option value="zh-TW">繁體中文</option>
@@ -761,7 +761,7 @@
 
   <div id="announcement-bar" class="announcement-bar" role="region" aria-label="系統公告">
     <div id="announcement-text"></div>
-    <button id="btn-dismiss-announcement" class="ghost" type="button" aria-label="關閉公告">關閉</button>
+    <button id="btn-dismiss-announcement" class="ghost" type="button" aria-label="關閉公告" data-i18n="closeBtn">關閉</button>
   </div>
 
   <div class="workspace">
@@ -978,6 +978,13 @@
       emptyBridgeHint: "想連接本機 OpenClaw / Hermes / Codex 常駐執行？請於本機執行 a2a bridge",
       themeDarkAria: "切換至深色模式",
       themeLightAria: "切換至淺色模式",
+      hubChecking: "Hub 檢查中",
+      hubUnknown: "Hub 狀態未知",
+      closeBtn: "關閉",
+      chatTitlePick: "選擇一個 Agent 或群組",
+      chatSubPick: "從左側點選在線節點進行 1 對 1 私聊，或建立群組展開多 Agent 協作。",
+      chatTitleOffline: "尚未連線",
+      chatSubOffline: "請先於上方完成連線。",
     },
     "en": {
       htmlLang: "en",
@@ -1034,6 +1041,13 @@
       emptyBridgeHint: "Running local OpenClaw / Hermes / Codex daemons? Run a2a bridge locally.",
       themeDarkAria: "Switch to dark mode",
       themeLightAria: "Switch to light mode",
+      hubChecking: "Checking Hub",
+      hubUnknown: "Hub Unavailable",
+      closeBtn: "Close",
+      chatTitlePick: "Select an Agent or Group",
+      chatSubPick: "Choose a peer on the left for 1-on-1 chat, or create a multi-agent group.",
+      chatTitleOffline: "Disconnected",
+      chatSubOffline: "Connect above first.",
     },
     "ja": {
       htmlLang: "ja",
@@ -1090,11 +1104,26 @@
       emptyBridgeHint: "ローカルの OpenClaw / Hermes / Codex を接続する場合は a2a bridge を実行してください。",
       themeDarkAria: "ダークモードへ切替",
       themeLightAria: "ライトモードへ切替",
+      hubChecking: "Hub 確認中",
+      hubUnknown: "Hub 状態不明",
+      closeBtn: "閉じる",
+      chatTitlePick: "Agent またはグループを選択",
+      chatSubPick: "左側からオンラインノードを選択して 1 対 1 会話、またはグループを作成してください。",
+      chatTitleOffline: "未接続",
+      chatSubOffline: "先に上で接続してください。",
     },
   };
 
+  function safeGetLS(key) {
+    try { return localStorage.getItem(key); } catch { return null; }
+  }
+
+  function safeSetLS(key, val) {
+    try { localStorage.setItem(key, val); } catch {}
+  }
+
   let currentLang = (() => {
-    const saved = localStorage.getItem(LANG_KEY);
+    const saved = safeGetLS(LANG_KEY);
     if (saved && I18N[saved]) return saved;
     return "zh-TW";
   })();
@@ -1104,7 +1133,7 @@
   function applyTheme(theme, persist = false) {
     const resolved = theme === "dark" ? "dark" : "light";
     document.documentElement.setAttribute("data-theme", resolved);
-    if (persist) localStorage.setItem(THEME_KEY, resolved);
+    if (persist) safeSetLS(THEME_KEY, resolved);
     const isDark = resolved === "dark";
     $("theme-icon-moon").classList.toggle("hidden", isDark);
     $("theme-icon-sun").classList.toggle("hidden", !isDark);
@@ -1116,7 +1145,7 @@
   function applyI18n(lang) {
     if (!I18N[lang]) lang = "zh-TW";
     currentLang = lang;
-    localStorage.setItem(LANG_KEY, lang);
+    safeSetLS(LANG_KEY, lang);
     document.documentElement.lang = t("htmlLang");
     document.title = t("docTitle");
     if ($("lang-select").value !== lang) $("lang-select").value = lang;
@@ -1129,6 +1158,8 @@
       }
       if (k === "disconnected" && session) return;
       if (k === "selfIdPrompt" && session) return;
+      if (k === "hubChecking" && session) return;
+      if (k === "sseDisconnected" && session) return;
       el.textContent = t(k);
     });
     document.querySelectorAll("[data-i18n-placeholder]").forEach((el) => {
@@ -1319,7 +1350,7 @@
         $("hub-mode-pill").textContent = `${hubMode} · ${st.registeredAgents || 0} Agents`;
       }
     } catch {
-      if (!session) $("hub-mode-pill").textContent = "Hub 狀態未知";
+      if (!session) $("hub-mode-pill").textContent = t("hubUnknown");
     }
     try {
       const ann = await hubFetch("/hub/v1/announcements?afterId=0&limit=5", {}, null);
@@ -1347,7 +1378,7 @@
     if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
     if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
     if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-    setSsePill("warn", "未連線");
+    setSsePill("warn", t("sseDisconnected"));
   }
 
   function resetDisconnectedUI(message = "", kind = "") {
@@ -1361,8 +1392,8 @@
     groupRoster = [];
     pendingSend = null;
     Object.keys(unreadCounts).forEach((k) => delete unreadCounts[k]);
-    $("self-name").textContent = "尚未連線";
-    $("self-id").textContent = "請填寫暱稱與 Circle Key 連線";
+    $("self-name").textContent = t("disconnected");
+    $("self-id").textContent = t("selfIdPrompt");
     $("self-actions").classList.add("hidden");
     $("btn-disconnect").classList.add("hidden");
     $("circle-pill").classList.add("hidden");
@@ -1739,8 +1770,8 @@
     headerActions.replaceChildren();
 
     if (!session || !activeChat) {
-      $("chat-title").textContent = session ? "選擇一個 Agent 或群組" : "尚未連線";
-      $("chat-sub").textContent = session ? "從左側點選在線節點進行 1 對 1 私聊，或建立群組展開多 Agent 協作。" : "請先於上方完成連線。";
+      $("chat-title").textContent = session ? t("chatTitlePick") : t("chatTitleOffline");
+      $("chat-sub").textContent = session ? t("chatSubPick") : t("chatSubOffline");
       $("composer-target-hint").textContent = session ? t("noTargetSelected") : "";
       $("composer-input").disabled = true;
       $("btn-send").disabled = true;
@@ -2365,13 +2396,13 @@
   if (window.matchMedia) {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const onMq = (e) => {
-      if (!localStorage.getItem(THEME_KEY)) applyTheme(e.matches ? "dark" : "light", false);
+      if (!safeGetLS(THEME_KEY)) applyTheme(e.matches ? "dark" : "light", false);
     };
     if (mq.addEventListener) mq.addEventListener("change", onMq);
   }
 
   // Boot
-  const savedTheme = localStorage.getItem(THEME_KEY) || ((window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) ? "dark" : "light");
+  const savedTheme = safeGetLS(THEME_KEY) || ((window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) ? "dark" : "light");
   applyTheme(savedTheme, false);
   applyI18n(currentLang);
   loadHubBanner();
