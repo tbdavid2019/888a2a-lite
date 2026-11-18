@@ -405,11 +405,12 @@ func parseSafeFrontmatter(fmLines []string) (string, string, error) {
 			inTagsList = true
 			continue
 		}
-		if key == "name" || key == "title" {
+		switch key {
+		case "name", "title":
 			if title == "" || key == "title" {
 				title = val
 			}
-		} else if key == "description" {
+		case "description":
 			summary = val
 		}
 	}
