@@ -402,6 +402,22 @@ SELECT agent_id FROM agent
 WHERE COALESCE(last_seen_at, created_at) <= ? AND (lease_expires_at IS NULL OR lease_expires_at <= ?)`, cutoff, cutoff)
 }
 
+func (repository *Repository) PruneOfflineAgents(ctx context.Context, now time.Time, circleID string) (int64, error) {
+	nowStr := formatTime(now)
+	cleanCircle := strings.TrimSpace(circleID)
+	if cleanCircle != "" {
+		return repository.pruneMatchingAgents(ctx, `
+SELECT agent_id FROM agent
+WHERE circle_id = ?
+  AND (revoked_at IS NOT NULL OR expires_at <= ? OR lease_expires_at IS NULL OR lease_expires_at <= ?)`,
+			cleanCircle, nowStr, nowStr)
+	}
+	return repository.pruneMatchingAgents(ctx, `
+SELECT agent_id FROM agent
+WHERE revoked_at IS NOT NULL OR expires_at <= ? OR lease_expires_at IS NULL OR lease_expires_at <= ?`,
+		nowStr, nowStr)
+}
+
 func (repository *Repository) pruneMatchingAgents(ctx context.Context, query string, args ...any) (int64, error) {
 	var pruned int64
 	err := repository.withTransaction(ctx, func(tx *Repository) error {

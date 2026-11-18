@@ -670,13 +670,51 @@ func (service *Service) PruneInactiveAgents(ctx context.Context, token string) (
 	return prunedAgents, err
 }
 
+type PruneMaintenanceOptions struct {
+	Mode     string `json:"mode,omitempty"`
+	CircleID string `json:"circleId,omitempty"`
+}
+
 func (service *Service) PruneMaintenanceAdmin(ctx context.Context, token string) (int64, int64, error) {
+	return service.PruneMaintenanceWithOptions(ctx, token, PruneMaintenanceOptions{Mode: "stale"})
+}
+
+func (service *Service) PruneMaintenanceWithOptions(ctx context.Context, token string, opts PruneMaintenanceOptions) (int64, int64, error) {
 	if err := service.AuthenticateOperator(token); err != nil {
 		return 0, 0, err
 	}
+	mode := strings.ToLower(strings.TrimSpace(opts.Mode))
+	if mode == "" {
+		mode = "stale"
+	}
+	if mode != "stale" && mode != "offline" {
+		return 0, 0, fmt.Errorf("%w: prune mode must be stale or offline", ErrValidation)
+	}
+	cleanCircle := strings.TrimSpace(opts.CircleID)
 	service.circleMu.Lock()
 	defer service.circleMu.Unlock()
-	return service.pruneStaleResourcesLocked(ctx, service.now().UTC())
+	now := service.now().UTC()
+	if mode == "stale" {
+		return service.pruneStaleResourcesLocked(ctx, now)
+	}
+	prunedAgents, err := service.store.Agents().PruneOfflineAgents(ctx, now, cleanCircle)
+	if err != nil {
+		return 0, 0, err
+	}
+	var prunedCircles int64
+	if cleanCircle == "" {
+		prunedCircles, err = service.store.Circles().PruneEmptyCircles(ctx, now, service.circleResolver.StaticCircleIDs())
+		if err != nil {
+			return prunedAgents, 0, err
+		}
+	}
+	if prunedAgents > 0 {
+		service.audit(ctx, hub.Event{Type: hub.EventAgentsPruned, Details: map[string]any{"count": prunedAgents, "mode": mode, "circleId": cleanCircle}})
+	}
+	if prunedCircles > 0 {
+		service.audit(ctx, hub.Event{Type: hub.EventCirclesPruned, Details: map[string]any{"count": prunedCircles, "mode": mode}})
+	}
+	return prunedAgents, prunedCircles, nil
 }
 
 func (service *Service) ListCirclesAdmin(ctx context.Context, token string) ([]hub.Circle, error) {

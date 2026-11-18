@@ -282,10 +282,47 @@ func TestHTTPThreeAgentDeliveryAndAuthorizationBoundaries(t *testing.T) {
 		t.Fatalf("agent count after delete = %d, want 2", agentListResp.Total)
 	}
 
-	// Admin: Prune agents
+	// Admin: Prune agents (default stale mode + offline mode preserving active agents)
 	pruneResp := doJSONWithBearer(t, handler, http.MethodPost, "/hub/v1/admin/agents/prune", "operator-fixture", nil)
 	if pruneResp.Code != http.StatusOK {
 		t.Fatalf("prune agents status/body = %d/%s", pruneResp.Code, pruneResp.Body.String())
+	}
+
+	// Disconnect agent[1] so its lease expires immediately -> mode=stale keeps it, mode=offline prunes it while keeping online agent[0]
+	discResp := doJSON(t, handler, http.MethodPost, "/hub/v1/agents/"+agents[1].ID+"/disconnect", agents[1].ID, agents[1].Token, nil)
+	if discResp.Code != http.StatusOK {
+		t.Fatalf("disconnect status/body = %d/%s", discResp.Code, discResp.Body.String())
+	}
+	stalePruneResp := doJSONWithBearer(t, handler, http.MethodPost, "/hub/v1/admin/agents/prune", "operator-fixture", map[string]string{"mode": "stale"})
+	if stalePruneResp.Code != http.StatusOK {
+		t.Fatalf("stale prune status/body = %d/%s", stalePruneResp.Code, stalePruneResp.Body.String())
+	}
+	var pruneResult struct {
+		PrunedCount   int64 `json:"prunedCount"`
+		PrunedCircles int64 `json:"prunedCircles"`
+	}
+	decodeResponse(t, stalePruneResp, &pruneResult)
+	if pruneResult.PrunedCount != 0 {
+		t.Fatalf("stale prune count = %d, want 0", pruneResult.PrunedCount)
+	}
+
+	offlinePruneResp := doJSONWithBearer(t, handler, http.MethodPost, "/hub/v1/admin/agents/prune", "operator-fixture", map[string]string{"mode": "offline"})
+	if offlinePruneResp.Code != http.StatusOK {
+		t.Fatalf("offline prune status/body = %d/%s", offlinePruneResp.Code, offlinePruneResp.Body.String())
+	}
+	decodeResponse(t, offlinePruneResp, &pruneResult)
+	if pruneResult.PrunedCount != 1 {
+		t.Fatalf("offline prune count = %d, want 1", pruneResult.PrunedCount)
+	}
+	adminAgentsAfterPrune := doJSONWithBearer(t, handler, http.MethodGet, "/hub/v1/admin/agents", "operator-fixture", nil)
+	decodeResponse(t, adminAgentsAfterPrune, &agentListResp)
+	if agentListResp.Total != 1 {
+		t.Fatalf("agent count after offline prune = %d, want 1 online survivor", agentListResp.Total)
+	}
+
+	badPruneResp := doJSONWithBearer(t, handler, http.MethodPost, "/hub/v1/admin/agents/prune", "operator-fixture", map[string]string{"mode": "all"})
+	if badPruneResp.Code != http.StatusBadRequest {
+		t.Fatalf("invalid prune mode status = %d, want 400", badPruneResp.Code)
 	}
 }
 

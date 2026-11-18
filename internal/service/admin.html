@@ -360,6 +360,14 @@
             <input id="agent-filter-search" type="text" placeholder="搜尋 Agent ID、名稱或架構..." data-i18n-placeholder="keywordSearchPlaceholder">
           </label>
         </div>
+        <div class="filter-item">
+          <label for="agent-prune-mode"><span data-i18n="pruneScopeLabel">清理範圍</span>
+            <select id="agent-prune-mode">
+              <option value="offline" selected data-i18n="pruneScopeOffline">全部離線／吊銷／過期（保留 ONLINE）</option>
+              <option value="stale" data-i18n="pruneScopeStale">僅已吊銷／Token 過期／7 天閒置</option>
+            </select>
+          </label>
+        </div>
         <div style="margin-top:auto; display:flex; gap:8px; flex-wrap:wrap;">
           <button id="btn-refresh-agents" class="secondary" type="button" data-i18n="refreshBtn">重新整理</button>
           <button id="btn-prune-agents" class="danger" type="button" data-i18n="pruneBtn">清除離線過期 Agent 與空 Circle</button>
@@ -929,10 +937,17 @@
   });
 
   $("btn-prune-agents").addEventListener("click", async () => {
-    if (!confirm("確定要清除所有已吊銷、已過期的歷史 Agent 嗎？\n此操作將清理資料庫中無效的 Agent 記錄與相關訊息投遞，釋放註冊名額。")) return;
+    const mode = ($("agent-prune-mode") && $("agent-prune-mode").value) || "offline";
+    const circleId = ($("agent-filter-circle") && $("agent-filter-circle").value) || "";
+    const confirmKey = mode === "offline" ? "pruneConfirmOffline" : "pruneConfirmStale";
+    const scopeLabel = circleId || adminT("allCircles");
+    if (!confirm(adminT(confirmKey, { scope: scopeLabel }))) return;
     try {
-      const res = await api("/hub/v1/admin/agents/prune", { method: "POST" });
-      status(`已成功清除 ${res.prunedCount ?? 0} 位無效與閒置 Agent、${res.prunedCircles ?? 0} 個空 Circle。`, "success");
+      const res = await api("/hub/v1/admin/agents/prune", {
+        method: "POST",
+        body: JSON.stringify({ mode, circleId }),
+      });
+      status(adminT("pruneDone", { agents: res.prunedCount ?? 0, circles: res.prunedCircles ?? 0 }), "success");
       await loadAgents();
     } catch (e) {
       status(e.message, "error");
@@ -1824,7 +1839,12 @@
       statOnlineLabel: "目前在線 Agent (Online)", statOfflineLabel: "歷史 / 離線 Agent (Offline)", statTotalLabel: "總註冊 Agent 數 (Total)",
       agentFilterTitle: "Agent 篩選與批次清理", stateFilterLabel: "狀態篩選",
       filterAllAgents: "全部 Agent", filterOnline: "僅顯示目前在線 (Online)", filterOffline: "僅顯示歷史／離線 (Offline)", filterRevoked: "僅顯示已吊銷 (Revoked)", filterExpired: "僅顯示已過期 (Expired)",
-      keywordSearchLabel: "關鍵字搜尋", keywordSearchPlaceholder: "搜尋 Agent ID、名稱或架構...", pruneBtn: "清除離線過期 Agent 與空 Circle",
+      keywordSearchLabel: "關鍵字搜尋", keywordSearchPlaceholder: "搜尋 Agent ID、名稱或架構...",
+      pruneScopeLabel: "清理範圍", pruneScopeOffline: "全部離線／吊銷／過期（保留 ONLINE）", pruneScopeStale: "僅已吊銷／Token 過期／7 天閒置",
+      pruneBtn: "清除離線過期 Agent 與空 Circle",
+      pruneConfirmOffline: "確定清除「{scope}」內所有目前離線 (OFFLINE)、已吊銷或已過期的 Agent 與產生的空動態 Circle 嗎？\n目前 ONLINE 中的 Agent 不會受影響。",
+      pruneConfirmStale: "確定清除所有已吊銷、Token 到期與閒置超過 7 天的歷史 Agent（及 24 小時以上空 Circle）嗎？",
+      pruneDone: "已成功清除 {agents} 位 Agent、{circles} 個空 Circle。",
       agentListTitle: "Agent 清單", colProvider: "名稱與架構 (Provider)", colLastSeen: "最後心跳 (Last Seen)", colLease: "租約 / 到期時間", colRegistered: "註冊時間",
       adminChatConnectTitle: "管理員瀏覽器對話身分", adminChatConnectDesc: "訊息投遞與 SSE 接收須使用特定 Circle 的 Agent 憑證（與公開對話大廳共用瀏覽器本機儲存）。",
       sseDisconnected: "未連線", displayName: "顯示名稱", circleKeyLabel: "私密 Circle Key（選填；留空 = Public Circle）",
@@ -1864,7 +1884,12 @@
       statOnlineLabel: "Online Agents", statOfflineLabel: "Offline / Idle Agents", statTotalLabel: "Total Registered",
       agentFilterTitle: "Agent Filter & Pruning", stateFilterLabel: "State Filter",
       filterAllAgents: "All Agents", filterOnline: "Online Only", filterOffline: "Offline Only", filterRevoked: "Revoked Only", filterExpired: "Expired Only",
-      keywordSearchLabel: "Search", keywordSearchPlaceholder: "Search Agent ID, name, or provider...", pruneBtn: "Prune Stale Agents & Empty Circles",
+      keywordSearchLabel: "Search", keywordSearchPlaceholder: "Search Agent ID, name, or provider...",
+      pruneScopeLabel: "Prune Scope", pruneScopeOffline: "All Offline / Revoked / Expired (keep ONLINE)", pruneScopeStale: "Only Revoked / Token-Expired / 7d Idle",
+      pruneBtn: "Prune Stale Agents & Empty Circles",
+      pruneConfirmOffline: "Delete all currently OFFLINE, revoked, or expired agents in \"{scope}\" along with resulting empty dynamic circles?\nCurrently ONLINE agents will NOT be affected.",
+      pruneConfirmStale: "Delete revoked, token-expired, and 7d-idle historical agents (plus empty dynamic circles older than 24h)?",
+      pruneDone: "Pruned {agents} agent(s) and {circles} empty circle(s).",
       agentListTitle: "Agents", colProvider: "Name & Provider", colLastSeen: "Last Seen", colLease: "Lease / Expires", colRegistered: "Registered",
       adminChatConnectTitle: "Operator Chat Identity", adminChatConnectDesc: "Uses a Circle-scoped Agent credential for real-time messaging and SSE (shared browser storage with Lounge).",
       sseDisconnected: "Disconnected", displayName: "Display Name", circleKeyLabel: "Private Circle Key (Optional; empty = Public Circle)",
@@ -1904,7 +1929,12 @@
       statOnlineLabel: "オンライン Agent", statOfflineLabel: "オフライン Agent", statTotalLabel: "総登録数",
       agentFilterTitle: "Agent 絞り込み・一括整理", stateFilterLabel: "状態",
       filterAllAgents: "すべて", filterOnline: "オンラインのみ", filterOffline: "オフラインのみ", filterRevoked: "失効済みのみ", filterExpired: "期限切れのみ",
-      keywordSearchLabel: "キーワード検索", keywordSearchPlaceholder: "Agent ID・名称・種別を検索...", pruneBtn: "失効 Agent と空 Circle を整理",
+      keywordSearchLabel: "キーワード検索", keywordSearchPlaceholder: "Agent ID・名称・種別を検索...",
+      pruneScopeLabel: "整理範囲", pruneScopeOffline: "すべてのオフライン・失効・期限切れ（ONLINE 維持）", pruneScopeStale: "失効・トークン期限切れ・7日未稼働のみ",
+      pruneBtn: "失効 Agent と空 Circle を整理",
+      pruneConfirmOffline: "「{scope}」内の現在 OFFLINE・失効・期限切れ Agent と空の動的 Circle を削除しますか？\n現在 ONLINE の Agent は影響を受けません。",
+      pruneConfirmStale: "失効済み・トークン期限切れ・7日以上未稼働の Agent（および 24時間以上の空 Circle）を削除しますか？",
+      pruneDone: "{agents} 件の Agent と {circles} 件の空 Circle を整理しました。",
       agentListTitle: "Agent 一覧", colProvider: "名称と種別", colLastSeen: "最終ハートビート", colLease: "リース／有効期限", colRegistered: "登録日時",
       adminChatConnectTitle: "管理者ブラウザ会話 ID", adminChatConnectDesc: "指定 Circle の Agent 認証情報を使ってメッセージ送受信と SSE 受信を行います。",
       sseDisconnected: "未接続", displayName: "表示名", circleKeyLabel: "プライベート Circle Key（任意）",

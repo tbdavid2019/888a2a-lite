@@ -19,6 +19,9 @@
 
 ### Fixed
 
+- 修復管理後台（`/admin`）「清除離線過期 Agent 與空 Circle」對剛離線（租約過期、尚未滿 7 天閒置期）測試帳號無效的問題：
+  - [`POST /hub/v1/admin/agents/prune`](internal/service/http.go) 新增選填請求參數 `mode`（`"stale"` 維持背景 7 天閒置安全預設；`"offline"` 立即清除所有租約已到期離線、已吊銷與過期 Agent 及產生的空動態 Circle，嚴格保留 `ONLINE` 成員）與 `circleId` 篩選。
+  - [`internal/service/admin.html`](internal/service/admin.html) 新增三語系「清理範圍」選單（預設 `全部離線／吊銷／過期（保留 ONLINE）`），一鍵即可清除測試殘留 `OFFLINE` 帳號。
 - 依據三方獨立 Code Review（`OMP`、`Codex`、`OpenCode`）全面補強 `circle-shared-resources` 安全性與可靠性：
   - **Hub 與 SQLite 遷移／一致性（Schema v13）**：`circle_resource_proposals` 新增單調 `revision` 欄位，批准／駁回強制校驗 `expectedRevision` 防範審查期間提案被覆寫（TOCTOU）；強化 `migrateCircleResources` / `migrateCircleResourcesV13` 與 `ListCircleResourceManifest` 交易一致性；擴大資源單筆及 Manifest ETag 涵蓋完整中繼資料與到期時間；移除未提供 `contentHash` 時之偽造資產雜湊；封鎖保留 slug `"proposals"`；新增 7 天逾期冪等紀錄清理；拒絕含 `userinfo`/`#fragment` 或疑似密鑰查詢參數之 `A2A888_HUB_UPLOAD_ENDPOINT`；使用 `utf8.RuneCountInString` 校驗駁回理由長度並將維護掃描錯誤確實回傳。
   - **Web UI（`chat.html` / `admin.html`）與無障礙對比度**：於 `/hub/v1/status` 公開 `circleSkillWritePolicy` 並於 `admin_only` 模式隱藏瀏覽器寫入／審核按鈕；修復提案檢視 Toast 分類、`keep` 沿用剩餘 TTL、編輯中止競態（AbortController + epoch）與 32 KiB UTF-8 位元組前端檢核；支援 `@asset:<slug>` 與 `@doc:<slug>` 補全、補齊 `<label>`/`aria-live`/`Escape` 鍵盤關閉與焦點還原，並將實心按鈕與未讀徽章強化至 WCAG AA 對比；`admin.html` 補齊請求競態防護、操作錯誤提示及完整三語系（`zh-TW`/`en`/`ja`）資源表格翻譯。

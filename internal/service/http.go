@@ -1543,7 +1543,11 @@ func (server *HTTPServer) adminPruneAgents(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	prunedAgents, prunedCircles, err := server.service.PruneMaintenanceAdmin(r.Context(), token)
+	var request PruneMaintenanceOptions
+	if !decodeOptionalJSON(w, r, server.maxBodyBytes, &request) {
+		return
+	}
+	prunedAgents, prunedCircles, err := server.service.PruneMaintenanceWithOptions(r.Context(), token, request)
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -1730,16 +1734,22 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, maxBytes int64, target a
 }
 
 func decodeEmptyOrJSON(w http.ResponseWriter, r *http.Request, maxBytes int64) bool {
+	var value any
+	return decodeOptionalJSON(w, r, maxBytes, &value)
+}
+
+func decodeOptionalJSON(w http.ResponseWriter, r *http.Request, maxBytes int64, target any) bool {
 	r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
 	decoder := json.NewDecoder(r.Body)
-	var value any
-	if err := decoder.Decode(&value); err == io.EOF {
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err == io.EOF {
 		return true
 	} else if err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_JSON", "request body is invalid")
 		return false
 	}
-	if err := decoder.Decode(&value); err != io.EOF {
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
 		writeError(w, http.StatusBadRequest, "INVALID_JSON", "request body must contain one JSON value")
 		return false
 	}

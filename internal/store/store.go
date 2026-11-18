@@ -34,6 +34,7 @@ type AgentStore interface {
 	DeleteAgent(context.Context, string) error
 	PruneInactiveAgents(context.Context, time.Time) (int64, error)
 	PruneIdleAgents(context.Context, time.Time) (int64, error)
+	PruneOfflineAgents(context.Context, time.Time, string) (int64, error)
 }
 
 type PolicyStore interface {
