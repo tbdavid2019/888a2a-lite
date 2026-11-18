@@ -2284,12 +2284,17 @@ class CircleSkillCache:
     def __init__(self, hub_client, root=None, notifier=None):
         self.hub_client = hub_client
         self.root = os.path.abspath(os.path.expanduser(root or "~/.a2a/circles"))
-        self.hub_scope = hashlib.sha256(hub_client.hub_url.rstrip("/").encode("utf-8")).hexdigest()[:16]
+        raw_url = getattr(hub_client, "hub_url", None)
+        hub_url_str = raw_url if isinstance(raw_url, str) and raw_url.strip() else "default"
+        self.hub_scope = hashlib.sha256(hub_url_str.rstrip("/").encode("utf-8")).hexdigest()[:16]
         self.notifier = notifier
 
     @property
     def circle_id(self):
-        return (self.hub_client.circle_id or "public").strip() or "public"
+        raw_cid = getattr(self.hub_client, "circle_id", None)
+        if not isinstance(raw_cid, str):
+            return "public"
+        return raw_cid.strip() or "public"
 
     @property
     def circle_scope(self):

@@ -109,7 +109,13 @@ jobs:
       - name: Check formatting
         shell: bash
         run: |
-          test -z "$(gofmt -l .)"
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "Unformatted files:"
+            echo "$unformatted"
+            gofmt -d .
+            exit 1
+          fi
 
       - name: Run tests
         run: go test ./...
