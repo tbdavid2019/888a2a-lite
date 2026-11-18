@@ -157,14 +157,15 @@ func TestCircleResourceRepositoryLifecycleProposalsExpiryAndPrune(t *testing.T) 
 	}
 
 	// 5. Log circle.resource_* event and verify PruneEmptyCircles cleans up dynamic empty circle + resource tables
-	_ = repo.Events().AppendEvent(ctx, hub.EventRecord{
-		EventID:   "evt-res-1",
-		EventType: hub.EventCircleResourceApproved,
+	if err := repo.Events().AppendEvent(ctx, hub.Event{
+		Type:      hub.EventCircleResourceApproved,
 		HubID:     "hub",
 		CircleID:  "circle-res-empty",
 		CreatedAt: now,
-	})
-	pruned, err := repo.Circles().PruneEmptyCircles(ctx, "hub", now.Add(-24*time.Hour), 10)
+	}); err != nil {
+		t.Fatalf("AppendEvent: %v", err)
+	}
+	pruned, err := repo.Circles().PruneEmptyCircles(ctx, now.Add(-24*time.Hour), nil)
 	if err != nil {
 		t.Fatalf("PruneEmptyCircles failed: %v", err)
 	}
