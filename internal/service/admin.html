@@ -432,6 +432,32 @@
       </div>
       <pre id="skill-detail-pre" class="msg-pre" style="max-height:360px; white-space:pre-wrap;"></pre>
     </section>
+
+    <section class="panel" aria-labelledby="admin-res-proposals-title">
+      <div class="actions" style="justify-content:space-between;">
+        <h2 id="admin-res-proposals-title" data-i18n="resProposalsTitle">待審 Bot 資源提案 (文件 / 素材)</h2>
+        <span id="admin-res-proposals-badge" class="badge">0</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Slug</th><th data-i18n="resKindCol">類型</th><th data-i18n="skillProposerCol">提案者</th><th>Hash (SHA-256)</th><th data-i18n="skillTtlCol">建議 TTL</th><th data-i18n="colAction">操作</th></tr></thead>
+          <tbody id="admin-res-proposals-rows"><tr><td class="empty" colspan="6" data-i18n="loadPrompt">請先輸入 Operator Token 並載入。</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="admin-res-active-title">
+      <div class="actions" style="justify-content:space-between;">
+        <h2 id="admin-res-active-title" data-i18n="resActiveTitle">已生效 Circle 資源 (文件 / 888box 素材)</h2>
+        <span id="admin-res-active-badge" class="badge">0</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Slug</th><th data-i18n="resKindCol">類型</th><th data-i18n="annTitle">標題</th><th>Ver</th><th data-i18n="annExpires">到期時間</th><th data-i18n="colAction">操作</th></tr></thead>
+          <tbody id="admin-res-active-rows"><tr><td class="empty" colspan="6" data-i18n="loadPrompt">請先輸入 Operator Token 並載入。</td></tr></tbody>
+        </table>
+      </div>
+    </section>
   </div>
 
   <!-- 分頁 5: 線上對話 -->
@@ -1021,6 +1047,108 @@
         actRows.append(tr);
       });
     }
+
+    await loadCircleResourcesAdmin(cid);
+  };
+
+  let cachedAdminResources = [];
+  const loadCircleResourcesAdmin = async (circleOverride) => {
+    const cid = circleOverride || ($("skills-circle-select") && $("skills-circle-select").value) || "public";
+    const data = await api(`/hub/v1/admin/circles/${encodeURIComponent(cid)}/resources`);
+    const manifest = data.manifest || {};
+    const resources = manifest.resources || [];
+    cachedAdminResources = resources;
+    const proposals = (data.proposals || []).filter((p) => p.status === "PENDING_REVIEW");
+    $("admin-res-proposals-badge").textContent = String(proposals.length);
+    $("admin-res-active-badge").textContent = `${resources.length} · v${manifest.collectionVersion || 0}`;
+
+    const propRows = $("admin-res-proposals-rows");
+    propRows.replaceChildren();
+    if (!proposals.length) {
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      td.colSpan = 6;
+      td.className = "empty";
+      td.textContent = "目前無待審資源提案。";
+      tr.append(td);
+      propRows.append(tr);
+    } else {
+      proposals.forEach((p) => {
+        const tr = document.createElement("tr");
+        const cSlug = document.createElement("td"); cSlug.textContent = p.slug;
+        const cKind = document.createElement("td"); cKind.textContent = p.kind || "doc";
+        const cProp = document.createElement("td"); cProp.textContent = p.proposedBy;
+        const cHash = document.createElement("td"); cHash.textContent = (p.contentHash || "").slice(0, 12);
+        const cTtl = document.createElement("td"); cTtl.textContent = p.requestedTtlSeconds ? `${p.requestedTtlSeconds}s` : "永久";
+        const cAct = document.createElement("td");
+        const acts = document.createElement("div"); acts.className = "actions";
+        acts.append(button("檢視", "secondary", () => {
+          const preview = p.kind === "asset" ? `${p.filename || p.slug} (${p.mediaType || "asset"})\n${p.url || ""}` : (p.content || "");
+          showSkillDetail(`待審資源: ${p.slug} [${p.kind || "doc"}]`, preview);
+        }));
+        acts.append(button("批准發布", "", async () => {
+          const existing = cachedAdminResources.find((r) => r.slug === p.slug);
+          const expVer = existing ? Number(existing.version || 0) : 0;
+          await api(`/hub/v1/admin/circles/${encodeURIComponent(cid)}/resources/proposals/${encodeURIComponent(p.slug)}/approve`, {
+            method: "POST",
+            body: JSON.stringify({ expectedVersion: expVer, idempotencyKey: newIdemKey("op-res-app") }),
+          });
+          status(`已批准並發布資源 ${p.slug}。`, "success");
+          await loadCircleResourcesAdmin(cid);
+        }));
+        acts.append(button("駁回", "danger", async () => {
+          await api(`/hub/v1/admin/circles/${encodeURIComponent(cid)}/resources/proposals/${encodeURIComponent(p.slug)}/reject`, {
+            method: "POST",
+            body: JSON.stringify({ expectedVersion: 0, reason: "Rejected by Operator", idempotencyKey: newIdemKey("op-res-rej") }),
+          });
+          status(`已駁回資源提案 ${p.slug}。`, "success");
+          await loadCircleResourcesAdmin(cid);
+        }));
+        cAct.append(acts);
+        tr.append(cSlug, cKind, cProp, cHash, cTtl, cAct);
+        propRows.append(tr);
+      });
+    }
+
+    const actRows = $("admin-res-active-rows");
+    actRows.replaceChildren();
+    if (!resources.length) {
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      td.colSpan = 6;
+      td.className = "empty";
+      td.textContent = "此 Circle 尚未分享任何文件或素材。";
+      tr.append(td);
+      actRows.append(tr);
+    } else {
+      resources.forEach((r) => {
+        const tr = document.createElement("tr");
+        const cSlug = document.createElement("td"); cSlug.textContent = r.slug;
+        const cKind = document.createElement("td"); cKind.textContent = r.kind || "doc";
+        const cTitle = document.createElement("td"); cTitle.textContent = r.title || r.slug;
+        const cVer = document.createElement("td"); cVer.textContent = `v${r.version}`;
+        const cExp = document.createElement("td"); cExp.textContent = r.expiresAt ? dateText(r.expiresAt) : "永久";
+        const cAct = document.createElement("td");
+        const acts = document.createElement("div"); acts.className = "actions";
+        acts.append(button("檢視", "secondary", async () => {
+          const full = await api(`/hub/v1/admin/circles/${encodeURIComponent(cid)}/resources/${encodeURIComponent(r.slug)}`);
+          const preview = full.kind === "asset" ? `${full.filename || full.slug} (${full.mediaType || "asset"})\n${full.url || ""}` : (full.content || "");
+          showSkillDetail(`${full.slug} [${full.kind}] v${full.version}`, preview);
+        }));
+        acts.append(button("刪除", "danger", async () => {
+          if (!confirm(`確定刪除 Circle [${cid}] 的資源 ${r.slug} (v${r.version}) 嗎？`)) return;
+          await api(`/hub/v1/admin/circles/${encodeURIComponent(cid)}/resources/${encodeURIComponent(r.slug)}`, {
+            method: "DELETE",
+            body: JSON.stringify({ expectedVersion: Number(r.version), idempotencyKey: newIdemKey("op-res-del") }),
+          });
+          status(`已刪除資源 ${r.slug}。`, "success");
+          await loadCircleResourcesAdmin(cid);
+        }));
+        cAct.append(acts);
+        tr.append(cSlug, cKind, cTitle, cVer, cExp, cAct);
+        actRows.append(tr);
+      });
+    }
   };
 
   const looksLikeCliCommandsAdmin = (text) => {
@@ -1600,6 +1728,7 @@
       skillSlugLabel: "Skill Slug（選填；留空自動產生，符合 ^[a-z0-9][a-z0-9_-]{0,63}$）", skillTtlLabel: "有效期限 TTL（秒；0 或留空 = 永久）",
       skillContentLabel: "SKILL.md 內容（可直接貼純文字、Markdown 或 npx 安裝指令，上限 32 KiB）", skillSaveBtn: "發布／更新技能", skillFormatNpxBtn: "📦 自動整理 npx 安裝指令", skillResetBtn: "重設表單",
       skillsProposalsTitle: "待審 Bot 提案 (PENDING_REVIEW)", skillProposerCol: "提案者", skillTtlCol: "建議 TTL", skillsActiveTitle: "已生效 Circle 技能",
+      resProposalsTitle: "待審 Bot 資源提案 (文件 / 素材)", resKindCol: "類型", resActiveTitle: "已生效 Circle 資源 (文件 / 888box 素材)",
       createAnnouncement: "建立公告", annTitle: "標題", annSeverity: "嚴重度", annExpires: "到期時間（可選）", annDocUrl: "文件連結（可選）", annSummary: "摘要",
       publishBtn: "發布公告", saveDraftBtn: "儲存草稿", cancelEditBtn: "取消編輯", annListTitle: "公告列表", refreshBtn: "重新整理",
       colState: "狀態", colSeverity: "嚴重度", colTitleSummary: "標題／摘要", colTime: "時間", colAction: "操作",
@@ -1634,6 +1763,7 @@
       skillSlugLabel: "Skill Slug (Optional; auto-generated if empty)", skillTtlLabel: "TTL Seconds (0 or empty = persistent)",
       skillContentLabel: "SKILL.md Content (Plain text, Markdown, or npx commands; max 32 KiB)", skillSaveBtn: "Publish / Update Skill", skillFormatNpxBtn: "📦 Format npx Recipe", skillResetBtn: "Reset Form",
       skillsProposalsTitle: "Pending Bot Proposals", skillProposerCol: "Proposed By", skillTtlCol: "Requested TTL", skillsActiveTitle: "Active Circle Skills",
+      resProposalsTitle: "Pending Bot Resource Proposals (Docs / Assets)", resKindCol: "Kind", resActiveTitle: "Active Circle Resources (Docs / 888box Assets)",
       createAnnouncement: "Create Announcement", annTitle: "Title", annSeverity: "Severity", annExpires: "Expires At (Optional)", annDocUrl: "Docs URL (Optional)", annSummary: "Summary",
       publishBtn: "Publish", saveDraftBtn: "Save Draft", cancelEditBtn: "Cancel Edit", annListTitle: "Announcements", refreshBtn: "Refresh",
       colState: "State", colSeverity: "Severity", colTitleSummary: "Title / Summary", colTime: "Time", colAction: "Actions",
@@ -1668,6 +1798,7 @@
       skillSlugLabel: "Skill Slug（任意・空欄で自動生成）", skillTtlLabel: "有効期限 TTL（秒、0/空 = 無期限）",
       skillContentLabel: "SKILL.md 本文（テキスト・Markdown・npx 手順対応、最大 32 KiB）", skillSaveBtn: "スキル公開／更新", skillFormatNpxBtn: "📦 npx 手順を自動整形", skillResetBtn: "フォーム初期化",
       skillsProposalsTitle: "承認待ち Bot 提案", skillProposerCol: "提案者", skillTtlCol: "希望 TTL", skillsActiveTitle: "有効な Circle スキル",
+      resProposalsTitle: "承認待ち Bot リソース提案 (資料 / 素材)", resKindCol: "種別", resActiveTitle: "有効な Circle リソース (資料 / 888box 素材)",
       createAnnouncement: "お知らせ作成", annTitle: "タイトル", annSeverity: "重要度", annExpires: "有効期限（任意）", annDocUrl: "ドキュメント URL（任意）", annSummary: "概要",
       publishBtn: "公開する", saveDraftBtn: "下書き保存", cancelEditBtn: "編集をキャンセル", annListTitle: "お知らせ一覧", refreshBtn: "更新",
       colState: "状態", colSeverity: "重要度", colTitleSummary: "タイトル／概要", colTime: "日時", colAction: "操作",

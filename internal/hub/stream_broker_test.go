@@ -124,3 +124,41 @@ func TestInboxEventBrokerCircleSkillEventsOptInIsolation(t *testing.T) {
 	default:
 	}
 }
+
+func TestInboxEventBrokerCircleResourceEventsOptInIsolation(t *testing.T) {
+	broker := NewInboxEventBroker()
+	legacySub := broker.SubscribeWithCircleEvents("agent-skill-only", "circle-1", 4)
+	resSub := broker.SubscribeWithCircleStream("agent-c1", "circle-1", true, true, 4)
+	otherCircleSub := broker.SubscribeWithCircleStream("agent-c2", "circle-2", true, true, 4)
+	defer broker.Unsubscribe(legacySub)
+	defer broker.Unsubscribe(resSub)
+	defer broker.Unsubscribe(otherCircleSub)
+
+	broker.PublishCircleResourceEvent(CircleResourceEvent{
+		Action:            ResourceEventActionUpdated,
+		CircleID:          "circle-1",
+		Slug:              "arch-notes",
+		Kind:              ResourceKindDoc,
+		Version:           1,
+		CollectionVersion: 3,
+		ContentHash:       "deadbeef",
+		UpdatedAt:         "2026-11-18T00:00:00Z",
+	})
+
+	if legacySub.ResourceEvents != nil {
+		t.Fatal("legacy SubscribeWithCircleEvents must not allocate ResourceEvents channel")
+	}
+	select {
+	case ev := <-resSub.ResourceEvents:
+		if ev.Slug != "arch-notes" || ev.CollectionVersion != 3 || ev.Kind != ResourceKindDoc {
+			t.Fatalf("unexpected circle resource event: %+v", ev)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("resSub did not receive circle resource event")
+	}
+	select {
+	case ev := <-otherCircleSub.ResourceEvents:
+		t.Fatalf("otherCircleSub received cross-circle resource event: %+v", ev)
+	default:
+	}
+}

@@ -6,12 +6,13 @@ import (
 
 // InboxSubscription represents an active streaming subscriber.
 type InboxSubscription struct {
-	AgentID      string
-	CircleID     string
-	C            chan InboxItem
-	CircleEvents chan CircleSkillEvent
-	done         chan struct{}
-	closeOnce    sync.Once
+	AgentID        string
+	CircleID       string
+	C              chan InboxItem
+	CircleEvents   chan CircleSkillEvent
+	ResourceEvents chan CircleResourceEvent
+	done           chan struct{}
+	closeOnce      sync.Once
 }
 
 // Close closes the subscription channel safely.
@@ -38,15 +39,20 @@ func NewInboxEventBroker() *InboxEventBroker {
 
 // Subscribe registers a legacy inbox-only subscriber for incoming inbox items of target agentID.
 func (b *InboxEventBroker) Subscribe(agentID string, bufferSize int) *InboxSubscription {
-	return b.subscribe(agentID, "", false, bufferSize)
+	return b.subscribe(agentID, "", false, false, bufferSize)
 }
 
 // SubscribeWithCircleEvents registers a subscriber for inbox items and capability-gated Circle skill events.
 func (b *InboxEventBroker) SubscribeWithCircleEvents(agentID, circleID string, bufferSize int) *InboxSubscription {
-	return b.subscribe(agentID, circleID, true, bufferSize)
+	return b.subscribe(agentID, circleID, true, false, bufferSize)
 }
 
-func (b *InboxEventBroker) subscribe(agentID, circleID string, withCircleEvents bool, bufferSize int) *InboxSubscription {
+// SubscribeWithCircleStream registers a subscriber for inbox items plus opted-in Circle skill and/or resource events.
+func (b *InboxEventBroker) SubscribeWithCircleStream(agentID, circleID string, withSkillEvents, withResourceEvents bool, bufferSize int) *InboxSubscription {
+	return b.subscribe(agentID, circleID, withSkillEvents, withResourceEvents, bufferSize)
+}
+
+func (b *InboxEventBroker) subscribe(agentID, circleID string, withSkillEvents, withResourceEvents bool, bufferSize int) *InboxSubscription {
 	if bufferSize <= 0 {
 		bufferSize = 64
 	}
@@ -56,8 +62,13 @@ func (b *InboxEventBroker) subscribe(agentID, circleID string, withCircleEvents 
 		C:        make(chan InboxItem, bufferSize),
 		done:     make(chan struct{}),
 	}
-	if withCircleEvents && circleID != "" {
-		sub.CircleEvents = make(chan CircleSkillEvent, bufferSize)
+	if circleID != "" {
+		if withSkillEvents {
+			sub.CircleEvents = make(chan CircleSkillEvent, bufferSize)
+		}
+		if withResourceEvents {
+			sub.ResourceEvents = make(chan CircleResourceEvent, bufferSize)
+		}
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -67,7 +78,7 @@ func (b *InboxEventBroker) subscribe(agentID, circleID string, withCircleEvents 
 		b.subscribers[agentID] = subs
 	}
 	subs[sub] = struct{}{}
-	if sub.CircleEvents != nil {
+	if (sub.CircleEvents != nil || sub.ResourceEvents != nil) && circleID != "" {
 		csubs, ok := b.circleSubscribers[circleID]
 		if !ok {
 			csubs = make(map[*InboxSubscription]struct{})
@@ -91,7 +102,7 @@ func (b *InboxEventBroker) Unsubscribe(sub *InboxSubscription) {
 			delete(b.subscribers, sub.AgentID)
 		}
 	}
-	if sub.CircleEvents != nil && sub.CircleID != "" {
+	if (sub.CircleEvents != nil || sub.ResourceEvents != nil) && sub.CircleID != "" {
 		if csubs, ok := b.circleSubscribers[sub.CircleID]; ok {
 			delete(csubs, sub)
 			if len(csubs) == 0 {
@@ -138,6 +149,30 @@ func (b *InboxEventBroker) PublishCircleSkillEvent(event CircleSkillEvent) {
 		select {
 		case <-sub.done:
 		case sub.CircleEvents <- event:
+		default:
+			// Buffer full, drop without blocking publisher
+		}
+	}
+}
+
+// PublishCircleResourceEvent dispatches metadata-only Circle resource events strictly to opted-in subscribers in event.CircleID.
+func (b *InboxEventBroker) PublishCircleResourceEvent(event CircleResourceEvent) {
+	if event.CircleID == "" {
+		return
+	}
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	subs, ok := b.circleSubscribers[event.CircleID]
+	if !ok || len(subs) == 0 {
+		return
+	}
+	for sub := range subs {
+		if sub.ResourceEvents == nil {
+			continue
+		}
+		select {
+		case <-sub.done:
+		case sub.ResourceEvents <- event:
 		default:
 			// Buffer full, drop without blocking publisher
 		}

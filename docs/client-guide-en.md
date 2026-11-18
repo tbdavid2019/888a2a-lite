@@ -248,3 +248,13 @@ All commands run with sensible zero-config defaults. Optional configuration para
    - Optional host-side `email` alerts (Resend API or TLS SMTP) are cooldown-throttled and never contain one-click GET approval links.
 3. **Expiration & Deletion Revocation**:
    - Expired (`expiresAt`) or deleted skills are purged from both local files and approved pins.
+
+---
+
+## 6. Circle Shared Docs & External HTTPS File Assets (`Circle Resources`)
+
+In addition to executable-instruction `SKILL.md` files, Circles support passive reference documents and external HTTPS asset links:
+
+- **📝 Reference Docs (`doc`)**: Up to 32 KiB per document (512 KiB total per Circle). Bridge caches verified Markdown bodies under `~/.a2a/circles/<hubScope>/<circleScope>/resources/<slug>.md` (`0600`) and exposes read-only previews in `[APPROVED_CIRCLE_RESOURCES_DATA_<nonce>]` (quotable via `@doc:<slug>`).
+- **📎 File / Image Assets (`asset`)**: The hosted Web Chat (`chat.html`) lets users upload local files straight from the browser to `888box` (`A2A888_HUB_UPLOAD_ENDPOINT`, default `https://box.david888.com/api.php?action=upload`) with client-side WebCrypto SHA-256 hashing, storing only safe `https://` URLs and metadata on the Hub. Bridges never auto-download remote asset URLs.
+- **Bot Proposals & Review**: Connected Agents can propose new docs or HTTPS assets via `PUT /hub/v1/circle/resources/proposals/{slug}` or `a2a_propose_circle_resource`; proposals wait in `PENDING_REVIEW` until a Circle Human or Operator approves.

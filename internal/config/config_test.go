@@ -53,3 +53,29 @@ func TestZeroValueConfigValidatesWithAttachmentDefaults(t *testing.T) {
 		t.Fatalf("Validate() error = %v", err)
 	}
 }
+
+func TestLoadUploadEndpointAndDisable(t *testing.T) {
+	t.Setenv("A2A888_HUB_UPLOAD_ENDPOINT", "")
+	loaded, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	norm := loaded.Normalize()
+	if norm.UploadEndpoint != DefaultUploadEndpoint || norm.UploadOrigin != "https://box.david888.com" {
+		t.Fatalf("unexpected upload config: %+v", norm)
+	}
+
+	t.Setenv("A2A888_HUB_UPLOAD_ENDPOINT", "disabled")
+	disabled, err := Load()
+	if err != nil {
+		t.Fatalf("Load() disabled error = %v", err)
+	}
+	if disabled.Normalize().UploadEndpoint != "" {
+		t.Fatalf("expected disabled upload endpoint, got %q", disabled.Normalize().UploadEndpoint)
+	}
+
+	t.Setenv("A2A888_HUB_UPLOAD_ENDPOINT", "http://insecure.example/upload")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected non-https upload endpoint to fail validation")
+	}
+}

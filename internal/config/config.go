@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -30,6 +31,7 @@ const (
 	DefaultEmptyCircleTTL         = 24 * time.Hour
 	DefaultIdleAgentTTL           = 7 * 24 * time.Hour
 	DefaultCircleSkillWritePolicy = "human_or_admin"
+	DefaultUploadEndpoint         = "https://box.david888.com/api.php?action=upload"
 )
 
 type Config struct {
@@ -62,6 +64,8 @@ type Config struct {
 	AllowDynamicCircles    bool
 	CircleDerivationSecret string
 	CircleSkillWritePolicy string
+	UploadEndpoint         string
+	UploadOrigin           string
 }
 
 func Load() (Config, error) {
@@ -95,6 +99,7 @@ func Load() (Config, error) {
 		AllowDynamicCircles:    envBool("A2A888_HUB_ALLOW_DYNAMIC_CIRCLES", false),
 		CircleDerivationSecret: strings.TrimSpace(os.Getenv("A2A888_HUB_CIRCLE_DERIVATION_SECRET")),
 		CircleSkillWritePolicy: strings.ToLower(valueOr("A2A888_HUB_CIRCLE_SKILL_WRITE_POLICY", DefaultCircleSkillWritePolicy)),
+		UploadEndpoint:         valueOr("A2A888_HUB_UPLOAD_ENDPOINT", DefaultUploadEndpoint),
 	}
 	var err error
 	if config.RegistrationTTL, err = envDurationSeconds("A2A888_HUB_REGISTRATION_TTL_SECONDS", config.RegistrationTTL); err != nil {
@@ -202,6 +207,12 @@ func (config Config) Validate() error {
 	if config.CircleSkillWritePolicy != "human_or_admin" && config.CircleSkillWritePolicy != "admin_only" {
 		return fmt.Errorf("circle skill write policy must be %q or %q", "human_or_admin", "admin_only")
 	}
+	if config.UploadEndpoint != "" {
+		parsed, err := url.Parse(config.UploadEndpoint)
+		if err != nil || parsed.Scheme != "https" || parsed.Host == "" || strings.ContainsAny(config.UploadEndpoint, "<>\"'\\\r\n\t ") {
+			return fmt.Errorf("upload endpoint must be a clean https url")
+		}
+	}
 	return nil
 }
 
@@ -211,6 +222,18 @@ func (config Config) Normalize() Config {
 		config.CircleSkillWritePolicy = DefaultCircleSkillWritePolicy
 	} else {
 		config.CircleSkillWritePolicy = strings.ToLower(strings.TrimSpace(config.CircleSkillWritePolicy))
+	}
+	endpoint := strings.TrimSpace(config.UploadEndpoint)
+	if strings.EqualFold(endpoint, "none") || strings.EqualFold(endpoint, "disabled") || endpoint == "" {
+		config.UploadEndpoint = ""
+		config.UploadOrigin = ""
+	} else {
+		config.UploadEndpoint = endpoint
+		if parsed, err := url.Parse(endpoint); err == nil && parsed.Scheme != "" && parsed.Host != "" {
+			config.UploadOrigin = parsed.Scheme + "://" + parsed.Host
+		} else {
+			config.UploadOrigin = ""
+		}
 	}
 	return config
 }

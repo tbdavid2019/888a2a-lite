@@ -175,6 +175,14 @@ func (server *HTTPServer) Handler() http.Handler {
 	mux.HandleFunc("PUT /hub/v1/circle/skills/{slug}", server.putCircleSkill)
 	mux.HandleFunc("DELETE /hub/v1/circle/skills/{slug}", server.deleteCircleSkill)
 	mux.HandleFunc("GET /hub/v1/circle/skills/{slug}/revisions", server.listCircleSkillRevisions)
+	mux.HandleFunc("GET /hub/v1/circle/resources", server.listCircleResources)
+	mux.HandleFunc("GET /hub/v1/circle/resources/proposals", server.listCircleResourceProposals)
+	mux.HandleFunc("PUT /hub/v1/circle/resources/proposals/{slug}", server.submitCircleResourceProposal)
+	mux.HandleFunc("POST /hub/v1/circle/resources/proposals/{slug}/approve", server.approveCircleResourceProposal)
+	mux.HandleFunc("POST /hub/v1/circle/resources/proposals/{slug}/reject", server.rejectCircleResourceProposal)
+	mux.HandleFunc("GET /hub/v1/circle/resources/{slug}", server.getCircleResource)
+	mux.HandleFunc("PUT /hub/v1/circle/resources/{slug}", server.putCircleResource)
+	mux.HandleFunc("DELETE /hub/v1/circle/resources/{slug}", server.deleteCircleResource)
 	mux.HandleFunc("POST /hub/v1/admin/registration", server.setRegistration)
 	mux.HandleFunc("GET /hub/v1/admin/agents", server.adminListAgents)
 	mux.HandleFunc("GET /hub/v1/admin/circles", server.adminListCircles)
@@ -185,6 +193,12 @@ func (server *HTTPServer) Handler() http.Handler {
 	mux.HandleFunc("GET /hub/v1/admin/circles/{circleId}/skills/{slug}/revisions", server.adminListCircleSkillRevisions)
 	mux.HandleFunc("POST /hub/v1/admin/circles/{circleId}/skills/proposals/{slug}/approve", server.adminApproveCircleSkillProposal)
 	mux.HandleFunc("POST /hub/v1/admin/circles/{circleId}/skills/proposals/{slug}/reject", server.adminRejectCircleSkillProposal)
+	mux.HandleFunc("GET /hub/v1/admin/circles/{circleId}/resources", server.adminListCircleResources)
+	mux.HandleFunc("GET /hub/v1/admin/circles/{circleId}/resources/{slug}", server.adminGetCircleResource)
+	mux.HandleFunc("PUT /hub/v1/admin/circles/{circleId}/resources/{slug}", server.adminPutCircleResource)
+	mux.HandleFunc("DELETE /hub/v1/admin/circles/{circleId}/resources/{slug}", server.adminDeleteCircleResource)
+	mux.HandleFunc("POST /hub/v1/admin/circles/{circleId}/resources/proposals/{slug}/approve", server.adminApproveCircleResourceProposal)
+	mux.HandleFunc("POST /hub/v1/admin/circles/{circleId}/resources/proposals/{slug}/reject", server.adminRejectCircleResourceProposal)
 	mux.HandleFunc("POST /hub/v1/admin/circles/{circleId}/disable", server.adminDisableCircle)
 	mux.HandleFunc("POST /hub/v1/admin/circles/{circleId}/keys/rotate", server.adminRotateCircleKey)
 	mux.HandleFunc("POST /hub/v1/admin/circles/{circleId}/keys/{version}/revoke", server.adminRevokeCircleKey)
@@ -328,15 +342,23 @@ func (server *HTTPServer) robotsTxt(w http.ResponseWriter, r *http.Request) {
 }
 
 func serveCSPHTML(w http.ResponseWriter, r *http.Request, body []byte, unavailableMsg string) {
+	serveCSPHTMLWithConnect(w, r, body, unavailableMsg, "")
+}
+
+func serveCSPHTMLWithConnect(w http.ResponseWriter, r *http.Request, body []byte, unavailableMsg, extraConnectOrigin string) {
 	nonceBytes := make([]byte, 18)
 	if _, err := rand.Read(nonceBytes); err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", unavailableMsg)
 		return
 	}
 	nonce := base64.RawURLEncoding.EncodeToString(nonceBytes)
+	connectSrc := "'self'"
+	if trimmed := strings.TrimSpace(extraConnectOrigin); trimmed != "" {
+		connectSrc += " " + trimmed
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'nonce-"+nonce+"'; style-src 'unsafe-inline'; img-src 'self' data:; manifest-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'nonce-"+nonce+"'; style-src 'unsafe-inline'; img-src 'self' data:; manifest-src 'self'; connect-src "+connectSrc+"; base-uri 'none'; form-action 'none'")
 	payload := bytes.ReplaceAll(body, []byte("{{CSP_NONCE}}"), []byte(nonce))
 	writeCompressibleBytes(w, r, payload)
 }
@@ -360,7 +382,8 @@ func (server *HTTPServer) adminAnnouncementsUI(w http.ResponseWriter, r *http.Re
 func (server *HTTPServer) chatUI(w http.ResponseWriter, r *http.Request) {
 	baseURL := safePublicBaseURL(server.baseURLFor(r))
 	body := bytes.ReplaceAll(chatHTML, []byte("{{BASE_URL}}"), []byte(baseURL))
-	serveCSPHTML(w, r, body, "chat interface is unavailable")
+	_, uploadOrigin := server.service.UploadConfig()
+	serveCSPHTMLWithConnect(w, r, body, "chat interface is unavailable", uploadOrigin)
 }
 
 type announcementRequest struct {
@@ -799,10 +822,13 @@ func (server *HTTPServer) streamInbox(w http.ResponseWriter, r *http.Request) {
 	}
 
 	wantsCircleSkills := false
+	wantsCircleResources := false
 	for _, ev := range strings.Split(r.URL.Query().Get("events"), ",") {
-		if strings.TrimSpace(ev) == "circle_skill" {
+		switch strings.TrimSpace(ev) {
+		case "circle_skill":
 			wantsCircleSkills = true
-			break
+		case "circle_resource":
+			wantsCircleResources = true
 		}
 	}
 
@@ -816,8 +842,8 @@ func (server *HTTPServer) streamInbox(w http.ResponseWriter, r *http.Request) {
 	flusher.Flush()
 
 	var sub *hub.InboxSubscription
-	if wantsCircleSkills {
-		sub = server.service.Broker().SubscribeWithCircleEvents(agentID, principal.CircleID, 64)
+	if wantsCircleSkills || wantsCircleResources {
+		sub = server.service.Broker().SubscribeWithCircleStream(agentID, principal.CircleID, wantsCircleSkills, wantsCircleResources, 64)
 	} else {
 		sub = server.service.Broker().Subscribe(agentID, 64)
 	}
@@ -864,6 +890,13 @@ func (server *HTTPServer) streamInbox(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			_, _ = fmt.Fprintf(w, "event: circle_skill\ndata: %s\n\n", data)
+			flusher.Flush()
+		case resEv := <-sub.ResourceEvents:
+			data, jsonErr := json.Marshal(resEv)
+			if jsonErr != nil {
+				continue
+			}
+			_, _ = fmt.Fprintf(w, "event: circle_resource\ndata: %s\n\n", data)
 			flusher.Flush()
 		case <-keepaliveTicker.C:
 			if _, hbErr := server.service.Heartbeat(ctx, agentID, token, ""); hbErr != nil {

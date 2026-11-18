@@ -168,6 +168,7 @@ type TxStore interface {
 	StandardTasks() StandardTaskStore
 	Workflows() WorkflowStore
 	CircleSkills() CircleSkillStore
+	CircleResources() CircleResourceStore
 }
 
 type CircleSkillStore interface {
@@ -182,6 +183,19 @@ type CircleSkillStore interface {
 	ApproveCircleSkillProposal(context.Context, string, string, string, string, hub.CircleSkillDecisionInput, time.Time) (hub.CircleSkill, int64, bool, error)
 	RejectCircleSkillProposal(context.Context, string, string, string, string, hub.CircleSkillDecisionInput, time.Time) (hub.CircleSkillProposal, int64, bool, error)
 	SweepExpiredCircleSkills(context.Context, time.Time) ([]hub.CircleSkillEvent, error)
+}
+
+type CircleResourceStore interface {
+	ListCircleResourceManifest(context.Context, string, string, time.Time) (hub.CircleResourceManifest, error)
+	GetCircleResource(context.Context, string, string, string, time.Time) (hub.CircleResource, error)
+	PutCircleResource(context.Context, hub.CircleResource, int64, string, time.Time) (hub.CircleResource, int64, bool, error)
+	DeleteCircleResource(context.Context, string, string, string, string, int64, string, time.Time) (int64, int64, bool, error)
+	SubmitCircleResourceProposal(context.Context, hub.CircleResourceProposal, string, time.Time) (hub.CircleResourceProposal, int64, bool, bool, error)
+	ListCircleResourceProposals(context.Context, string, string) ([]hub.CircleResourceProposal, error)
+	GetCircleResourceProposal(context.Context, string, string, string) (hub.CircleResourceProposal, error)
+	ApproveCircleResourceProposal(context.Context, string, string, string, string, hub.CircleResourceDecisionInput, time.Time) (hub.CircleResource, int64, bool, error)
+	RejectCircleResourceProposal(context.Context, string, string, string, string, hub.CircleResourceDecisionInput, time.Time) (hub.CircleResourceProposal, int64, bool, error)
+	SweepExpiredCircleResources(context.Context, time.Time) ([]hub.CircleResourceEvent, error)
 }
 
 type Store interface {

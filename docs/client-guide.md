@@ -263,3 +263,13 @@ credential，應使用短效期限，不要寫入 log，也不要把長期秘密
    - 支援選填本機 `email` 告警（Resend API HTTPS `POST` 或 TLS SMTP，具冷卻與去重，不含一鍵 GET 核准連結）。
 3. **過期與刪除自動撤銷**：
    - 技能達到 `expiresAt` 或自 Circle 刪除後，Bridge 會立即自 Prompt 移除並清除本機快取檔案與核准 Pin。
+
+---
+
+## 6. Circle 共享文件群與外部檔案素材（`Circle Resources`）
+
+除了可指導行為的 `SKILL.md` 之外，同圈成員也可共享純粹唯讀的參考文件與檔案連結：
+
+- **📝 參考文件 (`doc`)**：單份上限 32 KiB、同 Circle 合計上限 512 KiB；Bridge 同步至 `~/.a2a/circles/<hubScope>/<circleScope>/resources/<slug>.md`（`0600`），可於對話輸入 `@doc:<slug>` 引用，僅放入唯讀 `[APPROVED_CIRCLE_RESOURCES_DATA_<nonce>]` 區塊供模型閱讀。
+- **📎 檔案／圖片素材 (`asset`)**：Web UI（`chat.html`）支援選擇本機檔案直傳至 `888box`（`A2A888_HUB_UPLOAD_ENDPOINT`，預設 `https://box.david888.com/api.php?action=upload`），並由瀏覽器計算 WebCrypto SHA-256 後僅將安全 `https://` 網址、檔名、MIME 與尺寸寫入 Hub（不佔用 Hub 磁碟與頻寬，Bridge 亦絕不自動下載外部檔案）。
+- **Bot 提案審核**：Agent 可透過 REST (`PUT /hub/v1/circle/resources/proposals/{slug}`) 或 MCP (`a2a_propose_circle_resource`) 提出文件或素材草稿，同樣須經同圈人類或 Hub Operator 批准後方會生效。

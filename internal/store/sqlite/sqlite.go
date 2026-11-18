@@ -129,6 +129,9 @@ func (database *DB) migrate(ctx context.Context) error {
 	if err := migrateCircleSkills(ctx, database.db); err != nil {
 		return err
 	}
+	if err := migrateCircleResources(ctx, database.db); err != nil {
+		return err
+	}
 	for _, column := range []struct{ table, name, ddl string }{
 		{table: "inbox_item", name: "protocol", ddl: "TEXT NOT NULL DEFAULT ''"},
 		{table: "inbox_item", name: "message_id", ddl: "TEXT NOT NULL DEFAULT ''"},

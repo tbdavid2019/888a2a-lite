@@ -2041,6 +2041,146 @@ class CircleSharedSkillsTests(unittest.TestCase):
                 server.shutdown()
                 server.server_close()
 
+    def test_circle_resource_cache_sync_prompt_envelope_and_no_asset_fetch(self):
+        import stat
+        doc_body = "# Architecture\nKeep Hub lightweight."
+        doc_hash = bridge.hashlib.sha256(doc_body.encode("utf-8")).hexdigest()
+        asset_url = "https://box.david888.com/f/wireframe.png"
+        asset_hash = "b" * 64
+        doc_fetch_calls = []
+
+        class MockHub:
+            agent_id = "agent-res-1"
+            hub_url = "https://a2a.test.com"
+            circle_id = "circle-res-test"
+            deleted = False
+
+            def supports_circle_resources(self):
+                return True
+
+            def get_circle_resource_manifest(self, etag=None):
+                if self.deleted:
+                    return "ok", {"collectionVersion": 2, "etag": 'W/"cr-2"', "resources": []}
+                return "ok", {
+                    "collectionVersion": 1,
+                    "etag": 'W/"cr-1"',
+                    "resources": [
+                        {
+                            "slug": "arch-spec",
+                            "kind": "doc",
+                            "title": "Architecture",
+                            "summary": "Keep Hub lightweight.",
+                            "version": 1,
+                            "contentHash": doc_hash,
+                            "byteSize": len(doc_body.encode("utf-8")),
+                            "updatedAt": "2026-11-18T00:00:00Z",
+                        },
+                        {
+                            "slug": "wireframe",
+                            "kind": "asset",
+                            "title": "Wireframe",
+                            "summary": "image/png",
+                            "url": asset_url,
+                            "mediaType": "image/png",
+                            "filename": "wireframe.png",
+                            "sizeBytes": 12345,
+                            "version": 1,
+                            "contentHash": asset_hash,
+                            "byteSize": 0,
+                            "updatedAt": "2026-11-18T00:00:00Z",
+                        },
+                    ],
+                }
+
+            def get_circle_resource(self, slug, etag=None):
+                doc_fetch_calls.append(slug)
+                if slug == "arch-spec":
+                    return "ok", {"slug": "arch-spec", "kind": "doc", "content": doc_body, "contentHash": doc_hash}
+                return "not_found", None
+
+        hub = MockHub()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache = bridge.CircleResourceCache(hub, root=tmpdir)
+            sync_res = cache.sync_from_hub()
+            self.assertEqual(sync_res["status"], "ok")
+            self.assertEqual(doc_fetch_calls, ["arch-spec"])  # asset external URL is NEVER auto-fetched
+
+            doc_file = cache._doc_path("arch-spec")
+            self.assertTrue(os.path.isfile(doc_file))
+            self.assertEqual(stat.S_IMODE(os.stat(doc_file).st_mode), 0o600)
+
+            prompt = bridge.build_task_prompt_envelope(
+                "Please review @doc:arch-spec",
+                circle_resources=cache.resources_for_prompt("Please review @doc:arch-spec"),
+            )
+            self.assertIn("APPROVED_CIRCLE_RESOURCES_DATA_", prompt)
+            self.assertIn("Keep Hub lightweight.", prompt)
+            self.assertIn(asset_url, prompt)
+
+            # Removal cleanup deletes local doc markdown file
+            hub.deleted = True
+            cache.sync_from_hub()
+            self.assertFalse(os.path.lexists(doc_file))
+            self.assertEqual(cache.list_resources(), [])
+
+    def test_mcp_server_circle_resources_tools(self):
+        import io
+        doc_body = "# API Spec\nGET /healthz\n"
+        doc_hash = bridge.hashlib.sha256(doc_body.encode("utf-8")).hexdigest()
+        proposed_calls = []
+
+        class MockHub:
+            agent_id = "agent-mcp-res"
+            hub_url = "https://a2a.test.com"
+            circle_id = "circle-mcp-res"
+
+            def supports_circle_resources(self):
+                return True
+
+            def get_circle_resource_manifest(self, etag=None):
+                return "ok", {
+                    "collectionVersion": 1,
+                    "etag": 'W/"cr-mcp-1"',
+                    "resources": [{
+                        "slug": "api-spec",
+                        "kind": "doc",
+                        "title": "API Spec",
+                        "summary": "Health endpoint",
+                        "version": 1,
+                        "contentHash": doc_hash,
+                        "byteSize": len(doc_body.encode("utf-8")),
+                        "updatedAt": "2026-11-18T00:00:00Z",
+                    }],
+                }
+
+            def get_circle_resource(self, slug, etag=None):
+                return "ok", {"slug": slug, "kind": "doc", "content": doc_body, "contentHash": doc_hash}
+
+            def propose_circle_resource(self, slug, kind="doc", title="", summary="", content="", url="", media_type="", filename="", size_bytes=0, content_hash="", requested_ttl_seconds=None, idempotency_key=None):
+                proposed_calls.append((slug, kind, content, url, requested_ttl_seconds))
+                return {"slug": slug, "kind": kind, "status": "PENDING_REVIEW"}
+
+        hub = MockHub()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            res_cache = bridge.CircleResourceCache(hub, root=tmpdir)
+            in_stream = io.StringIO(
+                json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}) + "\n" +
+                json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "a2a_list_circle_resources", "arguments": {}}}) + "\n" +
+                json.dumps({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "a2a_get_circle_resource", "arguments": {"slug": "api-spec"}}}) + "\n" +
+                json.dumps({"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "a2a_propose_circle_resource", "arguments": {"slug": "mock-png", "kind": "asset", "url": "https://box.david888.com/f/mock.png", "mediaType": "image/png", "requestedTtlSeconds": 3600}}}) + "\n"
+            )
+            out_stream = io.StringIO()
+            with mock.patch("sys.stdin", in_stream):
+                bridge.run_mcp_server(hub, "MCPResAgent", out_stream=out_stream, resource_cache=res_cache)
+            lines = [json.loads(l) for l in out_stream.getvalue().strip().split("\n") if l]
+            self.assertEqual(len(lines), 4)
+            tool_names = {t["name"] for t in lines[0]["result"]["tools"]}
+            self.assertTrue({"a2a_list_circle_resources", "a2a_get_circle_resource", "a2a_propose_circle_resource"}.issubset(tool_names))
+            self.assertIn("api-spec", lines[1]["result"]["content"][0]["text"])
+            self.assertIn("GET /healthz", lines[2]["result"]["content"][0]["text"])
+            self.assertIn("PENDING_REVIEW", lines[3]["result"]["content"][0]["text"])
+            self.assertEqual(proposed_calls, [("mock-png", "asset", "", "https://box.david888.com/f/mock.png", 3600)])
+
 
 def json_item(row):
     import json

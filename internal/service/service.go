@@ -39,6 +39,7 @@ type HubStatus struct {
 	RegistrationEnabled bool   `json:"registrationEnabled"`
 	RegisteredAgents    int    `json:"registeredAgents"`
 	PendingTasks        int    `json:"pendingTasks"`
+	UploadEndpoint      string `json:"uploadEndpoint,omitempty"`
 }
 
 type Service struct {
@@ -80,6 +81,10 @@ func New(database store.Store, cfg config.Config) *Service {
 
 func (service *Service) Broker() *hub.InboxEventBroker {
 	return service.broker
+}
+
+func (service *Service) UploadConfig() (string, string) {
+	return service.config.UploadEndpoint, service.config.UploadOrigin
 }
 
 func (service *Service) Register(ctx context.Context, declaration hub.AgentDeclaration) (hub.AgentIdentity, bool, error) {
@@ -469,7 +474,12 @@ func (service *Service) status(ctx context.Context, circleID string, scoped, inc
 	} else if service.config.SharedKey != "" {
 		mode = "SEMI_OPEN"
 	}
-	status := HubStatus{HubID: policy.HubID, Mode: mode, RegistrationEnabled: policy.RegistrationEnabled}
+	status := HubStatus{
+		HubID:               policy.HubID,
+		Mode:                mode,
+		RegistrationEnabled: policy.RegistrationEnabled,
+		UploadEndpoint:      service.config.UploadEndpoint,
+	}
 	if service.circleResolver.Mode() == circle.ModeMulti {
 		status.AllowDynamicCircles = service.config.AllowDynamicCircles
 	}
@@ -628,6 +638,17 @@ func (service *Service) RunScheduledMaintenance(ctx context.Context) (int64, int
 			if service.broker != nil {
 				service.broker.PublishCircleSkillEvent(ev)
 			}
+		}
+	}
+	if expiredResources, expErr := service.store.CircleResources().SweepExpiredCircleResources(ctx, now); expErr == nil {
+		for _, ev := range expiredResources {
+			service.audit(ctx, hub.Event{
+				Type:         hub.EventCircleResourceExpired,
+				CircleID:     ev.CircleID,
+				ActorAgentID: ev.UpdatedBy,
+				Details:      map[string]any{"slug": ev.Slug, "kind": ev.Kind, "version": ev.Version, "collectionVersion": ev.CollectionVersion, "contentHash": ev.ContentHash},
+			})
+			service.publishCircleResourceEvent(ev)
 		}
 	}
 	return prunedAgents, prunedCircles, nil
@@ -804,14 +825,19 @@ func (service *Service) BuildSystemCard(baseURL string) hub.HubSystemCard {
 			"maxAttachmentParts":           int64(service.config.AttachmentLimits.MaxParts),
 			"maxAttachmentArtifacts":       int64(service.config.AttachmentLimits.MaxArtifacts),
 			"maxAttachmentMetadataBytes":   service.config.AttachmentLimits.MaxMetadataBytes,
-			"maxCircleSkillBytes":          int64(hub.MaxCircleSkillBytes),
-			"maxCircleSkillsPerCircle":     int64(hub.MaxCircleSkillsPerCircle),
-			"maxCircleSkillProposals":      int64(hub.MaxCircleSkillProposalsPerCircle),
+			"maxCircleSkillBytes":             int64(hub.MaxCircleSkillBytes),
+			"maxCircleSkillsPerCircle":        int64(hub.MaxCircleSkillsPerCircle),
+			"maxCircleSkillProposals":         int64(hub.MaxCircleSkillProposalsPerCircle),
+			"maxCircleResourcesPerCircle":     int64(hub.MaxCircleResourcesPerCircle),
+			"maxCircleResourceDocBytes":       int64(hub.MaxCircleResourceDocBytes),
+			"maxCircleResourceDocsTotalBytes": int64(hub.MaxCircleResourceDocsTotalBytes),
+			"maxCircleResourceProposals":      int64(hub.MaxCircleResourceProposalsPerCirc),
 		},
 		Extensions: []hub.SystemCardExtension{
 			{URI: hub.AnnouncementExtensionURI, Required: false},
 			{URI: hub.GroupExtensionURI, Required: false},
 			{URI: hub.CircleSkillExtensionURI, Required: false},
+			{URI: hub.CircleResourceExtensionURI, Required: false},
 		},
 		StandardA2A: hub.StandardA2AStatus{
 			Enabled:         service.config.StandardGatewayEnabled,

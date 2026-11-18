@@ -138,7 +138,7 @@ WHERE c.circle_id <> 'public'
   AND NOT EXISTS (SELECT 1 FROM agent_group g WHERE g.hub_id = c.hub_id AND g.circle_id = c.circle_id AND g.created_at > ?)
   AND NOT EXISTS (SELECT 1 FROM inbox_item i WHERE i.hub_id = c.hub_id AND i.circle_id = c.circle_id AND i.created_at > ?)
   AND NOT EXISTS (SELECT 1 FROM a2a_task t WHERE t.hub_id = c.hub_id AND t.circle_id = c.circle_id AND t.updated_at > ?)
-  AND NOT EXISTS (SELECT 1 FROM event_log e WHERE e.hub_id = c.hub_id AND e.circle_id = c.circle_id AND e.event_type NOT IN ('circle.skill_proposed', 'circle.skill_approved', 'circle.skill_rejected', 'circle.skill_updated', 'circle.skill_deleted', 'circle.skill_expired') AND e.created_at > ?)`,
+  AND NOT EXISTS (SELECT 1 FROM event_log e WHERE e.hub_id = c.hub_id AND e.circle_id = c.circle_id AND e.event_type NOT IN ('circle.skill_proposed', 'circle.skill_approved', 'circle.skill_rejected', 'circle.skill_updated', 'circle.skill_deleted', 'circle.skill_expired', 'circle.resource_proposed', 'circle.resource_approved', 'circle.resource_rejected', 'circle.resource_updated', 'circle.resource_deleted', 'circle.resource_expired') AND e.created_at > ?)`,
 			cutoffStr, cutoffStr, cutoffStr, cutoffStr, cutoffStr)
 		if err != nil {
 			return err
@@ -185,6 +185,10 @@ WHERE c.circle_id <> 'public'
 				`DELETE FROM agent_group WHERE hub_id = ? AND circle_id = ?`,
 				`DELETE FROM inbox_item WHERE hub_id = ? AND circle_id = ?`,
 				`DELETE FROM event_log WHERE hub_id = ? AND circle_id = ?`,
+				`DELETE FROM circle_resource_idempotency WHERE hub_id = ? AND circle_id = ?`,
+				`DELETE FROM circle_resource_proposals WHERE hub_id = ? AND circle_id = ?`,
+				`DELETE FROM circle_resources WHERE hub_id = ? AND circle_id = ?`,
+				`DELETE FROM circle_resource_collections WHERE hub_id = ? AND circle_id = ?`,
 				`DELETE FROM circle_skill_idempotency WHERE hub_id = ? AND circle_id = ?`,
 				`DELETE FROM circle_skill_revisions WHERE hub_id = ? AND circle_id = ?`,
 				`DELETE FROM circle_skill_proposals WHERE hub_id = ? AND circle_id = ?`,

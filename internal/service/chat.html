@@ -884,6 +884,12 @@
           <button id="btn-circle-skills" class="ghost hidden" type="button" style="padding:2px 6px;font-size:12px"><span data-i18n="skillsManageBtn">管理 / + 新增</span><span id="skills-pending-badge" class="skill-badge hidden">0</span></button>
         </div>
         <div id="sidebar-skills-list"></div>
+
+        <div class="group-header" style="margin-top:10px">
+          <span><span data-i18n="circleResourcesBtn">Circle 資源</span> (<span id="sidebar-resource-count">0</span>)</span>
+          <button id="btn-circle-resources" class="ghost hidden" type="button" style="padding:2px 6px;font-size:12px"><span data-i18n="resourcesManageBtn">管理 / + 新增</span><span id="resources-pending-badge" class="skill-badge hidden">0</span></button>
+        </div>
+        <div id="sidebar-resources-list"></div>
       </div>
     </aside>
 
@@ -1045,6 +1051,84 @@
     </div>
   </div>
 
+<div id="resources-modal-backdrop" class="skills-modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="resources-modal-title">
+    <div class="skills-modal">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+        <div>
+          <h2 id="resources-modal-title" style="margin:0;font-size:18px;" data-i18n="resourcesModalTitle">Circle 共享文件與檔案素材</h2>
+          <div id="resources-modal-meta" class="mono-sub"></div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button id="btn-resources-refresh" class="secondary" type="button" style="font-size:12px;" data-i18n="refresh">重整</button>
+          <button id="btn-resources-new-toggle" class="secondary" type="button" style="font-size:12px;" data-i18n="resourcesNewBtn">+ 新增資源</button>
+          <button id="btn-resources-close" class="secondary" type="button" style="font-size:12px;" data-i18n="closeBtn">關閉</button>
+        </div>
+      </div>
+
+      <div id="resources-notice-text" class="skills-notice" data-i18n="resourcesSecurityNotice">
+        共用範圍提醒：參考文件 (doc) 與檔案／圖片素材 (asset) 僅供同 Circle 成員檢視與對話引用，不會作為工具腳本執行。檔案上傳直達外部圖床（888box），Hub 僅保存安全 HTTPS 連結與 SHA-256 中繼資料。
+      </div>
+
+      <div id="resource-editor-card" class="skills-card hidden">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+          <strong id="resource-editor-title" data-i18n="resEditorTitle">新增／更新 Circle 資源</strong>
+          <button id="btn-res-editor-cancel" class="ghost" type="button" style="font-size:12px;" data-i18n="collapseBtn">收起</button>
+        </div>
+        <div class="mode-switch" role="tablist" aria-label="資源類型" style="margin-bottom:0;">
+          <button id="res-mode-doc" class="mode-btn active" type="button" role="tab" aria-selected="true" data-i18n="resModeDoc">📝 參考文件 (doc)</button>
+          <button id="res-mode-asset" class="mode-btn" type="button" role="tab" aria-selected="false" data-i18n="resModeAsset">📎 檔案／圖片素材 (asset)</button>
+        </div>
+        <div id="res-editor-help" class="mono-sub" style="white-space:normal;" data-i18n="resHelpDoc">貼入 Markdown 或純文字參考文件（單份上限 32KB；同 Circle 文件合計上限 512KB），代號留空將自動產生。</div>
+        <div style="display:grid;grid-template-columns:1fr 200px;gap:8px;">
+          <input id="chat-res-slug" type="text" placeholder="代號 slug（選填；留空自動產生）" data-i18n-placeholder="skillSlugPlaceholder" maxlength="64">
+          <select id="chat-res-ttl" aria-label="有效期限">
+            <option value="" data-i18n="skillTtlOptPermanent">有效期限：永久</option>
+            <option value="3600" data-i18n="skillTtlOpt1h">1 小時（3600 秒）</option>
+            <option value="86400" data-i18n="skillTtlOpt24h">24 小時（86400 秒）</option>
+            <option value="604800" data-i18n="skillTtlOpt7d">7 天（604800 秒）</option>
+          </select>
+        </div>
+
+        <div id="res-doc-panel" style="display:flex;flex-direction:column;gap:8px;">
+          <input id="chat-res-doc-title" type="text" placeholder="文件標題（選填）" data-i18n-placeholder="resTitlePlaceholder" maxlength="120">
+          <textarea id="chat-res-doc-content" rows="7" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;" placeholder="輸入 Markdown 規格、筆記或參考文字內容…" data-i18n-placeholder="resDocPlaceholder" maxlength="32768"></textarea>
+        </div>
+
+        <div id="res-asset-panel" class="hidden" style="display:flex;flex-direction:column;gap:8px;">
+          <div id="res-upload-row" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px;border:1px dashed var(--line-strong);border-radius:8px;">
+            <input id="chat-res-file" type="file" style="flex:1;min-width:180px;font-size:12px;">
+            <button id="btn-res-upload" class="secondary" type="button" style="font-size:12px;" data-i18n="resUploadBtn">☁️ 上傳至 888box</button>
+            <span id="chat-res-upload-status" class="mono-sub" style="white-space:normal;"></span>
+          </div>
+          <input id="chat-res-url" type="url" placeholder="https://box.david888.com/...（外部 HTTPS 檔案／圖片網址）" data-i18n-placeholder="resUrlPlaceholder" maxlength="2048">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <input id="chat-res-filename" type="text" placeholder="檔名（如 wireframe.png）" data-i18n-placeholder="resFilenamePlaceholder" maxlength="255">
+            <input id="chat-res-mediatype" type="text" placeholder="MIME（如 image/png, application/pdf）" data-i18n-placeholder="resMediaTypePlaceholder" maxlength="128">
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <input id="chat-res-asset-title" type="text" placeholder="素材標題（選填）" data-i18n-placeholder="resTitlePlaceholder" maxlength="120">
+            <input id="chat-res-asset-summary" type="text" placeholder="簡短說明（選填）" data-i18n-placeholder="resSummaryPlaceholder" maxlength="240">
+          </div>
+        </div>
+
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span id="chat-res-status" class="mono-sub" style="white-space:normal;"></span>
+          <button id="btn-chat-res-submit" type="button" data-i18n="resSubmitBtn">發布至 Circle</button>
+        </div>
+      </div>
+
+      <div>
+        <h3 style="margin:0 0 8px;font-size:14px;"><span data-i18n="chatProposalsHeading">待審 Bot 提案</span> (<span id="chat-res-proposals-count">0</span>)</h3>
+        <div id="chat-res-proposals-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+      </div>
+
+      <div>
+        <h3 style="margin:0 0 8px;font-size:14px;"><span data-i18n="chatResourcesHeading">已分享 Circle 資源</span> (<span id="chat-resources-count">0</span>)</h3>
+        <div id="chat-resources-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+      </div>
+    </div>
+  </div>
+
 <script nonce="{{CSP_NONCE}}">
 (() => {
   "use strict";
@@ -1182,6 +1266,35 @@
       skillMsgApproveFailed: "核准失敗",
       skillMsgRejectFailed: "駁回失敗",
       skillConfirmDelete: "確定從 Circle 刪除技能",
+      circleResourcesBtn: "Circle 資源",
+      resourcesManageBtn: "管理 / + 新增",
+      resourcesModalTitle: "Circle 共享文件與檔案素材",
+      resourcesNewBtn: "+ 新增資源",
+      resourcesSecurityNotice: "共用範圍提醒：參考文件 (doc) 與檔案／圖片素材 (asset) 僅供同 Circle 成員檢視與對話引用，不會作為工具腳本執行。檔案上傳直達外部圖床（888box），Hub 僅保存安全 HTTPS 連結與 SHA-256 中繼資料。",
+      resEditorTitle: "新增／更新 Circle 資源",
+      resModeDoc: "📝 參考文件 (doc)",
+      resModeAsset: "📎 檔案／圖片素材 (asset)",
+      resHelpDoc: "貼入 Markdown 或純文字參考文件（單份上限 32KB；同 Circle 文件合計上限 512KB），代號留空將自動產生。",
+      resHelpAsset: "選擇本機檔案直接上傳至 888box，或貼上現有 HTTPS 檔案／圖片連結（支援圖片、PDF、CSV、純文字與壓縮檔，最大 URL 2KB）。",
+      resTitlePlaceholder: "標題（選填）",
+      resSummaryPlaceholder: "簡短說明（選填）",
+      resDocPlaceholder: "輸入 Markdown 規格、筆記或參考文字內容…",
+      resUploadBtn: "☁️ 上傳至 888box",
+      resUrlPlaceholder: "https://box.david888.com/...（外部 HTTPS 檔案／圖片網址）",
+      resFilenamePlaceholder: "檔名（如 wireframe.png）",
+      resMediaTypePlaceholder: "MIME（如 image/png, application/pdf）",
+      resSubmitBtn: "發布至 Circle",
+      chatResourcesHeading: "已分享 Circle 資源",
+      resourcesEmptyOffline: "連線後即可檢視與共享本 Circle 文件與檔案素材",
+      resourcesEmptyAdd: "尚未新增 Circle 資源 · 點此新增",
+      noResources: "目前此 Circle 尚未分享任何文件或素材。",
+      resUploading: "正在上傳至 888box 並計算 SHA-256…",
+      resUploadSuccess: "上傳成功，已自動填入安全連結與 SHA-256。",
+      resUploadFailed: "上傳失敗",
+      resSelectFileFirst: "請先選擇要上傳的檔案。",
+      resBtnOpenAsset: "開啟檔案 ↗",
+      resBtnQuoteAsset: "引用連結",
+      resConfirmDelete: "確定從 Circle 刪除資源",
     },
     "en": {
       htmlLang: "en",
@@ -1308,6 +1421,35 @@
       skillMsgApproveFailed: "Approval failed",
       skillMsgRejectFailed: "Rejection failed",
       skillConfirmDelete: "Delete Circle skill",
+      circleResourcesBtn: "Circle Resources",
+      resourcesManageBtn: "Manage / + New",
+      resourcesModalTitle: "Circle Shared Docs & File Assets",
+      resourcesNewBtn: "+ New Resource",
+      resourcesSecurityNotice: "Sharing Scope: Reference documents (doc) and file/image assets (asset) stay scoped to this Circle for reading and quoting; Agents never auto-execute them. Uploaded files go straight to 888box while Hub stores only HTTPS links and SHA-256 metadata.",
+      resEditorTitle: "Add / Update Circle Resource",
+      resModeDoc: "📝 Reference Doc (doc)",
+      resModeAsset: "📎 File / Image Asset (asset)",
+      resHelpDoc: "Paste Markdown or plain-text reference docs (max 32KB per doc, 512KB total per Circle). Leave slug blank to auto-generate.",
+      resHelpAsset: "Upload a local file straight to 888box or paste an existing HTTPS URL (supports images, PDF, CSV, text, and archives).",
+      resTitlePlaceholder: "Title (optional)",
+      resSummaryPlaceholder: "Short summary (optional)",
+      resDocPlaceholder: "Paste Markdown specs, notes, or reference documentation…",
+      resUploadBtn: "☁️ Upload to 888box",
+      resUrlPlaceholder: "https://box.david888.com/... (HTTPS asset URL)",
+      resFilenamePlaceholder: "Filename (e.g. wireframe.png)",
+      resMediaTypePlaceholder: "Media Type (e.g. image/png, application/pdf)",
+      resSubmitBtn: "Publish to Circle",
+      chatResourcesHeading: "Active Circle Resources",
+      resourcesEmptyOffline: "Connect to view and share Circle docs and file assets",
+      resourcesEmptyAdd: "No Circle resources yet · Click to add",
+      noResources: "No shared docs or file assets in this Circle yet.",
+      resUploading: "Uploading to 888box & hashing SHA-256…",
+      resUploadSuccess: "Uploaded. Safe HTTPS URL and SHA-256 populated.",
+      resUploadFailed: "Upload failed",
+      resSelectFileFirst: "Choose a file first.",
+      resBtnOpenAsset: "Open File ↗",
+      resBtnQuoteAsset: "Insert Link",
+      resConfirmDelete: "Delete Circle resource",
     },
     "ja": {
       htmlLang: "ja",
@@ -1434,6 +1576,35 @@
       skillMsgApproveFailed: "承認に失敗しました",
       skillMsgRejectFailed: "却下に失敗しました",
       skillConfirmDelete: "Circle スキルを削除しますか",
+      circleResourcesBtn: "Circle リソース",
+      resourcesManageBtn: "管理 / + 新規",
+      resourcesModalTitle: "Circle 共有ドキュメント・ファイル素材",
+      resourcesNewBtn: "+ リソース追加",
+      resourcesSecurityNotice: "共有範囲の案内: 参照ドキュメント (doc) とファイル・画像素材 (asset) は同じ Circle 内で閲覧・引用するためのもので、自動実行はされません。ファイルは 888box へ直接アップロードされ、Hub は HTTPS URL と SHA-256 のみ保存します。",
+      resEditorTitle: "Circle リソースを追加 / 更新",
+      resModeDoc: "📝 参照ドキュメント (doc)",
+      resModeAsset: "📎 ファイル・画像素材 (asset)",
+      resHelpDoc: "Markdown またはテキスト形式の参照ドキュメントを入力（1件 32KB、Circle 合計 512KB まで）。Slug 空欄で自動生成されます。",
+      resHelpAsset: "ローカルファイルを 888box に直接アップロードするか、HTTPS のファイル／画像 URL を貼り付けます（画像・PDF・CSV・テキスト・アーカイブ対応）。",
+      resTitlePlaceholder: "タイトル（任意）",
+      resSummaryPlaceholder: "概要（任意）",
+      resDocPlaceholder: "Markdown 仕様書・メモ・参照テキストを入力…",
+      resUploadBtn: "☁️ 888box にアップロード",
+      resUrlPlaceholder: "https://box.david888.com/...（外部 HTTPS ファイル URL）",
+      resFilenamePlaceholder: "ファイル名（例: wireframe.png）",
+      resMediaTypePlaceholder: "MIME（例: image/png, application/pdf）",
+      resSubmitBtn: "Circle に公開",
+      chatResourcesHeading: "共有中の Circle リソース",
+      resourcesEmptyOffline: "接続すると Circle の資料とファイルを共有できます",
+      resourcesEmptyAdd: "Circle リソース未登録 · クリックして追加",
+      noResources: "この Circle にはまだ共有資料や素材がありません。",
+      resUploading: "888box にアップロードして SHA-256 を計算中…",
+      resUploadSuccess: "アップロード完了。安全な HTTPS URL と SHA-256 を設定しました。",
+      resUploadFailed: "アップロード失敗",
+      resSelectFileFirst: "先にファイルを選択してください。",
+      resBtnOpenAsset: "ファイルを開く ↗",
+      resBtnQuoteAsset: "URL を引用",
+      resConfirmDelete: "Circle リソースを削除しますか",
     },
   };
 
@@ -1497,6 +1668,7 @@
   let sessionEpoch = 0;
   let connectMode = "register";
   let hubMode = "PUBLIC";
+  let hubUploadEndpoint = "";
   let confirmedHashedKeyFor = "";
   const HASHED_CIRCLE_ID_RE = /^circle-[0-9a-f]{32}$/i;
   let peers = [];
@@ -1520,6 +1692,13 @@
   let circleSkillCollectionVersion = 0;
   let skillEditorMode = "doc";
   let circleSkillExpectedVer = 0;
+  let circleResources = [];
+  let circleResourceProposals = [];
+  let circleResourceCollectionVersion = 0;
+  let resEditorMode = "doc";
+  let circleResExpectedVer = 0;
+  let circleResContentHash = "";
+  let circleResSizeBytes = 0;
   let notifiedProposalKeys = new Set();
   const unreadCounts = {};
 
@@ -1572,6 +1751,12 @@
     }
     if ($("skills-modal-backdrop") && !$("skills-modal-backdrop").classList.contains("hidden")) {
       renderSkillsModal();
+    }
+    if (typeof setResourceEditorMode === "function") {
+      setResourceEditorMode(typeof resEditorMode === "string" ? resEditorMode : "doc");
+    }
+    if ($("resources-modal-backdrop") && !$("resources-modal-backdrop").classList.contains("hidden")) {
+      renderResourcesModal();
     }
   }
 
@@ -1707,6 +1892,8 @@
     try {
       const st = await hubFetch("/hub/v1/status", {}, null);
       hubMode = st.mode || "PUBLIC";
+      hubUploadEndpoint = st.uploadEndpoint || "";
+      if ($("res-upload-row")) $("res-upload-row").classList.toggle("hidden", !hubUploadEndpoint);
       if (!session) {
         $("hub-mode-pill").textContent = `${hubMode} · ${st.registeredAgents || 0} Agents`;
       }
@@ -1759,10 +1946,15 @@
     $("btn-disconnect").classList.add("hidden");
     $("btn-circle-skills").classList.add("hidden");
     $("skills-modal-backdrop").classList.add("hidden");
+    $("btn-circle-resources").classList.add("hidden");
+    $("resources-modal-backdrop").classList.add("hidden");
     $("skill-toast").classList.remove("visible");
     circleSkills = [];
     circleSkillProposals = [];
     circleSkillCollectionVersion = 0;
+    circleResources = [];
+    circleResourceProposals = [];
+    circleResourceCollectionVersion = 0;
     updateSkillsBadgeAndTitle();
     $("circle-pill").classList.add("hidden");
     $("connect-strip").classList.remove("hidden");
@@ -1810,6 +2002,8 @@
     $("self-actions").classList.remove("hidden");
     $("btn-disconnect").classList.remove("hidden");
     $("btn-circle-skills").classList.remove("hidden");
+    $("btn-circle-resources").classList.remove("hidden");
+    if ($("res-upload-row")) $("res-upload-row").classList.toggle("hidden", !hubUploadEndpoint);
     $("circle-pill").textContent = session.circleId && session.circleId !== "public" ? `Private · ${session.circleId}` : "Public Circle";
     $("circle-pill").className = `pill ${session.circleId && session.circleId !== "public" ? "accent" : ""}`.trim();
     $("circle-pill").classList.remove("hidden");
@@ -1820,6 +2014,7 @@
     renderSavedProfilesPicker();
     renderSidebar();
     refreshCircleSkills(myEpoch).catch(() => {});
+    refreshCircleResources(myEpoch).catch(() => {});
     await catchupInbox(myEpoch);
     if (myEpoch !== sessionEpoch) return;
 
@@ -2101,6 +2296,58 @@
           `;
           btn.addEventListener("click", openSkillsModal);
           skillsEl.append(btn);
+        });
+      }
+    }
+
+    const pendingResProps = circleResourceProposals.filter((p) => p.status === "PENDING_REVIEW" && (!q || p.slug.toLowerCase().includes(q) || (p.title || "").toLowerCase().includes(q) || (p.proposedBy || "").toLowerCase().includes(q)));
+    const filteredRes = circleResources.filter((r) => !q || r.slug.toLowerCase().includes(q) || (r.title || "").toLowerCase().includes(q) || (r.filename || "").toLowerCase().includes(q));
+    if ($("sidebar-resource-count")) {
+      $("sidebar-resource-count").textContent = String(filteredRes.length + pendingResProps.length);
+    }
+    const resEl = $("sidebar-resources-list");
+    if (resEl) {
+      resEl.replaceChildren();
+      if (!session) {
+        const empty = document.createElement("div");
+        empty.className = "mono-sub";
+        empty.style.padding = "6px 8px";
+        empty.textContent = t("resourcesEmptyOffline");
+        resEl.append(empty);
+      } else if (!pendingResProps.length && !filteredRes.length) {
+        const empty = document.createElement("button");
+        empty.type = "button";
+        empty.className = "roster-item";
+        empty.innerHTML = `<div class="roster-main"><div class="mono-sub">${esc(t("resourcesEmptyAdd"))}</div></div>`;
+        empty.addEventListener("click", openResourcesModal);
+        resEl.append(empty);
+      } else {
+        pendingResProps.forEach((p) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "roster-item";
+          btn.innerHTML = `
+            <div class="roster-main">
+              <div class="roster-title"><span class="roster-title-text">@doc:${esc(p.slug)}</span></div>
+              <div class="mono-sub">${esc(p.kind || "doc")} · ${esc(t("skillsPendingSub"))} · ${esc(p.proposedBy || "agent")}</div>
+            </div>
+            <span class="unread-badge warn">${esc(t("skillsPendingTag"))}</span>
+          `;
+          btn.addEventListener("click", openResourcesModal);
+          resEl.append(btn);
+        });
+        filteredRes.forEach((r) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "roster-item";
+          btn.innerHTML = `
+            <div class="roster-main">
+              <div class="roster-title"><span class="roster-title-text">${esc(r.kind === "asset" ? "📎" : "📝")} ${esc(r.slug)}</span></div>
+              <div class="mono-sub">${esc(r.kind || "doc")} · v${esc(String(r.version || 1))} · ${esc(r.expiresAt ? t("skillsTtlLimited") : t("skillsTtlPermanent"))}</div>
+            </div>
+          `;
+          btn.addEventListener("click", openResourcesModal);
+          resEl.append(btn);
         });
       }
     }
@@ -2399,11 +2646,13 @@
         try { await handleIncomingItem(JSON.parse(evtData.join("\n")), expectedEpoch); } catch {}
       } else if (evtData.length > 0 && evtType === "circle_skill") {
         try { await handleCircleSkillSSE(JSON.parse(evtData.join("\n")), expectedEpoch); } catch {}
+      } else if (evtData.length > 0 && evtType === "circle_resource") {
+        try { await handleCircleResourceSSE(JSON.parse(evtData.join("\n")), expectedEpoch); } catch {}
       }
     };
 
     try {
-      const resp = await fetch(`/hub/v1/agents/${encodeURIComponent(currentSession.agentId)}/inbox/stream?afterSequence=${lastSeq}&events=task,circle_skill`, {
+      const resp = await fetch(`/hub/v1/agents/${encodeURIComponent(currentSession.agentId)}/inbox/stream?afterSequence=${lastSeq}&events=task,circle_skill,circle_resource`, {
         headers: {
           "Accept": "text/event-stream",
           "X-Agent-ID": currentSession.agentId,
@@ -2586,7 +2835,10 @@
     const skillMatches = circleSkills
       .filter((s) => (`skill:${s.slug}`).toLowerCase().includes(query) || (s.title || "").toLowerCase().includes(query))
       .map((s) => ({ kind: "skill", slug: s.slug, displayName: `skill:${s.slug}`, agentId: s.slug, state: `v${s.version}` }));
-    mentionItems = [...peerMatches, ...skillMatches].slice(0, 8);
+    const docMatches = circleResources
+      .filter((r) => (`doc:${r.slug}`).toLowerCase().includes(query) || (r.title || "").toLowerCase().includes(query))
+      .map((r) => ({ kind: "resource", slug: r.slug, displayName: `doc:${r.slug}`, agentId: r.slug, state: `${r.kind || "doc"}·v${r.version}` }));
+    mentionItems = [...peerMatches, ...skillMatches, ...docMatches].slice(0, 8);
     if (!mentionItems.length) {
       hideMentionPopover();
       return;
@@ -2835,14 +3087,21 @@
   }
 
   function updateSkillsBadgeAndTitle() {
-    const pending = circleSkillProposals.filter((p) => p.status === "PENDING_REVIEW");
+    const pendingSkills = circleSkillProposals.filter((p) => p.status === "PENDING_REVIEW");
+    const pendingRes = circleResourceProposals.filter((p) => p.status === "PENDING_REVIEW");
     const badge = $("skills-pending-badge");
     if (badge) {
-      badge.textContent = String(pending.length);
-      badge.classList.toggle("hidden", pending.length === 0);
+      badge.textContent = String(pendingSkills.length);
+      badge.classList.toggle("hidden", pendingSkills.length === 0);
     }
+    const resBadge = $("resources-pending-badge");
+    if (resBadge) {
+      resBadge.textContent = String(pendingRes.length);
+      resBadge.classList.toggle("hidden", pendingRes.length === 0);
+    }
+    const totalPending = pendingSkills.length + pendingRes.length;
     const baseTitle = (I18N[currentLang] && I18N[currentLang].docTitle) || "888a2a-lite · Agent 對話大廳";
-    document.title = pending.length > 0 ? `[${pending.length} ${t("titlePendingBadge")}] ${baseTitle}` : baseTitle;
+    document.title = totalPending > 0 ? `[${totalPending} ${t("titlePendingBadge")}] ${baseTitle}` : baseTitle;
     const notifyBtn = $("btn-skill-desktop-notify");
     if (notifyBtn) {
       if (!("Notification" in window)) {
@@ -3226,6 +3485,447 @@
       renderSkillsModal();
     } catch (err) {
       $("chat-skill-status").textContent = err.message || t("skillMsgPublishFailed");
+    }
+  });
+
+  function safeHttpsUrl(raw) {
+    try {
+      const u = new URL(String(raw || "").trim());
+      return u.protocol === "https:" ? u.toString() : "";
+    } catch {
+      return "";
+    }
+  }
+
+  async function sha256HexFile(file) {
+    if (!window.crypto || !window.crypto.subtle) return "";
+    const buf = await file.arrayBuffer();
+    const digest = await window.crypto.subtle.digest("SHA-256", buf);
+    return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  function inferMediaTypeFromFile(file) {
+    if (file && file.type) return file.type;
+    const name = String(file?.name || "").toLowerCase();
+    if (name.endsWith(".png")) return "image/png";
+    if (name.endsWith(".jpg") || name.endsWith(".jpeg")) return "image/jpeg";
+    if (name.endsWith(".webp")) return "image/webp";
+    if (name.endsWith(".gif")) return "image/gif";
+    if (name.endsWith(".pdf")) return "application/pdf";
+    if (name.endsWith(".csv")) return "text/csv";
+    if (name.endsWith(".txt") || name.endsWith(".md")) return "text/plain";
+    if (name.endsWith(".zip")) return "application/zip";
+    if (name.endsWith(".gz")) return "application/gzip";
+    return "application/octet-stream";
+  }
+
+  function deriveResourceSlug(seedText, prefix = "res") {
+    const clean = String(seedText || "")
+      .toLowerCase()
+      .replace(/\.[a-z0-9]{1,8}$/, "")
+      .replace(/[^a-z0-9_-]+/g, "-")
+      .replace(/^[-_]+|[-_]+$/g, "")
+      .slice(0, 48);
+    if (clean && /^[a-z0-9][a-z0-9_-]{0,63}$/.test(clean)) return clean;
+    return `${prefix}-${Date.now().toString(36)}`;
+  }
+
+  function setResourceEditorMode(mode) {
+    resEditorMode = mode === "asset" ? "asset" : "doc";
+    const isAsset = resEditorMode === "asset";
+    $("res-mode-doc").classList.toggle("active", !isAsset);
+    $("res-mode-doc").setAttribute("aria-selected", String(!isAsset));
+    $("res-mode-asset").classList.toggle("active", isAsset);
+    $("res-mode-asset").setAttribute("aria-selected", String(isAsset));
+    $("res-doc-panel").classList.toggle("hidden", isAsset);
+    $("res-asset-panel").classList.toggle("hidden", !isAsset);
+    $("res-editor-help").textContent = t(isAsset ? "resHelpAsset" : "resHelpDoc");
+    if ($("res-upload-row")) $("res-upload-row").classList.toggle("hidden", !hubUploadEndpoint);
+  }
+
+  function notifyResourceProposal(ev) {
+    if (!ev || (ev.action !== "proposal_created" && ev.action !== "proposal_updated")) return;
+    const key = `res:${ev.slug}:${ev.contentHash || ev.updatedAt || ""}`;
+    if (notifiedProposalKeys.has(key)) return;
+    trackBounded(notifiedProposalKeys, key);
+    const actor = ev.updatedBy || "Agent";
+    const hashShort = String(ev.contentHash || "").slice(0, 10);
+    let msg = `${actor} 提議${ev.action === "proposal_updated" ? "更新" : "新增"} Circle 資源「${ev.slug}」(${hashShort})，請檢視後批准。`;
+    let notifTitle = "Circle 待審資源提案";
+    if (currentLang === "en") {
+      msg = `${actor} proposed ${ev.action === "proposal_updated" ? "updating" : "adding"} Circle resource "${ev.slug}" (${hashShort}). Please review and approve.`;
+      notifTitle = "Circle Resource Proposal Pending";
+    } else if (currentLang === "ja") {
+      msg = `${actor} が Circle リソース「${ev.slug}」(${hashShort}) の${ev.action === "proposal_updated" ? "更新" : "追加"}を提案しました。確認して承認してください。`;
+      notifTitle = "Circle リソース提案（承認待ち）";
+    }
+    $("skill-toast-text").textContent = msg;
+    $("skill-toast").classList.add("visible");
+    if ("Notification" in window && Notification.permission === "granted") {
+      try {
+        const n = new Notification(notifTitle, { body: msg, tag: `circle-resource-${ev.slug}` });
+        n.onclick = () => {
+          window.focus();
+          openResourcesModal();
+          n.close();
+        };
+      } catch {}
+    }
+  }
+
+  async function refreshCircleResources(expectedEpoch = sessionEpoch) {
+    if (!session || expectedEpoch !== sessionEpoch) return;
+    const current = session;
+    const [manifest, propResp] = await Promise.all([
+      hubFetch("/hub/v1/circle/resources", {}, current),
+      hubFetch("/hub/v1/circle/resources/proposals", {}, current),
+    ]);
+    if (expectedEpoch !== sessionEpoch || session !== current) return;
+    circleResources = manifest.resources || [];
+    circleResourceCollectionVersion = manifest.collectionVersion || 0;
+    circleResourceProposals = propResp.proposals || [];
+    updateSkillsBadgeAndTitle();
+    renderSidebar();
+    if (!$("resources-modal-backdrop").classList.contains("hidden")) renderResourcesModal();
+  }
+
+  async function handleCircleResourceSSE(ev, expectedEpoch = sessionEpoch) {
+    await refreshCircleResources(expectedEpoch);
+    notifyResourceProposal(ev);
+  }
+
+  function renderResourcesModal() {
+    $("resources-modal-meta").textContent = session
+      ? `Circle: ${session.circleId || "public"} · Manifest v${circleResourceCollectionVersion}`
+      : "";
+    if ($("res-upload-row")) $("res-upload-row").classList.toggle("hidden", !hubUploadEndpoint);
+
+    const pending = circleResourceProposals.filter((p) => p.status === "PENDING_REVIEW");
+    $("chat-res-proposals-count").textContent = String(pending.length);
+    const propList = $("chat-res-proposals-list");
+    propList.replaceChildren();
+    if (!pending.length) {
+      const empty = document.createElement("div");
+      empty.className = "mono-sub";
+      empty.textContent = t("noProposals");
+      propList.append(empty);
+    } else {
+      pending.forEach((p) => {
+        const card = document.createElement("div");
+        card.className = "skills-card";
+        const top = document.createElement("div");
+        top.style.cssText = "display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;";
+        const titleEl = document.createElement("strong");
+        titleEl.textContent = `[${p.kind || "doc"}] ${p.slug} · ${p.title || p.slug}`;
+        const metaEl = document.createElement("span");
+        metaEl.className = "mono-sub";
+        metaEl.textContent = `${t("proposalProposer")}: ${p.proposedBy} · sha256:${(p.contentHash || "").slice(0, 12)}`;
+        top.append(titleEl, metaEl);
+
+        const bodyPre = document.createElement("pre");
+        bodyPre.className = "skills-pre";
+        bodyPre.textContent = p.kind === "asset"
+          ? `${p.filename || p.slug} (${p.mediaType || "asset"}${p.sizeBytes ? `, ${p.sizeBytes} bytes` : ""})\n${p.url || ""}`
+          : (p.content || "");
+
+        const controls = document.createElement("div");
+        controls.style.cssText = "display:flex;gap:8px;align-items:center;flex-wrap:wrap;";
+        const ttlSel = document.createElement("select");
+        ttlSel.innerHTML = `<option value="">${esc(t("ttlKeepProposal"))}</option><option value="0">${esc(t("ttlSetPermanent"))}</option><option value="3600">${esc(t("ttl1hShort"))}</option><option value="86400">${esc(t("ttl24hShort"))}</option><option value="604800">${esc(t("ttl7dShort"))}</option>`;
+
+        const btnApprove = document.createElement("button");
+        btnApprove.type = "button";
+        btnApprove.textContent = t("btnApprovePublish");
+        btnApprove.addEventListener("click", async () => {
+          const existing = circleResources.find((r) => r.slug === p.slug);
+          const payload = {
+            expectedVersion: existing ? Number(existing.version) : 0,
+            idempotencyKey: skillIdemKey("ui-res-app"),
+          };
+          if (ttlSel.value !== "") payload.ttlSeconds = Number(ttlSel.value);
+          try {
+            await hubFetch(`/hub/v1/circle/resources/proposals/${encodeURIComponent(p.slug)}/approve`, {
+              method: "POST",
+              body: JSON.stringify(payload),
+            }, session);
+            await refreshCircleResources();
+            renderResourcesModal();
+          } catch (err) {
+            alert(err.message || t("skillMsgApproveFailed"));
+          }
+        });
+
+        const btnReject = document.createElement("button");
+        btnReject.type = "button";
+        btnReject.className = "secondary";
+        btnReject.textContent = t("btnReject");
+        btnReject.addEventListener("click", async () => {
+          try {
+            await hubFetch(`/hub/v1/circle/resources/proposals/${encodeURIComponent(p.slug)}/reject`, {
+              method: "POST",
+              body: JSON.stringify({ expectedVersion: 0, reason: "rejected in web chat", idempotencyKey: skillIdemKey("ui-res-rej") }),
+            }, session);
+            await refreshCircleResources();
+            renderResourcesModal();
+          } catch (err) {
+            alert(err.message || t("skillMsgRejectFailed"));
+          }
+        });
+
+        controls.append(ttlSel, btnApprove, btnReject);
+        card.append(top, bodyPre, controls);
+        propList.append(card);
+      });
+    }
+
+    $("chat-resources-count").textContent = String(circleResources.length);
+    const list = $("chat-resources-list");
+    list.replaceChildren();
+    if (!circleResources.length) {
+      const empty = document.createElement("div");
+      empty.className = "mono-sub";
+      empty.textContent = t("noResources");
+      list.append(empty);
+      return;
+    }
+
+    circleResources.forEach((r) => {
+      const card = document.createElement("div");
+      card.className = "skills-card";
+      const top = document.createElement("div");
+      top.style.cssText = "display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;";
+      const titleEl = document.createElement("strong");
+      titleEl.textContent = `[${r.kind || "doc"}] ${r.slug} · ${r.title || r.slug} (v${r.version})`;
+      const metaEl = document.createElement("span");
+      metaEl.className = "mono-sub";
+      const sizeText = r.kind === "asset" && r.sizeBytes ? ` · ${r.sizeBytes}B` : (r.byteSize ? ` · ${r.byteSize}B` : "");
+      metaEl.textContent = `sha256:${(r.contentHash || "").slice(0, 12)}${sizeText} · ${r.expiresAt ? `${t("ttlExpiresPrefix")} ${new Date(r.expiresAt).toLocaleString()}` : t("skillsTtlPermanent")}`;
+      top.append(titleEl, metaEl);
+
+      const bodyPre = document.createElement("pre");
+      bodyPre.className = "skills-pre hidden";
+
+      const btns = document.createElement("div");
+      btns.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;align-items:center;";
+
+      if (r.kind === "asset") {
+        const safeHref = safeHttpsUrl(r.url);
+        if (safeHref) {
+          const openLink = document.createElement("a");
+          openLink.href = safeHref;
+          openLink.target = "_blank";
+          openLink.rel = "noopener noreferrer";
+          openLink.className = "secondary";
+          openLink.style.cssText = "font-size:12px;padding:6px 10px;border-radius:8px;border:1px solid var(--line-strong);text-decoration:none;color:var(--ink);";
+          openLink.textContent = `${t("resBtnOpenAsset")} (${r.filename || r.mediaType || "HTTPS"})`;
+          btns.append(openLink);
+        }
+        const btnQuoteAsset = document.createElement("button");
+        btnQuoteAsset.type = "button";
+        btnQuoteAsset.className = "secondary";
+        btnQuoteAsset.textContent = `${t("resBtnQuoteAsset")} @doc:${r.slug}`;
+        btnQuoteAsset.addEventListener("click", () => {
+          const inp = $("composer-input");
+          const suffix = safeHref ? `@doc:${r.slug} (${safeHref}) ` : `@doc:${r.slug} `;
+          inp.value = `${inp.value ? inp.value + " " : ""}${suffix}`;
+          $("resources-modal-backdrop").classList.add("hidden");
+          inp.focus();
+        });
+        btns.append(btnQuoteAsset);
+      } else {
+        const btnView = document.createElement("button");
+        btnView.type = "button";
+        btnView.className = "secondary";
+        btnView.textContent = t("btnViewContent");
+        btnView.addEventListener("click", async () => {
+          if (!bodyPre.classList.contains("hidden")) {
+            bodyPre.classList.add("hidden");
+            btnView.textContent = t("btnViewContent");
+            return;
+          }
+          const full = await hubFetch(`/hub/v1/circle/resources/${encodeURIComponent(r.slug)}`, {}, session);
+          bodyPre.textContent = full.content || "";
+          bodyPre.classList.remove("hidden");
+          btnView.textContent = t("btnHideContent");
+        });
+
+        const btnInsert = document.createElement("button");
+        btnInsert.type = "button";
+        btnInsert.className = "secondary";
+        btnInsert.textContent = `${t("btnQuoteSkill")} @doc:${r.slug}`;
+        btnInsert.addEventListener("click", () => {
+          const inp = $("composer-input");
+          inp.value = `${inp.value ? inp.value + " " : ""}@doc:${r.slug} `;
+          $("resources-modal-backdrop").classList.add("hidden");
+          inp.focus();
+        });
+        btns.append(btnView, btnInsert);
+      }
+
+      const btnEdit = document.createElement("button");
+      btnEdit.type = "button";
+      btnEdit.className = "secondary";
+      btnEdit.textContent = t("btnEdit");
+      btnEdit.addEventListener("click", async () => {
+        const full = await hubFetch(`/hub/v1/circle/resources/${encodeURIComponent(r.slug)}`, {}, session);
+        circleResExpectedVer = Number(full.version || r.version || 0);
+        circleResContentHash = full.contentHash || "";
+        circleResSizeBytes = Number(full.sizeBytes || 0);
+        $("chat-res-slug").value = full.slug;
+        $("chat-res-slug").readOnly = true;
+        $("chat-res-ttl").value = full.ttlSeconds ? String(full.ttlSeconds) : "";
+        if (full.kind === "asset") {
+          setResourceEditorMode("asset");
+          $("chat-res-url").value = full.url || "";
+          $("chat-res-filename").value = full.filename || "";
+          $("chat-res-mediatype").value = full.mediaType || "";
+          $("chat-res-asset-title").value = full.title || "";
+          $("chat-res-asset-summary").value = full.summary || "";
+        } else {
+          setResourceEditorMode("doc");
+          $("chat-res-doc-title").value = full.title || "";
+          $("chat-res-doc-content").value = full.content || "";
+        }
+        $("resource-editor-card").classList.remove("hidden");
+      });
+
+      const btnDel = document.createElement("button");
+      btnDel.type = "button";
+      btnDel.className = "secondary";
+      btnDel.textContent = t("btnDelete");
+      btnDel.addEventListener("click", async () => {
+        if (!session || !confirm(`${t("resConfirmDelete")} ${r.slug} (v${r.version})?`)) return;
+        await hubFetch(`/hub/v1/circle/resources/${encodeURIComponent(r.slug)}`, {
+          method: "DELETE",
+          body: JSON.stringify({ expectedVersion: Number(r.version), idempotencyKey: skillIdemKey("ui-res-del") }),
+        }, session);
+        await refreshCircleResources();
+        renderResourcesModal();
+      });
+
+      btns.append(btnEdit, btnDel);
+      card.append(top, btns, bodyPre);
+      list.append(card);
+    });
+  }
+
+  function openResourcesModal() {
+    if (!session) return;
+    $("resources-modal-backdrop").classList.remove("hidden");
+    renderResourcesModal();
+    refreshCircleResources().catch(() => {});
+  }
+
+  $("btn-circle-resources").addEventListener("click", openResourcesModal);
+  $("btn-resources-close").addEventListener("click", () => $("resources-modal-backdrop").classList.add("hidden"));
+  $("resources-modal-backdrop").addEventListener("click", (e) => {
+    if (e.target === $("resources-modal-backdrop")) $("resources-modal-backdrop").classList.add("hidden");
+  });
+  $("btn-resources-refresh").addEventListener("click", () => {
+    refreshCircleResources().then(() => renderResourcesModal()).catch(() => {});
+  });
+  $("res-mode-doc").addEventListener("click", () => setResourceEditorMode("doc"));
+  $("res-mode-asset").addEventListener("click", () => setResourceEditorMode("asset"));
+
+  $("btn-resources-new-toggle").addEventListener("click", () => {
+    circleResExpectedVer = 0;
+    circleResContentHash = "";
+    circleResSizeBytes = 0;
+    $("chat-res-slug").value = "";
+    $("chat-res-slug").readOnly = false;
+    $("chat-res-ttl").value = "";
+    $("chat-res-doc-title").value = "";
+    $("chat-res-doc-content").value = "";
+    $("chat-res-url").value = "";
+    $("chat-res-filename").value = "";
+    $("chat-res-mediatype").value = "";
+    $("chat-res-asset-title").value = "";
+    $("chat-res-asset-summary").value = "";
+    $("chat-res-upload-status").textContent = "";
+    $("chat-res-status").textContent = "";
+    if ($("chat-res-file")) $("chat-res-file").value = "";
+    setResourceEditorMode("doc");
+    $("resource-editor-card").classList.toggle("hidden");
+  });
+  $("btn-res-editor-cancel").addEventListener("click", () => $("resource-editor-card").classList.add("hidden"));
+
+  $("btn-res-upload").addEventListener("click", async () => {
+    if (!hubUploadEndpoint) return;
+    const fileInput = $("chat-res-file");
+    const file = fileInput && fileInput.files ? fileInput.files[0] : null;
+    if (!file) {
+      $("chat-res-upload-status").textContent = t("resSelectFileFirst");
+      return;
+    }
+    $("btn-res-upload").disabled = true;
+    $("chat-res-upload-status").textContent = t("resUploading");
+    try {
+      const digest = await sha256HexFile(file);
+      const fd = new FormData();
+      fd.append("file", file, file.name);
+      const titleVal = $("chat-res-asset-title").value.trim();
+      if (titleVal) fd.append("title", titleVal);
+      const resp = await fetch(hubUploadEndpoint, { method: "POST", body: fd });
+      const payload = await resp.json().catch(() => ({}));
+      const uploadedUrl = safeHttpsUrl(payload?.data?.url || payload?.data?.file_url || payload?.url || "");
+      if (!resp.ok || payload?.result === "error" || !uploadedUrl) {
+        throw new Error(payload?.message || payload?.error || `HTTP ${resp.status}`);
+      }
+      circleResContentHash = digest;
+      circleResSizeBytes = Number(file.size || 0);
+      $("chat-res-url").value = uploadedUrl;
+      $("chat-res-filename").value = file.name || "";
+      $("chat-res-mediatype").value = inferMediaTypeFromFile(file);
+      if (!$("chat-res-slug").value.trim()) {
+        $("chat-res-slug").value = deriveResourceSlug(file.name, "asset");
+      }
+      $("chat-res-upload-status").textContent = t("resUploadSuccess");
+    } catch (err) {
+      $("chat-res-upload-status").textContent = `${t("resUploadFailed")}: ${err?.message || "error"}`;
+    } finally {
+      $("btn-res-upload").disabled = false;
+    }
+  });
+
+  $("btn-chat-res-submit").addEventListener("click", async () => {
+    if (!session) return;
+    const isAsset = resEditorMode === "asset";
+    const ttlRaw = $("chat-res-ttl").value;
+    let slug = $("chat-res-slug").value.trim().toLowerCase();
+    const body = {
+      kind: isAsset ? "asset" : "doc",
+      expectedVersion: circleResExpectedVer,
+      idempotencyKey: skillIdemKey("ui-res-put"),
+    };
+    if (ttlRaw !== "") body.ttlSeconds = Number(ttlRaw);
+    if (isAsset) {
+      body.url = $("chat-res-url").value.trim();
+      body.filename = $("chat-res-filename").value.trim();
+      body.mediaType = $("chat-res-mediatype").value.trim();
+      body.title = $("chat-res-asset-title").value.trim();
+      body.summary = $("chat-res-asset-summary").value.trim();
+      if (circleResContentHash) body.contentHash = circleResContentHash;
+      if (circleResSizeBytes > 0) body.sizeBytes = circleResSizeBytes;
+      if (!slug) {
+        slug = deriveResourceSlug(body.filename || body.title || "asset", "asset");
+        $("chat-res-slug").value = slug;
+      }
+    } else {
+      body.title = $("chat-res-doc-title").value.trim();
+      body.content = $("chat-res-doc-content").value;
+      if (!slug) {
+        slug = deriveResourceSlug(body.title || body.content.split("\n")[0] || "doc", "doc");
+        $("chat-res-slug").value = slug;
+      }
+    }
+    try {
+      await hubFetch(`/hub/v1/circle/resources/${encodeURIComponent(slug)}`, { method: "PUT", body: JSON.stringify(body) }, session);
+      $("resource-editor-card").classList.add("hidden");
+      $("chat-res-status").textContent = "";
+      await refreshCircleResources();
+      renderResourcesModal();
+    } catch (err) {
+      $("chat-res-status").textContent = err.message || t("skillMsgPublishFailed");
     }
   });
 

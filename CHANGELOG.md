@@ -4,6 +4,12 @@
 
 ### Added
 
+- 實作 `circle-shared-resources`（Circle 共享參考文件群與外部 HTTPS 檔案／圖片素材）：
+  - **Hub 契約與 SQLite Schema v12（無二進位檔案託管）**：支援兩種只讀資源類型：`kind="doc"`（純文字／Markdown 參考文件，單份上限 32 KiB、同圈合計上限 512 KiB）與 `kind="asset"`（外部 `https://` 檔案／圖片／PDF／壓縮檔中繼資料，復用 `a2a.ValidatePart` 與 SHA-256 校驗，單圈資源總上限 64 筆）；新增 `circle_resources`、`circle_resource_proposals`、`circle_resource_collections` 與 `circle_resource_idempotency`，並整合 TTL 自動清除排程及 `PruneEmptyCircles` 回收清理。
+  - **HTTP API、Capability-Gated SSE 與直傳 888box 安全邊界**：新增 `/hub/v1/circle/resources*` 與 `/hub/v1/admin/circles/{circleId}/resources*` 端點、System Card `circle-resources/v1` 擴充與限額聲明、`?events=task,circle_skill,circle_resource` 推送 `event: circle_resource`；新增 `A2A888_HUB_UPLOAD_ENDPOINT`（預設 `https://box.david888.com/api.php?action=upload`，可設 `disabled` 關閉），僅於 `chat.html` CSP `connect-src` 開放該上傳 Origin，仍嚴格維持 `img-src 'self' data:` 零被動遠端抓取。
+  - **Web UI（三語系）與 Admin 控制台**：`chat.html` 左側欄新增「Circle 資源」區塊、支援 `@doc:<slug>` 補全與資源抽屜（含瀏覽器直傳 `888box` 並計算 WebCrypto SHA-256、貼上外部 HTTPS 連結、Bot 待審提案批准／駁回與 TTL 設定）；`admin.html` `/admin/skills` 同步納入 Circle 資源清單與提案審批。
+  - **Bridge 快取與 MCP 工具同步**：`a2a_bridge.py` 新增 `CircleResourceCache`（共用地端安全路徑／防符號連結基底，僅快取驗證通過之 `doc` 至 `~/.a2a/circles/<hubScope>/<circleScope>/resources/<slug>.md`，絕不自動下載外部 `asset` URL）、Prompt 唯讀索引 `[APPROVED_CIRCLE_RESOURCES_DATA_<nonce>]`，以及 `a2a_list_circle_resources`、`a2a_get_circle_resource`、`a2a_propose_circle_resource` 三個 MCP 工具。
+
 - 實作 `circle-shared-skills`（Circle 共享多份 `SKILL.md` 託管與雙層人類核准防線）：
   - **Hub 領域驗證與 SQLite 持久化（Schema v11）**：新增 `circle_skills`、`circle_skill_proposals`、`circle_skill_revisions`（單 slug 最多保留 20 筆）、單調遞增 `collection_version`（驅動 manifest `ETag`）與冪等鍵儲存；新增 `SKILL.md` 專用驗證器 `ValidateCircleSkill`（支援白名單 YAML frontmatter、fenced code 範例與 `https://` 文件連結，封鎖 HTML/JS/`javascript:`/`data:` 與真實憑證）；整合 `PruneEmptyCircles` 回收動態空圈時連帶清除相關技能資料。
   - **Bot 提案草稿、有效期限 TTL 與權限分層**：同圈 Bot 可透過 `PUT /hub/v1/circle/skills/proposals/{slug}` 提交 `PENDING_REVIEW` 草稿（絕不自動生效）；同圈人類（`chat.html`）與 Operator（`/hub/v1/admin/circles/{circleId}/skills...`）可審批、調整選填 `ttlSeconds`/`expiresAt` 或刪除技能，並支援 `A2A888_HUB_CIRCLE_SKILL_WRITE_POLICY=human_or_admin|admin_only`。

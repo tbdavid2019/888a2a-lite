@@ -63,4 +63,10 @@ const (
 	EventCircleSkillUpdated          = "circle.skill_updated"
 	EventCircleSkillDeleted          = "circle.skill_deleted"
 	EventCircleSkillExpired          = "circle.skill_expired"
+	EventCircleResourceProposed      = "circle.resource_proposed"
+	EventCircleResourceApproved      = "circle.resource_approved"
+	EventCircleResourceRejected      = "circle.resource_rejected"
+	EventCircleResourceUpdated       = "circle.resource_updated"
+	EventCircleResourceDeleted       = "circle.resource_deleted"
+	EventCircleResourceExpired       = "circle.resource_expired"
 )
