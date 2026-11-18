@@ -21,7 +21,7 @@
 ## 4. Regression Tests, Changelog, CI Validation & Live Verification
 
 - [x] 4.1 Extend `internal/service/http_test.go` assertions to verify `<dialog id="skills-modal-backdrop"`, `<dialog id="resources-modal-backdrop"`, `<meta name="description"` on `/admin/chat`, `prefers-reduced-motion`, and zero unreplaced `{{CSP_NONCE}}` across early `<head>` and bottom `<script>` tags.
-- [ ] 4.2 Update `CHANGELOG.md`, run local static checks (`node --check`, i18n 3-lang parity, `impeccable detect --json`, `python3 -m unittest`), commit and push to verify GitHub Actions `CI` (`go test ./...`, `golangci-lint`, Python tests) & `Publish Docker image`, then deploy to `dns.glsoft.ai` and run live HTTPS + Chromium/mobile smoke checks.
+- [x] 4.2 Update `CHANGELOG.md`, run local static checks (`node --check`, i18n 3-lang parity, `impeccable detect --json`, `python3 -m unittest`), commit and push to verify GitHub Actions `CI` (`go test ./...`, `golangci-lint`, Python tests) & `Publish Docker image`, then deploy to `dns.glsoft.ai` and run live HTTPS + Chromium/mobile smoke checks.
 
 ## Workflow follow-up
 
