@@ -1005,12 +1005,17 @@
       </div>
 
       <div id="skill-editor-card" class="skills-card hidden">
-        <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
           <strong id="skill-editor-title">新增／更新 Circle 技能</strong>
           <button id="btn-skill-editor-cancel" class="ghost" type="button" style="font-size:12px;">收起</button>
         </div>
+        <div class="mode-switch" role="tablist" aria-label="技能填寫方式" style="margin-bottom:0;">
+          <button id="skill-mode-doc" class="mode-btn active" type="button" role="tab" aria-selected="true">📄 純文字 / SKILL.md</button>
+          <button id="skill-mode-npx" class="mode-btn" type="button" role="tab" aria-selected="false">📦 貼上 npx 安裝指令</button>
+        </div>
+        <div id="skill-editor-help" class="mono-sub" style="white-space:normal;">可直接貼純文字規則、操作步驟或 SKILL.md；不需要懂 Markdown 語法，代號留空也會自動產生。</div>
         <div style="display:grid;grid-template-columns:1fr 200px;gap:8px;">
-          <input id="chat-skill-slug" type="text" placeholder="slug，例如 deploy-playbook" maxlength="64">
+          <input id="chat-skill-slug" type="text" placeholder="代號 slug（選填；留空自動產生）" maxlength="64">
           <select id="chat-skill-ttl" aria-label="有效期限">
             <option value="">有效期限：永久</option>
             <option value="3600">1 小時（3600 秒）</option>
@@ -1018,10 +1023,13 @@
             <option value="604800">7 天（604800 秒）</option>
           </select>
         </div>
-        <textarea id="chat-skill-content" rows="7" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;" placeholder="# Playbook&#10;..." maxlength="32768"></textarea>
+        <textarea id="chat-skill-content" rows="7" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;" placeholder="可直接貼純文字規範、操作指引，或整份 SKILL.md 內容…" maxlength="32768"></textarea>
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
-          <span id="chat-skill-status" class="mono-sub"></span>
-          <button id="btn-chat-skill-submit" type="button">發布至 Circle</button>
+          <span id="chat-skill-status" class="mono-sub" style="white-space:normal;"></span>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button id="btn-skill-format-npx" class="secondary hidden" type="button" style="font-size:12px;">✨ 預覽整理格式</button>
+            <button id="btn-chat-skill-submit" type="button">發布至 Circle</button>
+          </div>
         </div>
       </div>
 
@@ -2874,6 +2882,91 @@
     if (e.target === $("skills-modal-backdrop")) $("skills-modal-backdrop").classList.add("hidden");
   });
   $("btn-skills-refresh").addEventListener("click", () => refreshCircleSkills().then(renderSkillsModal).catch(() => {}));
+  let skillEditorMode = "doc";
+
+  function setSkillEditorMode(mode) {
+    skillEditorMode = mode === "npx" ? "npx" : "doc";
+    const isNpx = skillEditorMode === "npx";
+    $("skill-mode-doc").classList.toggle("active", !isNpx);
+    $("skill-mode-doc").setAttribute("aria-selected", String(!isNpx));
+    $("skill-mode-npx").classList.toggle("active", isNpx);
+    $("skill-mode-npx").setAttribute("aria-selected", String(isNpx));
+    $("btn-skill-format-npx").classList.toggle("hidden", !isNpx);
+    if (isNpx) {
+      $("skill-editor-help").textContent = "直接貼上 npx / npm / CLI 安裝指令即可（不必手動加 Markdown 語法）。發布時會自動整理為安全規範格式，並提醒 Agent 執行前先詢問人類主人。";
+      $("chat-skill-content").placeholder = "直接貼上指令即可，例如：\nnpx skills add https://github.com/Leonxlnx/taste-skill --skill \"design-taste-frontend\"\nnpx skills add nutlope/hallmark -g\nnpx impeccable install";
+    } else {
+      $("skill-editor-help").textContent = "可直接貼純文字規則、操作步驟或 SKILL.md；不需要懂 Markdown 語法，代號留空也會自動產生。";
+      $("chat-skill-content").placeholder = "可直接貼純文字規範、操作指引，或整份 SKILL.md 內容…";
+    }
+  }
+
+  function looksLikeCliCommands(text) {
+    const lines = String(text || "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    if (!lines.length) return false;
+    const first = lines[0];
+    if (first.startsWith("---") || first.startsWith("#") || first.startsWith("```") || first.startsWith("~~~")) return false;
+    const cliRe = /^(npx|npm|pnpm|yarn|bunx|uvx|pip3?|brew|curl)\s+/i;
+    return lines.every((l) => l.startsWith("#") || cliRe.test(l));
+  }
+
+  function deriveSkillSlug(rawText, isNpx) {
+    const text = String(rawText || "").trim();
+    const skillFlag = text.match(/--skill\s+["']?([a-zA-Z0-9._-]+)["']?/);
+    let candidate = skillFlag ? skillFlag[1] : "";
+    if (!candidate) {
+      const gh = text.match(/github\.com\/[a-zA-Z0-9._-]+\/([a-zA-Z0-9._-]+)/);
+      if (gh) candidate = gh[1];
+    }
+    if (!candidate) {
+      const ownerRepo = text.match(/\bnpx\s+(?:-y\s+)?(?:skills\s+add\s+)?(?:[a-zA-Z0-9._-]+\/)?([a-zA-Z0-9._-]+)/i);
+      if (ownerRepo) candidate = ownerRepo[1];
+    }
+    if (!candidate) {
+      const firstLine = text.split(/\r?\n/).map((l) => l.replace(/^#+\s*/, "").trim()).find(Boolean) || "";
+      candidate = firstLine;
+    }
+    let slug = candidate.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^[-_]+|[-_]+$/g, "").slice(0, 48).replace(/[-_]+$/g, "");
+    if (!slug || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(slug)) {
+      slug = `${isNpx ? "npx-skill" : "circle-skill"}-${Date.now().toString(36)}`;
+    }
+    return slug;
+  }
+
+  function formatNpxSkillContent(rawText) {
+    const trimmed = String(rawText || "").trim();
+    if (!trimmed) return "";
+    if (trimmed.startsWith("---") || trimmed.startsWith("# ") || trimmed.includes("```")) {
+      return trimmed;
+    }
+    const title = deriveSkillSlug(trimmed, true);
+    return [
+      `# ${title} (CLI Install Recipe)`,
+      "",
+      "Circle-shared CLI / multi-file skill installation commands.",
+      "MANDATORY SAFETY RULE: Ask your human owner for explicit confirmation before executing any install command locally. Use non-interactive flags if supported, or ask your human owner to run interactive installers in their terminal.",
+      "",
+      "```bash",
+      trimmed,
+      "```",
+    ].join("\n");
+  }
+
+  $("skill-mode-doc").addEventListener("click", () => setSkillEditorMode("doc"));
+  $("skill-mode-npx").addEventListener("click", () => setSkillEditorMode("npx"));
+  $("btn-skill-format-npx").addEventListener("click", () => {
+    const raw = $("chat-skill-content").value;
+    if (!raw.trim()) {
+      $("chat-skill-status").textContent = "請先貼上 npx 或 CLI 安裝指令。";
+      return;
+    }
+    if (!$("chat-skill-slug").value.trim()) {
+      $("chat-skill-slug").value = deriveSkillSlug(raw, true);
+    }
+    $("chat-skill-content").value = formatNpxSkillContent(raw);
+    $("chat-skill-status").textContent = "已自動整理為安全 SKILL.md 格式，可直接發布。";
+  });
+
   $("btn-skills-new-toggle").addEventListener("click", () => {
     circleSkillExpectedVer = 0;
     $("chat-skill-slug").value = "";
@@ -2881,6 +2974,7 @@
     $("chat-skill-ttl").value = "";
     $("chat-skill-content").value = "";
     $("chat-skill-status").textContent = "";
+    setSkillEditorMode("doc");
     $("skill-editor-card").classList.toggle("hidden");
   });
   $("btn-skill-editor-cancel").addEventListener("click", () => $("skill-editor-card").classList.add("hidden"));
@@ -2891,8 +2985,16 @@
   });
   $("btn-chat-skill-submit").addEventListener("click", async () => {
     if (!session) return;
-    const slug = $("chat-skill-slug").value.trim();
-    const content = $("chat-skill-content").value;
+    let content = $("chat-skill-content").value;
+    const autoNpx = skillEditorMode === "npx" || looksLikeCliCommands(content);
+    if (autoNpx) {
+      content = formatNpxSkillContent(content);
+    }
+    let slug = $("chat-skill-slug").value.trim().toLowerCase();
+    if (!slug && content.trim()) {
+      slug = deriveSkillSlug(content, autoNpx);
+      $("chat-skill-slug").value = slug;
+    }
     const ttlRaw = $("chat-skill-ttl").value;
     const body = { content, expectedVersion: circleSkillExpectedVer, idempotencyKey: skillIdemKey("ui-put") };
     if (ttlRaw !== "") body.ttlSeconds = Number(ttlRaw);

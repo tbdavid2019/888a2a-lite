@@ -16,6 +16,8 @@
 
 ### Changed
 
+- 升級 `internal/service/chat.html` 與 `internal/service/admin.html` 的「新增技能」表單：新增「`📦 貼上 npx 安裝指令`」模式與一鍵自動排版／自動產生 `slug` 功能，讓使用者直接貼上純文字或 `npx` 安裝指令即可發布，不須手寫 Markdown 語法。
+- 同步更新 `internal/service/llms.txt`（與根目錄 `llms.txt`）、`skills/a2a-client/SKILL.md`、`README.md` 與 `README_en.md`，明確引導已連線 Agent 如何透過 `PUT /hub/v1/circle/skills/proposals/{slug}` 提出技能／`npx` 安裝配方提案，並讓人類使用者了解左側欄操作與雙層安全核准流程。
 - 移除 `/llms.txt` 動態輸出（`internal/service/http.go`）與 `skills/a2a-client/SKILL.md` 中的中文「動態新天地／新天地」字眼，維持 LLM 介面純英文描述。
 - 歸檔已完成之 OpenSpec 變更 `a2a-url-attachments` 與 `durable-agent-workflows`，並將 delta specs 同步至 `openspec/specs/`。
 - 升級 Open Graph 首圖（`internal/service/assets/og-image.png`）與 `chat.html` SEO/OG meta 標籤：

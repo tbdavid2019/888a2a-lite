@@ -384,16 +384,17 @@
         </div>
       </div>
       <div class="grid">
-        <label><span data-i18n="skillSlugLabel">Skill Slug（^[a-z0-9][a-z0-9_-]{0,63}$）</span><input id="skill-slug-input" type="text" placeholder="deploy-playbook" maxlength="64"></label>
+        <label><span data-i18n="skillSlugLabel">Skill Slug（選填；留空自動產生，符合 ^[a-z0-9][a-z0-9_-]{0,63}$）</span><input id="skill-slug-input" type="text" placeholder="留空自動產生，或手動填如 taste-skill" maxlength="64"></label>
         <label><span data-i18n="skillTtlLabel">有效期限 TTL（秒；0 或留空 = 永久）</span><input id="skill-ttl-input" type="number" min="0" max="31536000" placeholder="0（永久）或如 86400"></label>
         <label class="wide">
-          <span data-i18n="skillContentLabel">SKILL.md 內容（上限 32 KiB）</span>
-          <textarea id="skill-content-input" style="min-height:160px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;" placeholder="# Playbook&#10;..." maxlength="32768"></textarea>
+          <span data-i18n="skillContentLabel">SKILL.md 內容（可直接貼純文字、Markdown 或 npx 安裝指令，上限 32 KiB）</span>
+          <textarea id="skill-content-input" style="min-height:160px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;" placeholder="可直接貼純文字規範、SKILL.md，或直接貼上 npx 安裝指令（不需自己寫 Markdown 語法）…" maxlength="32768"></textarea>
           <span id="skill-bytes-counter" class="meta-sub">0 / 32768 bytes · expectedVersion: <span id="skill-expected-ver">0</span></span>
         </label>
       </div>
       <div class="actions" style="margin-top:12px;">
         <button id="btn-save-skill" type="button" data-i18n="skillSaveBtn">發布／更新技能</button>
+        <button id="btn-format-npx-skill" class="secondary" type="button" data-i18n="skillFormatNpxBtn">📦 自動整理 npx 安裝指令</button>
         <button id="btn-reset-skill-form" class="secondary" type="button" data-i18n="skillResetBtn">重設表單</button>
       </div>
     </section>
@@ -1022,16 +1023,80 @@
     }
   };
 
+  const looksLikeCliCommandsAdmin = (text) => {
+    const lines = String(text || "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    if (!lines.length) return false;
+    const first = lines[0];
+    if (first.startsWith("---") || first.startsWith("#") || first.startsWith("```") || first.startsWith("~~~")) return false;
+    const cliRe = /^(npx|npm|pnpm|yarn|bunx|uvx|pip3?|brew|curl)\s+/i;
+    return lines.every((l) => l.startsWith("#") || cliRe.test(l));
+  };
+  const deriveSkillSlugAdmin = (rawText, isNpx) => {
+    const text = String(rawText || "").trim();
+    const skillFlag = text.match(/--skill\s+["']?([a-zA-Z0-9._-]+)["']?/);
+    let candidate = skillFlag ? skillFlag[1] : "";
+    if (!candidate) {
+      const gh = text.match(/github\.com\/[a-zA-Z0-9._-]+\/([a-zA-Z0-9._-]+)/);
+      if (gh) candidate = gh[1];
+    }
+    if (!candidate) {
+      const ownerRepo = text.match(/\bnpx\s+(?:-y\s+)?(?:skills\s+add\s+)?(?:[a-zA-Z0-9._-]+\/)?([a-zA-Z0-9._-]+)/i);
+      if (ownerRepo) candidate = ownerRepo[1];
+    }
+    if (!candidate) {
+      candidate = text.split(/\r?\n/).map((l) => l.replace(/^#+\s*/, "").trim()).find(Boolean) || "";
+    }
+    let slug = candidate.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^[-_]+|[-_]+$/g, "").slice(0, 48).replace(/[-_]+$/g, "");
+    if (!slug || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(slug)) {
+      slug = `${isNpx ? "npx-skill" : "circle-skill"}-${Date.now().toString(36)}`;
+    }
+    return slug;
+  };
+  const formatNpxSkillAdmin = (rawText) => {
+    const trimmed = String(rawText || "").trim();
+    if (!trimmed || trimmed.startsWith("---") || trimmed.startsWith("# ") || trimmed.includes("```")) return trimmed;
+    const title = deriveSkillSlugAdmin(trimmed, true);
+    return [
+      `# ${title} (CLI Install Recipe)`,
+      "",
+      "Circle-shared CLI / multi-file skill installation commands.",
+      "MANDATORY SAFETY RULE: Ask your human owner for explicit confirmation before executing any install command locally. Use non-interactive flags if supported, or ask your human owner to run interactive installers in their terminal.",
+      "",
+      "```bash",
+      trimmed,
+      "```",
+    ].join("\n");
+  };
+
   $("skills-circle-select").addEventListener("change", () => loadCircleSkillsAdmin().catch((e) => status(e.message, "error")));
   $("btn-refresh-skills").addEventListener("click", () => loadCircleSkillsAdmin().catch((e) => status(e.message, "error")));
   $("skill-content-input").addEventListener("input", updateSkillByteMeter);
   $("btn-reset-skill-form").addEventListener("click", resetSkillForm);
   $("btn-close-skill-detail").addEventListener("click", () => $("skill-detail-panel").classList.add("hidden"));
+  $("btn-format-npx-skill").addEventListener("click", () => {
+    const raw = $("skill-content-input").value;
+    if (!raw.trim()) {
+      status("請先貼上 npx 或 CLI 安裝指令。", "error");
+      return;
+    }
+    if (!$("skill-slug-input").value.trim()) {
+      $("skill-slug-input").value = deriveSkillSlugAdmin(raw, true);
+    }
+    $("skill-content-input").value = formatNpxSkillAdmin(raw);
+    updateSkillByteMeter();
+    status("已自動整理為安全 SKILL.md 格式。", "success");
+  });
   $("btn-save-skill").addEventListener("click", async () => {
     try {
       const cid = ($("skills-circle-select") && $("skills-circle-select").value) || "public";
-      const slug = $("skill-slug-input").value.trim();
-      const content = $("skill-content-input").value;
+      let content = $("skill-content-input").value;
+      const isNpx = looksLikeCliCommandsAdmin(content);
+      if (isNpx) content = formatNpxSkillAdmin(content);
+      let slug = $("skill-slug-input").value.trim().toLowerCase();
+      if (!slug && content.trim()) {
+        slug = deriveSkillSlugAdmin(content, isNpx);
+        $("skill-slug-input").value = slug;
+      }
       const ttlRaw = $("skill-ttl-input").value.trim();
       const body = { content, expectedVersion: skillExpectedVersion, idempotencyKey: newIdemKey("op-put") };
       if (ttlRaw !== "") body.ttlSeconds = Number(ttlRaw);
