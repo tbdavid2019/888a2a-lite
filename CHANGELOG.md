@@ -13,6 +13,7 @@
 ### Fixed
 
 - 修正 `internal/service/chat.html` `.app` Grid 版面因 `#skill-toast` 與 `#skills-modal-backdrop` 位移 `.workspace` 軌道導致下方出現空白區塊的問題，並將「Circle 技能」區塊整合進左側同圈側邊欄清單（含待審 Bot 提案徽章、已生效技能與快捷管理按鈕）。
+- 補齊 `internal/service/chat.html` 與 `internal/service/admin.html` 之三語系（`zh-TW`、`en`、`ja`）動態與靜態翻譯（涵蓋同圈人數、SSE 連線狀態、左側欄 Circle 技能區塊與技能審查／`npx` 編輯抽屜之所有按鈕與提示文字）。
 
 ### Changed
 

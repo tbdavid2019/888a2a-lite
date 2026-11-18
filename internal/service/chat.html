@@ -827,8 +827,8 @@
   <div id="skill-toast" class="skill-toast" role="status" aria-live="polite">
     <span id="skill-toast-text"></span>
     <div style="display:flex;gap:8px;flex-shrink:0;">
-      <button id="btn-skill-toast-open" type="button" style="padding:5px 10px;font-size:12px;">檢視與批准</button>
-      <button id="btn-skill-toast-close" class="ghost" type="button" style="padding:5px 8px;font-size:12px;">關閉</button>
+      <button id="btn-skill-toast-open" type="button" style="padding:5px 10px;font-size:12px;" data-i18n="skillToastOpen">檢視與批准</button>
+      <button id="btn-skill-toast-close" class="ghost" type="button" style="padding:5px 8px;font-size:12px;" data-i18n="closeBtn">關閉</button>
     </div>
   </div>
 
@@ -995,51 +995,51 @@
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button id="btn-skill-desktop-notify" class="secondary" type="button" style="font-size:12px;">開啟桌面通知</button>
           <button id="btn-skills-refresh" class="secondary" type="button" style="font-size:12px;" data-i18n="refresh">重整</button>
-          <button id="btn-skills-new-toggle" class="secondary" type="button" style="font-size:12px;">+ 新增技能</button>
+          <button id="btn-skills-new-toggle" class="secondary" type="button" style="font-size:12px;" data-i18n="skillsNewBtn">+ 新增技能</button>
           <button id="btn-skills-close" class="secondary" type="button" style="font-size:12px;" data-i18n="closeBtn">關閉</button>
         </div>
       </div>
 
-      <div class="skills-notice">
-        安全機制提醒：發布或核准至 Circle 後，各主機的本機 Agent（OpenClaw / Hermes / Codex 等）仍須經本機主人於 <code>http://127.0.0.1:8888</code> 或 <code>a2a bridge skill approve</code> 確認 SHA-256 後才會載入上下文，不會自動覆寫本機全域技能目錄。
+      <div id="skills-notice-text" class="skills-notice" data-i18n="skillsSecurityNotice">
+        安全機制提醒：發布或核准至 Circle 後，各主機的本機 Agent（OpenClaw / Hermes / Codex 等）仍須經本機主人於 http://127.0.0.1:8888 或 a2a bridge skill approve 確認 SHA-256 後才會載入上下文，不會自動覆寫本機全域技能目錄。
       </div>
 
       <div id="skill-editor-card" class="skills-card hidden">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
-          <strong id="skill-editor-title">新增／更新 Circle 技能</strong>
-          <button id="btn-skill-editor-cancel" class="ghost" type="button" style="font-size:12px;">收起</button>
+          <strong id="skill-editor-title" data-i18n="skillEditorTitle">新增／更新 Circle 技能</strong>
+          <button id="btn-skill-editor-cancel" class="ghost" type="button" style="font-size:12px;" data-i18n="collapseBtn">收起</button>
         </div>
         <div class="mode-switch" role="tablist" aria-label="技能填寫方式" style="margin-bottom:0;">
-          <button id="skill-mode-doc" class="mode-btn active" type="button" role="tab" aria-selected="true">📄 純文字 / SKILL.md</button>
-          <button id="skill-mode-npx" class="mode-btn" type="button" role="tab" aria-selected="false">📦 貼上 npx 安裝指令</button>
+          <button id="skill-mode-doc" class="mode-btn active" type="button" role="tab" aria-selected="true" data-i18n="skillModeDoc">📄 純文字 / SKILL.md</button>
+          <button id="skill-mode-npx" class="mode-btn" type="button" role="tab" aria-selected="false" data-i18n="skillModeNpx">📦 貼上 npx 安裝指令</button>
         </div>
         <div id="skill-editor-help" class="mono-sub" style="white-space:normal;">可直接貼純文字規則、操作步驟或 SKILL.md；不需要懂 Markdown 語法，代號留空也會自動產生。</div>
         <div style="display:grid;grid-template-columns:1fr 200px;gap:8px;">
-          <input id="chat-skill-slug" type="text" placeholder="代號 slug（選填；留空自動產生）" maxlength="64">
+          <input id="chat-skill-slug" type="text" placeholder="代號 slug（選填；留空自動產生）" data-i18n-placeholder="skillSlugPlaceholder" maxlength="64">
           <select id="chat-skill-ttl" aria-label="有效期限">
-            <option value="">有效期限：永久</option>
-            <option value="3600">1 小時（3600 秒）</option>
-            <option value="86400">24 小時（86400 秒）</option>
-            <option value="604800">7 天（604800 秒）</option>
+            <option value="" data-i18n="skillTtlOptPermanent">有效期限：永久</option>
+            <option value="3600" data-i18n="skillTtlOpt1h">1 小時（3600 秒）</option>
+            <option value="86400" data-i18n="skillTtlOpt24h">24 小時（86400 秒）</option>
+            <option value="604800" data-i18n="skillTtlOpt7d">7 天（604800 秒）</option>
           </select>
         </div>
         <textarea id="chat-skill-content" rows="7" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;" placeholder="可直接貼純文字規範、操作指引，或整份 SKILL.md 內容…" maxlength="32768"></textarea>
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
           <span id="chat-skill-status" class="mono-sub" style="white-space:normal;"></span>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button id="btn-skill-format-npx" class="secondary hidden" type="button" style="font-size:12px;">✨ 預覽整理格式</button>
-            <button id="btn-chat-skill-submit" type="button">發布至 Circle</button>
+            <button id="btn-skill-format-npx" class="secondary hidden" type="button" style="font-size:12px;" data-i18n="skillFormatBtn">✨ 預覽整理格式</button>
+            <button id="btn-chat-skill-submit" type="button" data-i18n="skillSubmitBtn">發布至 Circle</button>
           </div>
         </div>
       </div>
 
       <div>
-        <h3 style="margin:0 0 8px;font-size:14px;">待審 Bot 提案 (<span id="chat-proposals-count">0</span>)</h3>
+        <h3 style="margin:0 0 8px;font-size:14px;"><span data-i18n="chatProposalsHeading">待審 Bot 提案</span> (<span id="chat-proposals-count">0</span>)</h3>
         <div id="chat-skill-proposals-list" style="display:flex;flex-direction:column;gap:8px;"></div>
       </div>
 
       <div>
-        <h3 style="margin:0 0 8px;font-size:14px;">已生效 Circle 技能 (<span id="chat-skills-count">0</span>)</h3>
+        <h3 style="margin:0 0 8px;font-size:14px;"><span data-i18n="chatSkillsHeading">已生效 Circle 技能</span> (<span id="chat-skills-count">0</span>)</h3>
         <div id="chat-skills-list" style="display:flex;flex-direction:column;gap:8px;"></div>
       </div>
     </div>
@@ -1122,6 +1122,66 @@
       chatSubPick: "從左側點選在線節點進行 1 對 1 私聊，或建立群組展開多 Agent 協作。",
       chatTitleOffline: "尚未連線",
       chatSubOffline: "請先於上方完成連線。",
+      circleMembersPrefix: "同圈",
+      circleMembersSuffix: "位",
+      sseCredsInvalid: "憑證失效",
+      sseReconnecting: "重連中",
+      peersEmptyOnline: "目前此 Circle 沒有其他 Agent",
+      peersEmptyOffline: "連線後顯示同圈 Agent",
+      groupsEmptyOnline: "尚未加入任何群組",
+      groupsEmptyOffline: "連線後顯示群組",
+      skillsEmptyOffline: "連線後顯示 Circle 技能",
+      skillsEmptyAdd: "尚未建立 Circle 技能 · 點此新增",
+      skillsPendingSub: "提案待審",
+      skillsPendingTag: "待審",
+      skillsTtlLimited: "限時",
+      skillsTtlPermanent: "永久",
+      skillToastOpen: "檢視與批准",
+      skillsNewBtn: "+ 新增技能",
+      skillsSecurityNotice: "安全機制提醒：發布或核准至 Circle 後，各主機的本機 Agent（OpenClaw / Hermes / Codex 等）仍須經本機主人於 http://127.0.0.1:8888 或 a2a bridge skill approve 確認 SHA-256 後才會載入上下文，不會自動覆寫本機全域技能目錄。",
+      skillEditorTitle: "新增／更新 Circle 技能",
+      skillModeDoc: "📄 純文字 / SKILL.md",
+      skillModeNpx: "📦 貼上 npx 安裝指令",
+      skillHelpDoc: "可直接貼純文字規則、操作步驟或 SKILL.md；不需要懂 Markdown 語法，代號留空也會自動產生。",
+      skillHelpNpx: "直接貼上 npx / npm / CLI 安裝指令即可（不必手動加 Markdown 語法）。發布時會自動整理為安全規範格式，並提醒 Agent 執行前先詢問人類主人。",
+      skillPlaceholderDoc: "可直接貼純文字規範、操作指引，或整份 SKILL.md 內容…",
+      skillPlaceholderNpx: "直接貼上指令即可，例如：\nnpx skills add https://github.com/Leonxlnx/taste-skill --skill \"design-taste-frontend\"\nnpx skills add nutlope/hallmark -g\nnpx impeccable install",
+      skillSlugPlaceholder: "代號 slug（選填；留空自動產生）",
+      skillTtlOptPermanent: "有效期限：永久",
+      skillTtlOpt1h: "1 小時（3600 秒）",
+      skillTtlOpt24h: "24 小時（86400 秒）",
+      skillTtlOpt7d: "7 天（604800 秒）",
+      skillFormatBtn: "✨ 預覽整理格式",
+      skillSubmitBtn: "發布至 Circle",
+      chatProposalsHeading: "待審 Bot 提案",
+      chatSkillsHeading: "已生效 Circle 技能",
+      noProposals: "目前沒有待審 Bot 提案。",
+      noSkills: "目前此 Circle 尚未發布任何共享技能。",
+      notifyUnsupported: "瀏覽器不支援桌面通知",
+      notifyGranted: "桌面通知已開啟",
+      notifyDenied: "桌面通知已被封鎖",
+      notifyEnable: "開啟桌面通知",
+      titlePendingBadge: "待審",
+      proposalProposer: "提案者",
+      ttlKeepProposal: "沿用提案 TTL",
+      ttlSetPermanent: "永久有效",
+      ttl1hShort: "1 小時",
+      ttl24hShort: "24 小時",
+      ttl7dShort: "7 天",
+      btnApprovePublish: "批准發布至 Circle",
+      btnReject: "駁回",
+      btnViewContent: "檢視內文",
+      btnHideContent: "收合內文",
+      btnQuoteSkill: "引用",
+      btnEdit: "編輯",
+      btnDelete: "刪除",
+      ttlExpiresPrefix: "到期",
+      skillMsgEnterCli: "請先貼上 npx 或 CLI 安裝指令。",
+      skillMsgFormatted: "已自動整理為安全 SKILL.md 格式，可直接發布。",
+      skillMsgPublishFailed: "發布失敗",
+      skillMsgApproveFailed: "核准失敗",
+      skillMsgRejectFailed: "駁回失敗",
+      skillConfirmDelete: "確定從 Circle 刪除技能",
     },
     "en": {
       htmlLang: "en",
@@ -1188,6 +1248,66 @@
       chatSubPick: "Choose a peer on the left for 1-on-1 chat, or create a multi-agent group.",
       chatTitleOffline: "Disconnected",
       chatSubOffline: "Connect above first.",
+      circleMembersPrefix: "",
+      circleMembersSuffix: "in Circle",
+      sseCredsInvalid: "Auth Revoked",
+      sseReconnecting: "Reconnecting",
+      peersEmptyOnline: "No other agents in this Circle yet",
+      peersEmptyOffline: "Connect to view Circle agents",
+      groupsEmptyOnline: "Not in any group yet",
+      groupsEmptyOffline: "Connect to view groups",
+      skillsEmptyOffline: "Connect to view Circle skills",
+      skillsEmptyAdd: "No Circle skills yet · Click to add",
+      skillsPendingSub: "Pending review",
+      skillsPendingTag: "Pending",
+      skillsTtlLimited: "TTL",
+      skillsTtlPermanent: "Permanent",
+      skillToastOpen: "Review & Approve",
+      skillsNewBtn: "+ New Skill",
+      skillsSecurityNotice: "Security Notice: After publishing or approving in a Circle, each host Agent (OpenClaw / Hermes / Codex, etc.) still requires its local owner to confirm the SHA-256 at http://127.0.0.1:8888 or via a2a bridge skill approve before loading it into prompts; global skill folders are never overwritten automatically.",
+      skillEditorTitle: "Add / Update Circle Skill",
+      skillModeDoc: "📄 Plain Text / SKILL.md",
+      skillModeNpx: "📦 Paste npx Install",
+      skillHelpDoc: "Paste plain-text rules, instructions, or SKILL.md directly. No Markdown syntax required; leave slug blank to auto-generate.",
+      skillHelpNpx: "Paste npx / npm / CLI install commands directly (no Markdown fencing needed). Publishing wraps them safely and instructs Agents to ask their human owner first.",
+      skillPlaceholderDoc: "Paste plain-text guidelines, workflow steps, or full SKILL.md content…",
+      skillPlaceholderNpx: "Paste install commands directly, e.g.:\nnpx skills add https://github.com/Leonxlnx/taste-skill --skill \"design-taste-frontend\"\nnpx skills add nutlope/hallmark -g\nnpx impeccable install",
+      skillSlugPlaceholder: "Slug (optional; auto-generated if empty)",
+      skillTtlOptPermanent: "TTL: Permanent",
+      skillTtlOpt1h: "1 hour (3600s)",
+      skillTtlOpt24h: "24 hours (86400s)",
+      skillTtlOpt7d: "7 days (604800s)",
+      skillFormatBtn: "✨ Format Preview",
+      skillSubmitBtn: "Publish to Circle",
+      chatProposalsHeading: "Pending Bot Proposals",
+      chatSkillsHeading: "Active Circle Skills",
+      noProposals: "No pending Bot proposals.",
+      noSkills: "No active shared skills in this Circle yet.",
+      notifyUnsupported: "Desktop Notifications Unsupported",
+      notifyGranted: "Desktop Alerts Enabled",
+      notifyDenied: "Desktop Alerts Blocked",
+      notifyEnable: "Enable Desktop Alerts",
+      titlePendingBadge: "Pending",
+      proposalProposer: "Proposed by",
+      ttlKeepProposal: "Use Proposal TTL",
+      ttlSetPermanent: "Permanent",
+      ttl1hShort: "1 hour",
+      ttl24hShort: "24 hours",
+      ttl7dShort: "7 days",
+      btnApprovePublish: "Approve & Publish",
+      btnReject: "Reject",
+      btnViewContent: "View Content",
+      btnHideContent: "Hide Content",
+      btnQuoteSkill: "Insert",
+      btnEdit: "Edit",
+      btnDelete: "Delete",
+      ttlExpiresPrefix: "Expires",
+      skillMsgEnterCli: "Paste npx or CLI install commands first.",
+      skillMsgFormatted: "Formatted into safe SKILL.md. Ready to publish.",
+      skillMsgPublishFailed: "Publish failed",
+      skillMsgApproveFailed: "Approval failed",
+      skillMsgRejectFailed: "Rejection failed",
+      skillConfirmDelete: "Delete Circle skill",
     },
     "ja": {
       htmlLang: "ja",
@@ -1254,6 +1374,66 @@
       chatSubPick: "左側からオンラインノードを選択して 1 対 1 会話、またはグループを作成してください。",
       chatTitleOffline: "未接続",
       chatSubOffline: "先に上で接続してください。",
+      circleMembersPrefix: "同 Circle",
+      circleMembersSuffix: "名",
+      sseCredsInvalid: "認証失効",
+      sseReconnecting: "再接続中",
+      peersEmptyOnline: "この Circle に他の Agent はいません",
+      peersEmptyOffline: "接続後に同一 Circle の Agent を表示",
+      groupsEmptyOnline: "参加中のグループはありません",
+      groupsEmptyOffline: "接続後にグループを表示",
+      skillsEmptyOffline: "接続後に Circle スキルを表示",
+      skillsEmptyAdd: "Circle スキル未登録 · クリックして追加",
+      skillsPendingSub: "承認待ち提案",
+      skillsPendingTag: "承認待ち",
+      skillsTtlLimited: "期限付き",
+      skillsTtlPermanent: "無期限",
+      skillToastOpen: "確認・承認",
+      skillsNewBtn: "+ スキル追加",
+      skillsSecurityNotice: "セキュリティ注意：Circle へ公開・承認した後も、各ホストのローカル Agent は所有者が http://127.0.0.1:8888 または a2a bridge skill approve で SHA-256 を承認するまで読み込まれません。グローバルディレクトリは上書きされません。",
+      skillEditorTitle: "Circle スキル追加・更新",
+      skillModeDoc: "📄 テキスト / SKILL.md",
+      skillModeNpx: "📦 npx インストール手順",
+      skillHelpDoc: "プレーンテキストや SKILL.md をそのまま貼り付けできます。Slug 空欄時は自動生成されます。",
+      skillHelpNpx: "npx / npm / CLI コマンドをそのまま貼り付けできます（Markdown 記法不要）。公開時に安全な形式へ自動整形します。",
+      skillPlaceholderDoc: "ルール、手順、または SKILL.md の内容を貼り付け…",
+      skillPlaceholderNpx: "コマンドをそのまま貼り付け（例）：\nnpx skills add https://github.com/Leonxlnx/taste-skill --skill \"design-taste-frontend\"\nnpx skills add nutlope/hallmark -g\nnpx impeccable install",
+      skillSlugPlaceholder: "Slug（任意・空欄で自動生成）",
+      skillTtlOptPermanent: "有効期限：無期限",
+      skillTtlOpt1h: "1 時間（3600 秒）",
+      skillTtlOpt24h: "24 時間（86400 秒）",
+      skillTtlOpt7d: "7 日間（604800 秒）",
+      skillFormatBtn: "✨ 自動整形プレビュー",
+      skillSubmitBtn: "Circle に公開",
+      chatProposalsHeading: "承認待ち Bot 提案",
+      chatSkillsHeading: "有効な Circle スキル",
+      noProposals: "承認待ちの Bot 提案はありません。",
+      noSkills: "この Circle にはまだ公開スキルがありません。",
+      notifyUnsupported: "デスクトップ通知非対応",
+      notifyGranted: "デスクトップ通知 ON",
+      notifyDenied: "デスクトップ通知ブロック中",
+      notifyEnable: "デスクトップ通知を有効化",
+      titlePendingBadge: "承認待ち",
+      proposalProposer: "提案者",
+      ttlKeepProposal: "提案の TTL を使用",
+      ttlSetPermanent: "無期限",
+      ttl1hShort: "1 時間",
+      ttl24hShort: "24 時間",
+      ttl7dShort: "7 日間",
+      btnApprovePublish: "承認して公開",
+      btnReject: "却下",
+      btnViewContent: "内容を表示",
+      btnHideContent: "内容を閉じる",
+      btnQuoteSkill: "引用",
+      btnEdit: "編集",
+      btnDelete: "削除",
+      ttlExpiresPrefix: "期限",
+      skillMsgEnterCli: "先に npx または CLI コマンドを入力してください。",
+      skillMsgFormatted: "安全な SKILL.md 形式に整形しました。公開できます。",
+      skillMsgPublishFailed: "公開に失敗しました",
+      skillMsgApproveFailed: "承認に失敗しました",
+      skillMsgRejectFailed: "却下に失敗しました",
+      skillConfirmDelete: "Circle スキルを削除しますか",
     },
   };
 
@@ -1309,7 +1489,7 @@
       el.setAttribute("placeholder", t(el.getAttribute("data-i18n-placeholder")));
     });
     applyTheme(document.documentElement.getAttribute("data-theme") || "light", false);
-    if (!session) setSsePill("warn", t("sseDisconnected"));
+    refreshDynamicI18n();
     renderChatArea();
   }
 
@@ -1338,6 +1518,7 @@
   let circleSkills = [];
   let circleSkillProposals = [];
   let circleSkillCollectionVersion = 0;
+  let skillEditorMode = "doc";
   let circleSkillExpectedVer = 0;
   let notifiedProposalKeys = new Set();
   const unreadCounts = {};
@@ -1356,10 +1537,42 @@
     el.className = `status-msg ${kind}`.trim();
   }
 
-  function setSsePill(state, text) {
+  let ssePillState = "warn";
+  let ssePillKey = "sseDisconnected";
+  let sseReconnectSecs = 0;
+
+  function setSsePill(state, keyOrText, reconnectSecs = 0) {
+    ssePillState = state || "warn";
+    ssePillKey = keyOrText || "sseDisconnected";
+    sseReconnectSecs = reconnectSecs || 0;
     const pill = $("sse-pill");
-    pill.className = `pill ${state}`.trim();
-    $("sse-pill-text").textContent = text;
+    pill.className = `pill ${ssePillState}`.trim();
+    if (ssePillKey === "sseReconnecting") {
+      $("sse-pill-text").textContent = `${t("sseReconnecting")} (${sseReconnectSecs}s)`;
+    } else {
+      $("sse-pill-text").textContent = t(ssePillKey);
+    }
+  }
+
+  function renderHubModePill() {
+    if (!session) return;
+    const prefix = t("circleMembersPrefix");
+    const suffix = t("circleMembersSuffix");
+    const countLabel = [prefix, String(peers.length + 1), suffix].filter(Boolean).join(" ");
+    $("hub-mode-pill").textContent = `${hubMode} · ${countLabel}`;
+  }
+
+  function refreshDynamicI18n() {
+    renderHubModePill();
+    setSsePill(ssePillState, session ? ssePillKey : "sseDisconnected", sseReconnectSecs);
+    updateSkillsBadgeAndTitle();
+    renderSidebar();
+    if (typeof setSkillEditorMode === "function") {
+      setSkillEditorMode(typeof skillEditorMode === "string" ? skillEditorMode : "doc");
+    }
+    if ($("skills-modal-backdrop") && !$("skills-modal-backdrop").classList.contains("hidden")) {
+      renderSkillsModal();
+    }
   }
 
   function trackBounded(setObj, val) {
@@ -1600,7 +1813,7 @@
     $("circle-pill").textContent = session.circleId && session.circleId !== "public" ? `Private · ${session.circleId}` : "Public Circle";
     $("circle-pill").className = `pill ${session.circleId && session.circleId !== "public" ? "accent" : ""}`.trim();
     $("circle-pill").classList.remove("hidden");
-    $("hub-mode-pill").textContent = `${hubMode} · 同圈 ${peers.length + 1} 位`;
+    renderHubModePill();
     $("connect-strip").classList.add("hidden");
     $("chat-header").classList.remove("hidden");
 
@@ -1730,7 +1943,7 @@
     peers = (peersResp.agents || []).filter((a) => a.agentId !== current.agentId);
     groups = groupsResp.groups || [];
     invitations = (invResp.invitations || []).filter((inv) => inv.state === "PENDING");
-    $("hub-mode-pill").textContent = `${hubMode} · 同圈 ${peers.length + 1} 位`;
+    renderHubModePill();
     if (activeChat && activeChat.type === "group") {
       try {
         const r = await hubFetch(`/hub/v1/groups/${encodeURIComponent(activeChat.id)}/roster`, {}, current);
@@ -1754,7 +1967,7 @@
       const empty = document.createElement("div");
       empty.className = "mono-sub";
       empty.style.padding = "6px 8px";
-      empty.textContent = session ? "目前此 Circle 沒有其他 Agent" : "連線後顯示同圈 Agent";
+      empty.textContent = session ? t("peersEmptyOnline") : t("peersEmptyOffline");
       peersEl.append(empty);
     } else {
       filteredPeers.sort((a, b) => (a.state === "ONLINE" ? -1 : 1) - (b.state === "ONLINE" ? -1 : 1));
@@ -1817,7 +2030,7 @@
       const empty = document.createElement("div");
       empty.className = "mono-sub";
       empty.style.padding = "6px 8px";
-      empty.textContent = session ? "尚未加入任何群組" : "連線後顯示群組";
+      empty.textContent = session ? t("groupsEmptyOnline") : t("groupsEmptyOffline");
       groupsEl.append(empty);
     } else {
       filteredGroups.forEach((g) => {
@@ -1852,13 +2065,13 @@
         const empty = document.createElement("div");
         empty.className = "mono-sub";
         empty.style.padding = "6px 8px";
-        empty.textContent = "連線後顯示 Circle 技能";
+        empty.textContent = t("skillsEmptyOffline");
         skillsEl.append(empty);
       } else if (!pendingProps.length && !filteredSkills.length) {
         const empty = document.createElement("button");
         empty.type = "button";
         empty.className = "roster-item";
-        empty.innerHTML = `<div class="roster-main"><div class="mono-sub">尚未建立 Circle 技能 · 點此新增</div></div>`;
+        empty.innerHTML = `<div class="roster-main"><div class="mono-sub">${esc(t("skillsEmptyAdd"))}</div></div>`;
         empty.addEventListener("click", openSkillsModal);
         skillsEl.append(empty);
       } else {
@@ -1869,9 +2082,9 @@
           btn.innerHTML = `
             <div class="roster-main">
               <div class="roster-title"><span class="roster-title-text">@skill:${esc(p.slug)}</span></div>
-              <div class="mono-sub">提案待審 · ${esc(p.proposedBy || "agent")}</div>
+              <div class="mono-sub">${esc(t("skillsPendingSub"))} · ${esc(p.proposedBy || "agent")}</div>
             </div>
-            <span class="unread-badge warn">待審</span>
+            <span class="unread-badge warn">${esc(t("skillsPendingTag"))}</span>
           `;
           btn.addEventListener("click", openSkillsModal);
           skillsEl.append(btn);
@@ -1883,7 +2096,7 @@
           btn.innerHTML = `
             <div class="roster-main">
               <div class="roster-title"><span class="roster-title-text">${esc(s.slug)}</span></div>
-              <div class="mono-sub">v${esc(String(s.version || 1))} · ${s.expiresAt ? "限時" : "永久"}</div>
+              <div class="mono-sub">v${esc(String(s.version || 1))} · ${esc(s.expiresAt ? t("skillsTtlLimited") : t("skillsTtlPermanent"))}</div>
             </div>
           `;
           btn.addEventListener("click", openSkillsModal);
@@ -2178,7 +2391,7 @@
     sseAbort = new AbortController();
     const currentSession = session;
     const signal = sseAbort.signal;
-    setSsePill("warn", "SSE 連線中");
+    setSsePill("warn", "sseConnecting");
     let authRejected = false;
 
     const dispatchBufferedEvent = async (evtType, evtData) => {
@@ -2207,7 +2420,7 @@
         throw new Error(`HTTP ${resp.status}`);
       }
       reconnectDelay = 1000;
-      setSsePill("online", "SSE 已連線");
+      setSsePill("online", "sseConnected");
 
       const reader = resp.body.getReader();
       const decoder = new TextDecoder("utf-8");
@@ -2260,12 +2473,12 @@
 
     if (signal.aborted || expectedEpoch !== sessionEpoch || session !== currentSession) return;
     if (authRejected) {
-      setSsePill("err", "憑證失效");
+      setSsePill("err", "sseCredsInvalid");
       setStatus("composer-status", "Agent 憑證已過期或被吊銷，請切換或重新註冊身分。", "error");
       return;
     }
 
-    setSsePill("err", `重連中 (${Math.round(reconnectDelay / 1000)}s)`);
+    setSsePill("err", "sseReconnecting", Math.round(reconnectDelay / 1000));
     reconnectTimer = setTimeout(() => {
       if (expectedEpoch === sessionEpoch && session === currentSession) {
         catchupInbox(expectedEpoch).then(() => startSSE(expectedEpoch));
@@ -2629,18 +2842,18 @@
       badge.classList.toggle("hidden", pending.length === 0);
     }
     const baseTitle = (I18N[currentLang] && I18N[currentLang].docTitle) || "888a2a-lite · Agent 對話大廳";
-    document.title = pending.length > 0 ? `[${pending.length} 待審] ${baseTitle}` : baseTitle;
+    document.title = pending.length > 0 ? `[${pending.length} ${t("titlePendingBadge")}] ${baseTitle}` : baseTitle;
     const notifyBtn = $("btn-skill-desktop-notify");
     if (notifyBtn) {
       if (!("Notification" in window)) {
-        notifyBtn.textContent = "瀏覽器不支援桌面通知";
+        notifyBtn.textContent = t("notifyUnsupported");
         notifyBtn.disabled = true;
       } else if (Notification.permission === "granted") {
-        notifyBtn.textContent = "桌面通知已開啟";
+        notifyBtn.textContent = t("notifyGranted");
       } else if (Notification.permission === "denied") {
-        notifyBtn.textContent = "桌面通知已被封鎖";
+        notifyBtn.textContent = t("notifyDenied");
       } else {
-        notifyBtn.textContent = "開啟桌面通知";
+        notifyBtn.textContent = t("notifyEnable");
       }
     }
   }
@@ -2651,12 +2864,21 @@
     if (notifiedProposalKeys.has(key)) return;
     trackBounded(notifiedProposalKeys, key);
     const actor = ev.updatedBy || "Agent";
-    const msg = `${actor} 提議${ev.action === "proposal_updated" ? "更新" : "新增"} Circle 技能「${ev.slug}」(${String(ev.contentHash || "").slice(0, 10)})，請檢視後批准。`;
+    const hashShort = String(ev.contentHash || "").slice(0, 10);
+    let msg = `${actor} 提議${ev.action === "proposal_updated" ? "更新" : "新增"} Circle 技能「${ev.slug}」(${hashShort})，請檢視後批准。`;
+    let notifTitle = "Circle 待審技能提案";
+    if (currentLang === "en") {
+      msg = `${actor} proposed ${ev.action === "proposal_updated" ? "updating" : "adding"} Circle skill "${ev.slug}" (${hashShort}). Please review and approve.`;
+      notifTitle = "Circle Skill Proposal Pending";
+    } else if (currentLang === "ja") {
+      msg = `${actor} が Circle スキル「${ev.slug}」(${hashShort}) の${ev.action === "proposal_updated" ? "更新" : "追加"}を提案しました。確認して承認してください。`;
+      notifTitle = "Circle スキル提案（承認待ち）";
+    }
     $("skill-toast-text").textContent = msg;
     $("skill-toast").classList.add("visible");
     if ("Notification" in window && Notification.permission === "granted") {
       try {
-        const n = new Notification("Circle 待審技能提案", { body: msg, tag: `circle-skill-${ev.slug}` });
+        const n = new Notification(notifTitle, { body: msg, tag: `circle-skill-${ev.slug}` });
         n.onclick = () => {
           window.focus();
           openSkillsModal();
@@ -2698,7 +2920,7 @@
     if (!pending.length) {
       const empty = document.createElement("div");
       empty.className = "mono-sub";
-      empty.textContent = "目前沒有待審 Bot 提案。";
+      empty.textContent = t("noProposals");
       propList.append(empty);
     } else {
       pending.forEach((p) => {
@@ -2710,7 +2932,7 @@
         titleEl.textContent = `${p.slug} — ${p.title || p.slug}`;
         const metaEl = document.createElement("span");
         metaEl.className = "mono-sub";
-        metaEl.textContent = `提案者: ${p.proposedBy} · hash: ${(p.contentHash || "").slice(0, 12)} · ${p.requestedTtlSeconds ? `TTL ${p.requestedTtlSeconds}s` : "永久"}`;
+        metaEl.textContent = `${t("proposalProposer")}: ${p.proposedBy} · hash: ${(p.contentHash || "").slice(0, 12)} · ${p.requestedTtlSeconds ? `TTL ${p.requestedTtlSeconds}s` : t("skillsTtlPermanent")}`;
         top.append(titleEl, metaEl);
 
         const pre = document.createElement("pre");
@@ -2721,13 +2943,13 @@
         controls.style.cssText = "display:flex;gap:8px;align-items:center;flex-wrap:wrap;";
         const ttlSel = document.createElement("select");
         ttlSel.style.cssText = "width:auto;min-width:140px;";
-        [["", "沿用提案 TTL"], ["0", "永久有效"], ["3600", "1 小時"], ["86400", "24 小時"], ["604800", "7 天"]].forEach(([v, l]) => {
+        [["", t("ttlKeepProposal")], ["0", t("ttlSetPermanent")], ["3600", t("ttl1hShort")], ["86400", t("ttl24hShort")], ["604800", t("ttl7dShort")]].forEach(([v, l]) => {
           ttlSel.append(new Option(l, v));
         });
 
         const btnApprove = document.createElement("button");
         btnApprove.type = "button";
-        btnApprove.textContent = "批准發布至 Circle";
+        btnApprove.textContent = t("btnApprovePublish");
         btnApprove.addEventListener("click", async () => {
           if (!session) return;
           btnApprove.disabled = true;
@@ -2745,7 +2967,7 @@
             await refreshCircleSkills();
             renderSkillsModal();
           } catch (err) {
-            $("chat-skill-status").textContent = err.message || "核准失敗";
+            $("chat-skill-status").textContent = err.message || t("skillMsgApproveFailed");
           } finally {
             btnApprove.disabled = false;
           }
@@ -2754,7 +2976,7 @@
         const btnReject = document.createElement("button");
         btnReject.type = "button";
         btnReject.className = "secondary";
-        btnReject.textContent = "駁回";
+        btnReject.textContent = t("btnReject");
         btnReject.addEventListener("click", async () => {
           if (!session) return;
           btnReject.disabled = true;
@@ -2766,7 +2988,7 @@
             await refreshCircleSkills();
             renderSkillsModal();
           } catch (err) {
-            $("chat-skill-status").textContent = err.message || "駁回失敗";
+            $("chat-skill-status").textContent = err.message || t("skillMsgRejectFailed");
           } finally {
             btnReject.disabled = false;
           }
@@ -2784,7 +3006,7 @@
     if (!circleSkills.length) {
       const empty = document.createElement("div");
       empty.className = "mono-sub";
-      empty.textContent = "目前此 Circle 尚未發布任何共享技能。";
+      empty.textContent = t("noSkills");
       list.append(empty);
     } else {
       circleSkills.forEach((s) => {
@@ -2796,7 +3018,7 @@
         titleEl.textContent = `${s.slug} · ${s.title || s.slug} (v${s.version})`;
         const metaEl = document.createElement("span");
         metaEl.className = "mono-sub";
-        metaEl.textContent = `sha256:${(s.contentHash || "").slice(0, 12)} · ${s.expiresAt ? `到期 ${new Date(s.expiresAt).toLocaleString()}` : "永久"}`;
+        metaEl.textContent = `sha256:${(s.contentHash || "").slice(0, 12)} · ${s.expiresAt ? `${t("ttlExpiresPrefix")} ${new Date(s.expiresAt).toLocaleString()}` : t("skillsTtlPermanent")}`;
         top.append(titleEl, metaEl);
 
         const bodyPre = document.createElement("pre");
@@ -2808,23 +3030,23 @@
         const btnView = document.createElement("button");
         btnView.type = "button";
         btnView.className = "secondary";
-        btnView.textContent = "檢視內文";
+        btnView.textContent = t("btnViewContent");
         btnView.addEventListener("click", async () => {
           if (!bodyPre.classList.contains("hidden")) {
             bodyPre.classList.add("hidden");
-            btnView.textContent = "檢視內文";
+            btnView.textContent = t("btnViewContent");
             return;
           }
           const full = await hubFetch(`/hub/v1/circle/skills/${encodeURIComponent(s.slug)}`, {}, session);
           bodyPre.textContent = full.content || "";
           bodyPre.classList.remove("hidden");
-          btnView.textContent = "收合內文";
+          btnView.textContent = t("btnHideContent");
         });
 
         const btnInsert = document.createElement("button");
         btnInsert.type = "button";
         btnInsert.className = "secondary";
-        btnInsert.textContent = `引用 @skill:${s.slug}`;
+        btnInsert.textContent = `${t("btnQuoteSkill")} @skill:${s.slug}`;
         btnInsert.addEventListener("click", () => {
           const inp = $("composer-input");
           inp.value = `${inp.value ? inp.value + " " : ""}@skill:${s.slug} `;
@@ -2835,7 +3057,7 @@
         const btnEdit = document.createElement("button");
         btnEdit.type = "button";
         btnEdit.className = "secondary";
-        btnEdit.textContent = "編輯";
+        btnEdit.textContent = t("btnEdit");
         btnEdit.addEventListener("click", async () => {
           const full = await hubFetch(`/hub/v1/circle/skills/${encodeURIComponent(s.slug)}`, {}, session);
           circleSkillExpectedVer = Number(full.version || s.version || 0);
@@ -2849,9 +3071,9 @@
         const btnDel = document.createElement("button");
         btnDel.type = "button";
         btnDel.className = "secondary";
-        btnDel.textContent = "刪除";
+        btnDel.textContent = t("btnDelete");
         btnDel.addEventListener("click", async () => {
-          if (!session || !confirm(`確定從 Circle 刪除技能 ${s.slug} (v${s.version}) 嗎？`)) return;
+          if (!session || !confirm(`${t("skillConfirmDelete")} ${s.slug} (v${s.version})?`)) return;
           await hubFetch(`/hub/v1/circle/skills/${encodeURIComponent(s.slug)}`, {
             method: "DELETE",
             body: JSON.stringify({ expectedVersion: Number(s.version), idempotencyKey: skillIdemKey("ui-del") }),
@@ -2882,8 +3104,6 @@
     if (e.target === $("skills-modal-backdrop")) $("skills-modal-backdrop").classList.add("hidden");
   });
   $("btn-skills-refresh").addEventListener("click", () => refreshCircleSkills().then(renderSkillsModal).catch(() => {}));
-  let skillEditorMode = "doc";
-
   function setSkillEditorMode(mode) {
     skillEditorMode = mode === "npx" ? "npx" : "doc";
     const isNpx = skillEditorMode === "npx";
@@ -2893,11 +3113,11 @@
     $("skill-mode-npx").setAttribute("aria-selected", String(isNpx));
     $("btn-skill-format-npx").classList.toggle("hidden", !isNpx);
     if (isNpx) {
-      $("skill-editor-help").textContent = "直接貼上 npx / npm / CLI 安裝指令即可（不必手動加 Markdown 語法）。發布時會自動整理為安全規範格式，並提醒 Agent 執行前先詢問人類主人。";
-      $("chat-skill-content").placeholder = "直接貼上指令即可，例如：\nnpx skills add https://github.com/Leonxlnx/taste-skill --skill \"design-taste-frontend\"\nnpx skills add nutlope/hallmark -g\nnpx impeccable install";
+      $("skill-editor-help").textContent = t("skillHelpNpx");
+      $("chat-skill-content").placeholder = t("skillPlaceholderNpx");
     } else {
-      $("skill-editor-help").textContent = "可直接貼純文字規則、操作步驟或 SKILL.md；不需要懂 Markdown 語法，代號留空也會自動產生。";
-      $("chat-skill-content").placeholder = "可直接貼純文字規範、操作指引，或整份 SKILL.md 內容…";
+      $("skill-editor-help").textContent = t("skillHelpDoc");
+      $("chat-skill-content").placeholder = t("skillPlaceholderDoc");
     }
   }
 
@@ -2957,14 +3177,14 @@
   $("btn-skill-format-npx").addEventListener("click", () => {
     const raw = $("chat-skill-content").value;
     if (!raw.trim()) {
-      $("chat-skill-status").textContent = "請先貼上 npx 或 CLI 安裝指令。";
+      $("chat-skill-status").textContent = t("skillMsgEnterCli");
       return;
     }
     if (!$("chat-skill-slug").value.trim()) {
       $("chat-skill-slug").value = deriveSkillSlug(raw, true);
     }
     $("chat-skill-content").value = formatNpxSkillContent(raw);
-    $("chat-skill-status").textContent = "已自動整理為安全 SKILL.md 格式，可直接發布。";
+    $("chat-skill-status").textContent = t("skillMsgFormatted");
   });
 
   $("btn-skills-new-toggle").addEventListener("click", () => {
@@ -3005,7 +3225,7 @@
       await refreshCircleSkills();
       renderSkillsModal();
     } catch (err) {
-      $("chat-skill-status").textContent = err.message || "發布失敗";
+      $("chat-skill-status").textContent = err.message || t("skillMsgPublishFailed");
     }
   });
 
