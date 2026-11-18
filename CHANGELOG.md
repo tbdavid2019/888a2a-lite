@@ -28,6 +28,10 @@
 
 ### Changed
 
+- 依 `web-ui-a11y-modernization` 規格全面升級 [`internal/service/chat.html`](internal/service/chat.html) 與 [`internal/service/admin.html`](internal/service/admin.html) 之無障礙、現代化瀏覽器互動與視覺細節：
+  - **WCAG AA 對比與防閃爍（Zero-FOUC）**：`/admin` 實心按鈕改採獨立高對比 `--accent-btn-bg`/`--accent-btn-hover`/`--accent-btn-fg` tokens，修正 `/chat` Dark Mode Hover、`.pill.accent` 與 `@` 選單選取態對比達 4.5:1+，將色彩常數收斂進 `:root`，於 `<head>` 加入帶 `CSP_NONCE` 之同步主題初始化腳本消除深色模式載入閃爍，並補齊 `<meta name="description">`、`overflow-x: clip`、`text-wrap: balance` 與 `:active` 微縮放回饋及 `@media (prefers-reduced-motion: reduce)` 保護。
+  - **原生 Top-Layer `<dialog>` 與手機側欄 `inert` 隔離**：技能／資源對話框升級為原生 `<dialog closedby="any">` + `showModal()`（含 `overscroll-behavior: contain` 與指標座標輕觸關閉 fallback），提供完整 Focus Trap；手機版（`<= 820px`）展開左側抽屜時自動對背景 `#main-pane` 套用 `inert`、切換焦點並於視窗放大時自動重置。
+  - **首屏引導精簡、統一線性 SVG 圖示與 ARIA Combobox**：未連線階段收斂為單一 `#connect-strip` 引導舞台（隱藏無效之 disabled 輸入列）；將技能／資源編輯器與 888box 上傳按鈕內 Emoji 全面替換為一致之 14px 線性 inline SVG 並保留三語系 `<span data-i18n>` 切換；為 `@` 補全選單補齊 `role="combobox"` / `aria-activedescendant` 與高度限制，並對 `.msg-row` 加入 `content-visibility: auto` 優化長對話捲動效能。
 - 升級 `internal/service/chat.html` 與 `internal/service/admin.html` 的「新增技能」表單：新增「`📦 貼上 npx 安裝指令`」模式與一鍵自動排版／自動產生 `slug` 功能，讓使用者直接貼上純文字或 `npx` 安裝指令即可發布，不須手寫 Markdown 語法。
 - 同步更新 `internal/service/llms.txt`（與根目錄 `llms.txt`）、`skills/a2a-client/SKILL.md`、`README.md` 與 `README_en.md`，明確引導已連線 Agent 如何透過 `PUT /hub/v1/circle/skills/proposals/{slug}` 提出技能／`npx` 安裝配方提案，並讓人類使用者了解左側欄操作與雙層安全核准流程。
 - 移除 `/llms.txt` 動態輸出（`internal/service/http.go`）與 `skills/a2a-client/SKILL.md` 中的中文「動態新天地／新天地」字眼，維持 LLM 介面純英文描述。

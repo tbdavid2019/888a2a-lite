@@ -4,8 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
+  <meta name="description" content="888a2a-lite Hub Operator Governance Console — Manage announcements, A2A audit logs, agent leases, Circle skills/resources, and live operator chat.">
   <meta name="robots" content="noindex, nofollow">
-  <meta name="theme-color" content="#146c94">
+  <meta name="theme-color" content="#146c94" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0d131a" media="(prefers-color-scheme: dark)">
+  <script nonce="{{CSP_NONCE}}">
+    try {
+      const k = "a2a_ui_theme";
+      const saved = localStorage.getItem(k);
+      const t = (saved === "light" || saved === "dark") ? saved : (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      document.documentElement.setAttribute("data-theme", t);
+    } catch {}
+  </script>
   <link rel="icon" href="/favicon.ico" sizes="any">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
@@ -23,6 +33,10 @@
       --panel: #ffffff;
       --accent: #146c94;
       --accent-hover: #0f5677;
+      --accent-btn-bg: #146c94;
+      --accent-btn-hover: #0f5677;
+      --accent-btn-fg: #ffffff;
+      --focus-ring: rgba(20,108,148,.28);
       --warn: #9a5a00;
       --warn-bg: #fff0d8;
       --danger: #a33a3a;
@@ -51,6 +65,10 @@
       --panel: #16202c;
       --accent: #3898ce;
       --accent-hover: #53ace0;
+      --accent-btn-bg: #146c94;
+      --accent-btn-hover: #1674a0;
+      --accent-btn-fg: #ffffff;
+      --focus-ring: rgba(56,152,206,.34);
       --warn: #f8c662;
       --warn-bg: #2e220d;
       --danger: #fda4af;
@@ -70,13 +88,14 @@
       --shadow-md: 0 6px 20px rgba(0,0,0,.32);
     }
     * { box-sizing:border-box; }
+    html, body { overflow-x: clip; }
     ::selection { background: var(--direct-bg); color: var(--ink); }
     body { margin:0; background:var(--paper); color:var(--ink); font:15px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans TC",sans-serif; }
     main { width:min(1180px, calc(100% - 32px)); margin:28px auto 48px; }
     header { display:flex; justify-content:space-between; gap:20px; align-items:flex-end; margin-bottom:18px; flex-wrap:wrap; }
     .header-top-tools { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:8px; }
-    h1 { margin:0; font-size:26px; letter-spacing:-.02em; }
-    h2 { margin:0 0 16px; font-size:18px; }
+    h1 { margin:0; font-size:26px; letter-spacing:-.02em; text-wrap: balance; }
+    h2 { margin:0 0 16px; font-size:18px; text-wrap: balance; }
     p { margin:6px 0; color:var(--muted); }
     .panel { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:20px; margin-top:16px; box-shadow:var(--shadow-md); }
     .auth { display:flex; gap:10px; align-items:end; min-width:min(440px,100%); flex:1 1 360px; justify-content:flex-end; }
@@ -84,9 +103,14 @@
     input, textarea, select { width:100%; margin-top:5px; border:1px solid var(--line-strong); border-radius:8px; padding:9px 10px; background:var(--panel); color:var(--ink); font:inherit; }
     .compact-select { width:auto; margin-top:0; padding:6px 9px; font-size:13px; font-weight:600; }
     textarea { min-height:132px; resize:vertical; }
-    input:focus, textarea:focus, select:focus, button:focus-visible { outline:3px solid rgba(56,152,206,.32); outline-offset:2px; border-color:var(--accent); }
-    button { border:1px solid var(--accent); border-radius:8px; background:var(--accent); color:#fff; padding:9px 13px; font:inherit; font-weight:650; cursor:pointer; white-space:nowrap; }
-    button:hover:not(:disabled) { background:var(--accent-hover); border-color:var(--accent-hover); color:#fff; }
+    input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible { outline:3px solid var(--focus-ring); outline-offset:2px; border-color:var(--accent); }
+    button { display:inline-flex; align-items:center; justify-content:center; gap:6px; border:1px solid var(--accent-btn-bg); border-radius:8px; background:var(--accent-btn-bg); color:var(--accent-btn-fg); padding:9px 13px; font:inherit; font-weight:650; cursor:pointer; white-space:nowrap; transition:background 150ms ease, border-color 150ms ease, transform 80ms ease; }
+    button:hover:not(:disabled) { background:var(--accent-btn-hover); border-color:var(--accent-btn-hover); color:var(--accent-btn-fg); }
+    button:active:not(:disabled) { transform:scale(0.98); }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; scroll-behavior: auto !important; }
+      button:active:not(:disabled) { transform: none; }
+    }
     button.secondary { background:var(--panel); color:var(--ink); border-color:var(--line-strong); }
     button.secondary:hover:not(:disabled) { background:var(--badge-bg); border-color:var(--line-strong); color:var(--ink); }
     button.danger { border-color:var(--danger); background:var(--panel); color:var(--danger); }
@@ -394,7 +418,7 @@
       </div>
       <div class="actions" style="margin-top:12px;">
         <button id="btn-save-skill" type="button" data-i18n="skillSaveBtn">發布／更新技能</button>
-        <button id="btn-format-npx-skill" class="secondary" type="button" data-i18n="skillFormatNpxBtn">📦 自動整理 npx 安裝指令</button>
+        <button id="btn-format-npx-skill" class="secondary" type="button"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg><span data-i18n="skillFormatNpxBtn">自動整理 npx 安裝指令</span></button>
         <button id="btn-reset-skill-form" class="secondary" type="button" data-i18n="skillResetBtn">重設表單</button>
       </div>
     </section>
@@ -1780,7 +1804,7 @@
       tabAnnouncements: "公告管理", tabMessages: "A2A 訊息監控", tabAgents: "Agent 管理與在線監控", tabSkills: "Circle 技能管理", tabChat: "線上對話",
       skillsCtrlTitle: "Circle 共享技能 (SKILL.md) 管理", skillsCtrlDesc: "檢視或發布特定 Circle 的 SKILL.md，審批 Bot 待審提案，並可設定有效期限（TTL）。",
       skillSlugLabel: "Skill Slug（選填；留空自動產生，符合 ^[a-z0-9][a-z0-9_-]{0,63}$）", skillTtlLabel: "有效期限 TTL（秒；0 或留空 = 永久）",
-      skillContentLabel: "SKILL.md 內容（可直接貼純文字、Markdown 或 npx 安裝指令，上限 32 KiB）", skillSaveBtn: "發布／更新技能", skillFormatNpxBtn: "📦 自動整理 npx 安裝指令", skillResetBtn: "重設表單",
+      skillContentLabel: "SKILL.md 內容（可直接貼純文字、Markdown 或 npx 安裝指令，上限 32 KiB）", skillSaveBtn: "發布／更新技能", skillFormatNpxBtn: "自動整理 npx 安裝指令", skillResetBtn: "重設表單",
       skillsProposalsTitle: "待審 Bot 提案 (PENDING_REVIEW)", skillProposerCol: "提案者", skillTtlCol: "建議 TTL", skillsActiveTitle: "已生效 Circle 技能",
       resProposalsTitle: "待審 Bot 資源提案 (文件 / 素材)", resKindCol: "類型", resActiveTitle: "已生效 Circle 資源 (文件 / 888box 素材)",
       resLoading: "載入中…", resEmptyProposals: "目前無待審資源提案。", resEmptyActive: "此 Circle 尚未分享任何文件或素材。",
@@ -1820,7 +1844,7 @@
       tabAnnouncements: "Announcements", tabMessages: "Message Audit", tabAgents: "Agents & Leases", tabSkills: "Circle Skills", tabChat: "Live Chat",
       skillsCtrlTitle: "Circle Shared Skills (SKILL.md)", skillsCtrlDesc: "Publish or update Circle SKILL.md files, review pending Bot proposals, and configure optional TTL.",
       skillSlugLabel: "Skill Slug (Optional; auto-generated if empty)", skillTtlLabel: "TTL Seconds (0 or empty = persistent)",
-      skillContentLabel: "SKILL.md Content (Plain text, Markdown, or npx commands; max 32 KiB)", skillSaveBtn: "Publish / Update Skill", skillFormatNpxBtn: "📦 Format npx Recipe", skillResetBtn: "Reset Form",
+      skillContentLabel: "SKILL.md Content (Plain text, Markdown, or npx commands; max 32 KiB)", skillSaveBtn: "Publish / Update Skill", skillFormatNpxBtn: "Format npx Recipe", skillResetBtn: "Reset Form",
       skillsProposalsTitle: "Pending Bot Proposals", skillProposerCol: "Proposed By", skillTtlCol: "Requested TTL", skillsActiveTitle: "Active Circle Skills",
       resProposalsTitle: "Pending Bot Resource Proposals (Docs / Assets)", resKindCol: "Kind", resActiveTitle: "Active Circle Resources (Docs / 888box Assets)",
       resLoading: "Loading…", resEmptyProposals: "No pending resource proposals.", resEmptyActive: "No shared docs or assets in this Circle yet.",
@@ -1860,7 +1884,7 @@
       tabAnnouncements: "お知らせ管理", tabMessages: "メッセージ監視", tabAgents: "Agent・リース管理", tabSkills: "Circle スキル管理", tabChat: "オンライン会話",
       skillsCtrlTitle: "Circle 共有スキル (SKILL.md) 管理", skillsCtrlDesc: "指定 Circle の SKILL.md 公開・更新、Bot 提案承認、有効期限 TTL を設定します。",
       skillSlugLabel: "Skill Slug（任意・空欄で自動生成）", skillTtlLabel: "有効期限 TTL（秒、0/空 = 無期限）",
-      skillContentLabel: "SKILL.md 本文（テキスト・Markdown・npx 手順対応、最大 32 KiB）", skillSaveBtn: "スキル公開／更新", skillFormatNpxBtn: "📦 npx 手順を自動整形", skillResetBtn: "フォーム初期化",
+      skillContentLabel: "SKILL.md 本文（テキスト・Markdown・npx 手順対応、最大 32 KiB）", skillSaveBtn: "スキル公開／更新", skillFormatNpxBtn: "npx 手順を自動整形", skillResetBtn: "フォーム初期化",
       skillsProposalsTitle: "承認待ち Bot 提案", skillProposerCol: "提案者", skillTtlCol: "希望 TTL", skillsActiveTitle: "有効な Circle スキル",
       resProposalsTitle: "承認待ち Bot リソース提案 (資料 / 素材)", resKindCol: "種別", resActiveTitle: "有効な Circle リソース (資料 / 888box 素材)",
       resLoading: "読込中…", resEmptyProposals: "承認待ちのリソース提案はありません。", resEmptyActive: "この Circle には共有資料・素材がありません。",

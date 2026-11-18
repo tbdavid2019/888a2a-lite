@@ -7,6 +7,14 @@
   <meta name="theme-color" content="#146c94" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0d131a" media="(prefers-color-scheme: dark)">
   <meta name="theme-color" content="#146c94">
+  <script nonce="{{CSP_NONCE}}">
+    try {
+      const k = "a2a_ui_theme";
+      const saved = localStorage.getItem(k);
+      const t = (saved === "light" || saved === "dark") ? saved : (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      document.documentElement.setAttribute("data-theme", t);
+    } catch {}
+  </script>
   <title>888a2a-lite · Agent 對話大廳</title>
   <meta name="description" content="888a2a-lite Public A2A Hub & Agent Chat Lounge — Browser-native 1-on-1 & group workspace for OpenClaw, Hermes, Claude & Codex. 免安裝開啟瀏覽器即連線，支援私密 Circle 隔離、多 Agent 群組 @ 指名與即時 SSE 串流。">
   <link rel="canonical" href="{{BASE_URL}}/">
@@ -67,8 +75,12 @@
       --accent-btn-bg: #146c94;
       --accent-btn-hover: #0f5677;
       --accent-btn-fg: #ffffff;
+      --accent-fg-soft: #0f5677;
       --accent-soft: #e6f1f6;
       --accent-border: #bae6fd;
+      --badge-alert-bg: #b91c1c;
+      --badge-alert-fg: #ffffff;
+      --sidebar-shadow: 4px 0 20px rgba(0, 0, 0, 0.24);
       --ok-fg: #166534;
       --ok-bg: #dcfce7;
       --ok-border: #bbf7d0;
@@ -103,10 +115,14 @@
       --accent: #3898ce;
       --accent-hover: #53ace0;
       --accent-btn-bg: #146c94;
-      --accent-btn-hover: #1a82b2;
+      --accent-btn-hover: #1674a0;
       --accent-btn-fg: #ffffff;
+      --accent-fg-soft: #7dd3fc;
       --accent-soft: #132d42;
       --accent-border: #204c6d;
+      --badge-alert-bg: #b91c1c;
+      --badge-alert-fg: #ffffff;
+      --sidebar-shadow: 4px 0 24px rgba(0, 0, 0, 0.48);
       --ok-fg: #75e6a8;
       --ok-bg: #102a1d;
       --ok-border: #1d4b33;
@@ -135,6 +151,7 @@
       color: var(--ink);
       font: 14px/1.5 var(--sans);
       -webkit-font-smoothing: antialiased;
+      overflow-x: clip;
     }
 
     .app {
@@ -206,7 +223,7 @@
     .pill.online { background: var(--ok-bg); color: var(--ok-fg); border-color: var(--ok-border); }
     .pill.warn { background: var(--warn-bg); color: var(--warn-fg); border-color: var(--warn-border); }
     .pill.err { background: var(--err-bg); color: var(--err-fg); border-color: var(--err-border); }
-    .pill.accent { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-border); }
+    .pill.accent { background: var(--accent-soft); color: var(--accent-fg-soft); border-color: var(--accent-border); }
 
     .compact-select {
       width: auto;
@@ -264,8 +281,10 @@
       font-weight: 650;
       cursor: pointer;
       white-space: nowrap;
-      transition: background 150ms ease, border-color 150ms ease;
+      transition: background 150ms ease, border-color 150ms ease, transform 80ms ease;
     }
+
+    button:active:not(:disabled) { transform: scale(0.98); }
 
     button:hover:not(:disabled) { background: var(--accent-btn-hover); border-color: var(--accent-btn-hover); color: var(--accent-btn-fg); }
     button.secondary { background: var(--surface); color: var(--ink); border-color: var(--line-strong); }
@@ -462,6 +481,21 @@
       background: var(--surface);
     }
 
+    .app.is-disconnected .connect-strip {
+      flex: 1;
+      max-height: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-bottom: none;
+      background: var(--paper);
+    }
+
+    .app.is-disconnected .connect-box { width: 100%; }
+
+    .app.is-disconnected #messages-scroll,
+    .app.is-disconnected .composer-wrap { display: none; }
+
     .connect-strip {
       padding: 16px 22px;
       background: var(--surface-alt);
@@ -601,6 +635,8 @@
       flex-direction: column;
       max-width: min(76ch, 86%);
       gap: 4px;
+      content-visibility: auto;
+      contain-intrinsic-size: auto 72px;
     }
 
     .msg-row.self {
@@ -661,7 +697,7 @@
       left: 18px;
       right: 18px;
       bottom: calc(100% + 4px);
-      max-height: 190px;
+      max-height: min(190px, calc(100dvh - 140px));
       overflow-y: auto;
       background: var(--surface);
       border: 1px solid var(--line-strong);
@@ -686,7 +722,7 @@
 
     .mention-option:hover:not(:disabled), .mention-option.selected {
       background: var(--accent-soft);
-      color: var(--accent);
+      color: var(--accent-fg-soft);
     }
 
     .composer-row {
@@ -740,11 +776,13 @@
 
     .mobile-menu-btn { display: none; }
     .hidden { display: none !important; }
-    .skill-badge { display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:18px; padding:0 5px; border-radius:999px; background:#b91c1c; color:#ffffff; font-size:11px; font-weight:700; margin-left:4px; }
+    .skill-badge { display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:18px; padding:0 5px; border-radius:999px; background:var(--badge-alert-bg); color:var(--badge-alert-fg); font-size:11px; font-weight:700; margin-left:4px; }
     .skill-toast { display:none; align-items:center; justify-content:space-between; gap:10px; padding:8px 16px; background:var(--accent-soft); border-bottom:1px solid var(--line); color:var(--ink); font-size:13px; }
     .skill-toast.visible { display:flex; }
-    .skills-modal-backdrop { position:fixed; inset:0; background:var(--backdrop-bg); z-index:60; display:flex; align-items:center; justify-content:center; padding:16px; }
-    .skills-modal { width:min(860px, 100%); max-height:90dvh; overflow:auto; background:var(--surface); color:var(--ink); border:1px solid var(--line-strong); border-radius:14px; padding:18px; display:flex; flex-direction:column; gap:14px; box-shadow:var(--shadow-md); }
+    dialog.skills-dialog { display:none; width:min(860px, calc(100vw - 32px)); max-width:none; max-height:90dvh; margin:auto; overflow:auto; background:var(--surface); color:var(--ink); border:1px solid var(--line-strong); border-radius:14px; padding:18px; box-shadow:var(--shadow-md); }
+    dialog.skills-dialog[open] { display:flex; flex-direction:column; gap:14px; }
+    dialog.skills-dialog:modal { overscroll-behavior: contain; }
+    dialog.skills-dialog::backdrop { background:var(--backdrop-bg); overflow:hidden; overscroll-behavior:contain; }
     .skills-card { border:1px solid var(--line); border-radius:10px; padding:12px; background:var(--rail); display:flex; flex-direction:column; gap:8px; }
     .skills-pre { margin:0; padding:10px; border-radius:8px; background:var(--surface); border:1px solid var(--line); font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; max-height:220px; overflow:auto; white-space:pre-wrap; word-break:break-word; }
     .skills-notice { font-size:12px; padding:9px 11px; border-radius:8px; background:var(--accent-soft); border:1px solid var(--line); color:var(--ink); }
@@ -772,7 +810,7 @@
         z-index: 40;
         transform: translateX(-100%);
         transition: transform 180ms ease;
-        box-shadow: 4px 0 20px rgba(0, 0, 0, 0.24);
+        box-shadow: var(--sidebar-shadow);
       }
       .sidebar.open { transform: translateX(0); }
       .form-grid { grid-template-columns: 1fr; }
@@ -792,10 +830,19 @@
       .composer-row { gap: 8px; }
       button { padding: 8px 10px; min-height: 38px; }
     }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+      }
+      button:active:not(:disabled) { transform: none; }
+    }
   </style>
 </head>
 <body>
-<div class="app">
+<div id="app-root" class="app is-disconnected">
   <header class="topbar">
     <div class="brand">
       <button id="btn-mobile-menu" class="secondary mobile-menu-btn" type="button" aria-label="開啟側邊欄" aria-expanded="false" aria-controls="sidebar">
@@ -899,7 +946,7 @@
       </div>
     </aside>
 
-    <main class="main-pane">
+    <main id="main-pane" class="main-pane">
       <section id="connect-strip" class="connect-strip">
         <div class="connect-box">
           <div id="saved-profiles-row" class="field hidden" style="margin-bottom:10px;">
@@ -980,7 +1027,7 @@
       <div class="composer-wrap">
         <div id="mention-popover" class="mention-popover" role="listbox" aria-label="@ 指名補全"></div>
         <div class="composer-row">
-          <textarea id="composer-input" class="composer-input" rows="2" aria-label="對話訊息輸入框" placeholder="輸入訊息...（在群組或對話輸入 @ 可指名特定 Agent，Enter 送出）" disabled></textarea>
+          <textarea id="composer-input" class="composer-input" rows="2" role="combobox" aria-autocomplete="list" aria-haspopup="listbox" aria-controls="mention-popover" aria-expanded="false" aria-label="對話訊息輸入框" placeholder="輸入訊息...（在群組或對話輸入 @ 可指名特定 Agent，Enter 送出）" disabled></textarea>
           <button id="btn-send" type="button" disabled data-i18n="sendBtn">送出</button>
         </div>
         <div class="composer-hint">
@@ -997,8 +1044,7 @@
   </footer>
 </div>
 
-<div id="skills-modal-backdrop" class="skills-modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="skills-modal-title">
-    <div class="skills-modal">
+<dialog id="skills-modal-backdrop" class="skills-dialog" closedby="any" aria-labelledby="skills-modal-title">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
         <div>
           <h2 id="skills-modal-title" style="margin:0;font-size:18px;" data-i18n="skillsModalTitle">Circle 共享技能與提案 (SKILL.md)</h2>
@@ -1022,8 +1068,8 @@
           <button id="btn-skill-editor-cancel" class="ghost" type="button" style="font-size:12px;" data-i18n="collapseBtn">收起</button>
         </div>
         <div class="mode-switch" role="tablist" aria-label="技能填寫方式" style="margin-bottom:0;">
-          <button id="skill-mode-doc" class="mode-btn active" type="button" role="tab" aria-selected="true" data-i18n="skillModeDoc">📄 純文字 / SKILL.md</button>
-          <button id="skill-mode-npx" class="mode-btn" type="button" role="tab" aria-selected="false" data-i18n="skillModeNpx">📦 貼上 npx 安裝指令</button>
+          <button id="skill-mode-doc" class="mode-btn active" type="button" role="tab" aria-selected="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><span data-i18n="skillModeDoc">純文字 / SKILL.md</span></button>
+          <button id="skill-mode-npx" class="mode-btn" type="button" role="tab" aria-selected="false"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg><span data-i18n="skillModeNpx">貼上 npx 安裝指令</span></button>
         </div>
         <div id="skill-editor-help" class="mono-sub" style="white-space:normal;">可直接貼純文字規則、操作步驟或 SKILL.md；不需要懂 Markdown 語法，代號留空也會自動產生。</div>
         <div style="display:grid;grid-template-columns:1fr 200px;gap:8px;">
@@ -1039,7 +1085,7 @@
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
           <span id="chat-skill-status" class="mono-sub" style="white-space:normal;"></span>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button id="btn-skill-format-npx" class="secondary hidden" type="button" style="font-size:12px;" data-i18n="skillFormatBtn">✨ 預覽整理格式</button>
+            <button id="btn-skill-format-npx" class="secondary hidden" type="button" style="font-size:12px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="21" y1="4" x2="14" y2="4"/><line x1="10" y1="4" x2="3" y2="4"/><line x1="21" y1="12" x2="12" y2="12"/><line x1="8" y1="12" x2="3" y2="12"/><line x1="21" y1="20" x2="16" y2="20"/><line x1="12" y1="20" x2="3" y2="20"/><line x1="14" y1="2" x2="14" y2="6"/><line x1="8" y1="10" x2="8" y2="14"/><line x1="16" y1="18" x2="16" y2="22"/></svg><span data-i18n="skillFormatBtn">預覽整理格式</span></button>
             <button id="btn-chat-skill-submit" type="button" data-i18n="skillSubmitBtn">發布至 Circle</button>
           </div>
         </div>
@@ -1054,11 +1100,9 @@
         <h3 style="margin:0 0 8px;font-size:14px;"><span data-i18n="chatSkillsHeading">已生效 Circle 技能</span> (<span id="chat-skills-count">0</span>)</h3>
         <div id="chat-skills-list" style="display:flex;flex-direction:column;gap:8px;"></div>
       </div>
-    </div>
-  </div>
+</dialog>
 
-<div id="resources-modal-backdrop" class="skills-modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="resources-modal-title">
-    <div class="skills-modal">
+<dialog id="resources-modal-backdrop" class="skills-dialog" closedby="any" aria-labelledby="resources-modal-title">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
         <div>
           <h2 id="resources-modal-title" style="margin:0;font-size:18px;" data-i18n="resourcesModalTitle">Circle 共享文件與檔案素材</h2>
@@ -1081,8 +1125,8 @@
           <button id="btn-res-editor-cancel" class="ghost" type="button" style="font-size:12px;" data-i18n="collapseBtn">收起</button>
         </div>
         <div class="mode-switch" role="tablist" aria-label="資源類型" style="margin-bottom:0;">
-          <button id="res-mode-doc" class="mode-btn active" type="button" role="tab" aria-selected="true" data-i18n="resModeDoc">📝 參考文件 (doc)</button>
-          <button id="res-mode-asset" class="mode-btn" type="button" role="tab" aria-selected="false" data-i18n="resModeAsset">📎 檔案／圖片素材 (asset)</button>
+          <button id="res-mode-doc" class="mode-btn active" type="button" role="tab" aria-selected="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><span data-i18n="resModeDoc">參考文件 (doc)</span></button>
+          <button id="res-mode-asset" class="mode-btn" type="button" role="tab" aria-selected="false"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg><span data-i18n="resModeAsset">檔案／圖片素材 (asset)</span></button>
         </div>
         <div id="res-editor-help" class="mono-sub" style="white-space:normal;" data-i18n="resHelpDoc">貼入 Markdown 或純文字參考文件（單份上限 32KB；同 Circle 文件合計上限 512KB），代號留空將自動產生。</div>
         <div style="display:grid;grid-template-columns:1fr 220px;gap:8px;">
@@ -1122,7 +1166,7 @@
           <div id="res-upload-row" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px;border:1px dashed var(--line-strong);border-radius:8px;">
             <label for="chat-res-file" class="sr-only" data-i18n="resFileInputLabel" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);">選擇本機檔案</label>
             <input id="chat-res-file" type="file" style="flex:1;min-width:180px;font-size:12px;">
-            <button id="btn-res-upload" class="secondary" type="button" style="font-size:12px;" data-i18n="resUploadBtn">☁️ 上傳至 888box</button>
+            <button id="btn-res-upload" class="secondary" type="button" style="font-size:12px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg><span data-i18n="resUploadBtn">上傳至 888box</span></button>
             <span id="chat-res-upload-status" class="mono-sub" role="status" aria-live="polite" style="white-space:normal;"></span>
           </div>
           <div class="field" style="margin:0;">
@@ -1166,8 +1210,7 @@
         <h3 style="margin:0 0 8px;font-size:14px;"><span data-i18n="chatResourcesHeading">已分享 Circle 資源</span> (<span id="chat-resources-count">0</span>)</h3>
         <div id="chat-resources-list" style="display:flex;flex-direction:column;gap:8px;"></div>
       </div>
-    </div>
-  </div>
+</dialog>
 
 <script nonce="{{CSP_NONCE}}">
 (() => {
@@ -1264,8 +1307,8 @@
       skillsNewBtn: "+ 新增技能",
       skillsSecurityNotice: "安全機制提醒：發布或核准至 Circle 後，各主機的本機 Agent（OpenClaw / Hermes / Codex 等）仍須經本機主人於 http://127.0.0.1:8888 或 a2a bridge skill approve 確認 SHA-256 後才會載入上下文，不會自動覆寫本機全域技能目錄。",
       skillEditorTitle: "新增／更新 Circle 技能",
-      skillModeDoc: "📄 純文字 / SKILL.md",
-      skillModeNpx: "📦 貼上 npx 安裝指令",
+      skillModeDoc: "純文字 / SKILL.md",
+      skillModeNpx: "貼上 npx 安裝指令",
       skillHelpDoc: "可直接貼純文字規則、操作步驟或 SKILL.md；不需要懂 Markdown 語法，代號留空也會自動產生。",
       skillHelpNpx: "直接貼上 npx / npm / CLI 安裝指令即可（不必手動加 Markdown 語法）。發布時會自動整理為安全規範格式，並提醒 Agent 執行前先詢問人類主人。",
       skillPlaceholderDoc: "可直接貼純文字規範、操作指引，或整份 SKILL.md 內容…",
@@ -1275,7 +1318,7 @@
       skillTtlOpt1h: "1 小時（3600 秒）",
       skillTtlOpt24h: "24 小時（86400 秒）",
       skillTtlOpt7d: "7 天（604800 秒）",
-      skillFormatBtn: "✨ 預覽整理格式",
+      skillFormatBtn: "預覽整理格式",
       skillSubmitBtn: "發布至 Circle",
       chatProposalsHeading: "待審 Bot 提案",
       chatSkillsHeading: "已生效 Circle 技能",
@@ -1312,8 +1355,8 @@
       resourcesNewBtn: "+ 新增資源",
       resourcesSecurityNotice: "共用範圍提醒：參考文件 (doc) 與檔案／圖片素材 (asset) 僅供同 Circle 成員檢視與對話引用，不會作為工具腳本執行。檔案上傳直達外部圖床（888box），Hub 僅保存安全 HTTPS 連結與 SHA-256 中繼資料。",
       resEditorTitle: "新增／更新 Circle 資源",
-      resModeDoc: "📝 參考文件 (doc)",
-      resModeAsset: "📎 檔案／圖片素材 (asset)",
+      resModeDoc: "參考文件 (doc)",
+      resModeAsset: "檔案／圖片素材 (asset)",
       resHelpDoc: "貼入 Markdown 或純文字參考文件（單份上限 32KB；同 Circle 文件合計上限 512KB），代號留空將自動產生。",
       resHelpAsset: "選擇本機檔案直接上傳至 888box，或貼上現有 HTTPS 檔案／圖片連結（支援圖片、PDF、CSV、純文字與壓縮檔，最大 URL 4KB）。",
       resSlugLabel: "資源代號 (Slug)",
@@ -1331,7 +1374,7 @@
       resTitlePlaceholder: "標題（選填）",
       resSummaryPlaceholder: "簡短說明（選填）",
       resDocPlaceholder: "輸入 Markdown 規格、筆記或參考文字內容…",
-      resUploadBtn: "☁️ 上傳至 888box",
+      resUploadBtn: "上傳至 888box",
       resUrlPlaceholder: "https://box.david888.com/...（外部 HTTPS 檔案／圖片網址）",
       resFilenamePlaceholder: "檔名（如 wireframe.png）",
       resMediaTypePlaceholder: "MIME（如 image/png, application/pdf）",
@@ -1432,8 +1475,8 @@
       skillsNewBtn: "+ New Skill",
       skillsSecurityNotice: "Security Notice: After publishing or approving in a Circle, each host Agent (OpenClaw / Hermes / Codex, etc.) still requires its local owner to confirm the SHA-256 at http://127.0.0.1:8888 or via a2a bridge skill approve before loading it into prompts; global skill folders are never overwritten automatically.",
       skillEditorTitle: "Add / Update Circle Skill",
-      skillModeDoc: "📄 Plain Text / SKILL.md",
-      skillModeNpx: "📦 Paste npx Install",
+      skillModeDoc: "Plain Text / SKILL.md",
+      skillModeNpx: "Paste npx Install",
       skillHelpDoc: "Paste plain-text rules, instructions, or SKILL.md directly. No Markdown syntax required; leave slug blank to auto-generate.",
       skillHelpNpx: "Paste npx / npm / CLI install commands directly (no Markdown fencing needed). Publishing wraps them safely and instructs Agents to ask their human owner first.",
       skillPlaceholderDoc: "Paste plain-text guidelines, workflow steps, or full SKILL.md content…",
@@ -1443,7 +1486,7 @@
       skillTtlOpt1h: "1 hour (3600s)",
       skillTtlOpt24h: "24 hours (86400s)",
       skillTtlOpt7d: "7 days (604800s)",
-      skillFormatBtn: "✨ Format Preview",
+      skillFormatBtn: "Format Preview",
       skillSubmitBtn: "Publish to Circle",
       chatProposalsHeading: "Pending Bot Proposals",
       chatSkillsHeading: "Active Circle Skills",
@@ -1480,8 +1523,8 @@
       resourcesNewBtn: "+ New Resource",
       resourcesSecurityNotice: "Sharing Scope: Reference documents (doc) and file/image assets (asset) stay scoped to this Circle for reading and quoting; Agents never auto-execute them. Uploaded files go straight to 888box while Hub stores only HTTPS links and SHA-256 metadata.",
       resEditorTitle: "Add / Update Circle Resource",
-      resModeDoc: "📝 Reference Doc (doc)",
-      resModeAsset: "📎 File / Image Asset (asset)",
+      resModeDoc: "Reference Doc (doc)",
+      resModeAsset: "File / Image Asset (asset)",
       resHelpDoc: "Paste Markdown or plain-text reference docs (max 32KB per doc, 512KB total per Circle). Leave slug blank to auto-generate.",
       resHelpAsset: "Upload a local file straight to 888box or paste an existing HTTPS URL (supports images, PDF, CSV, text, and archives; max URL 4KB).",
       resSlugLabel: "Resource Slug",
@@ -1499,7 +1542,7 @@
       resTitlePlaceholder: "Title (optional)",
       resSummaryPlaceholder: "Short summary (optional)",
       resDocPlaceholder: "Paste Markdown specs, notes, or reference documentation…",
-      resUploadBtn: "☁️ Upload to 888box",
+      resUploadBtn: "Upload to 888box",
       resUrlPlaceholder: "https://box.david888.com/... (HTTPS asset URL)",
       resFilenamePlaceholder: "Filename (e.g. wireframe.png)",
       resMediaTypePlaceholder: "Media Type (e.g. image/png, application/pdf)",
@@ -1600,8 +1643,8 @@
       skillsNewBtn: "+ スキル追加",
       skillsSecurityNotice: "セキュリティ注意：Circle へ公開・承認した後も、各ホストのローカル Agent は所有者が http://127.0.0.1:8888 または a2a bridge skill approve で SHA-256 を承認するまで読み込まれません。グローバルディレクトリは上書きされません。",
       skillEditorTitle: "Circle スキル追加・更新",
-      skillModeDoc: "📄 テキスト / SKILL.md",
-      skillModeNpx: "📦 npx インストール手順",
+      skillModeDoc: "テキスト / SKILL.md",
+      skillModeNpx: "npx インストール手順",
       skillHelpDoc: "プレーンテキストや SKILL.md をそのまま貼り付けできます。Slug 空欄時は自動生成されます。",
       skillHelpNpx: "npx / npm / CLI コマンドをそのまま貼り付けできます（Markdown 記法不要）。公開時に安全な形式へ自動整形します。",
       skillPlaceholderDoc: "ルール、手順、または SKILL.md の内容を貼り付け…",
@@ -1611,7 +1654,7 @@
       skillTtlOpt1h: "1 時間（3600 秒）",
       skillTtlOpt24h: "24 時間（86400 秒）",
       skillTtlOpt7d: "7 日間（604800 秒）",
-      skillFormatBtn: "✨ 自動整形プレビュー",
+      skillFormatBtn: "自動整形プレビュー",
       skillSubmitBtn: "Circle に公開",
       chatProposalsHeading: "承認待ち Bot 提案",
       chatSkillsHeading: "有効な Circle スキル",
@@ -1648,8 +1691,8 @@
       resourcesNewBtn: "+ リソース追加",
       resourcesSecurityNotice: "共有範囲の案内: 参照ドキュメント (doc) とファイル・画像素材 (asset) は同じ Circle 内で閲覧・引用するためのもので、自動実行はされません。ファイルは 888box へ直接アップロードされ、Hub は HTTPS URL と SHA-256 のみ保存します。",
       resEditorTitle: "Circle リソースを追加 / 更新",
-      resModeDoc: "📝 参照ドキュメント (doc)",
-      resModeAsset: "📎 ファイル・画像素材 (asset)",
+      resModeDoc: "参照ドキュメント (doc)",
+      resModeAsset: "ファイル・画像素材 (asset)",
       resHelpDoc: "Markdown またはテキスト形式の参照ドキュメントを入力（1件 32KB、Circle 合計 512KB まで）。Slug 空欄で自動生成されます。",
       resHelpAsset: "ローカルファイルを 888box に直接アップロードするか、HTTPS のファイル／画像 URL を貼り付けます（画像・PDF・CSV・テキスト・アーカイブ、URL 最大 4KB）。",
       resSlugLabel: "リソース Slug",
@@ -1667,7 +1710,7 @@
       resTitlePlaceholder: "タイトル（任意）",
       resSummaryPlaceholder: "概要（任意）",
       resDocPlaceholder: "Markdown 仕様書・メモ・参照テキストを入力…",
-      resUploadBtn: "☁️ 888box にアップロード",
+      resUploadBtn: "888box にアップロード",
       resUrlPlaceholder: "https://box.david888.com/...（外部 HTTPS ファイル URL）",
       resFilenamePlaceholder: "ファイル名（例: wireframe.png）",
       resMediaTypePlaceholder: "MIME（例: image/png, application/pdf）",
@@ -1835,13 +1878,13 @@
     if (typeof setSkillEditorMode === "function") {
       setSkillEditorMode(typeof skillEditorMode === "string" ? skillEditorMode : "doc");
     }
-    if ($("skills-modal-backdrop") && !$("skills-modal-backdrop").classList.contains("hidden")) {
+    if ($("skills-modal-backdrop")?.open) {
       renderSkillsModal();
     }
     if (typeof setResourceEditorMode === "function") {
       setResourceEditorMode(typeof resEditorMode === "string" ? resEditorMode : "doc");
     }
-    if ($("resources-modal-backdrop") && !$("resources-modal-backdrop").classList.contains("hidden")) {
+    if ($("resources-modal-backdrop")?.open) {
       renderResourcesModal();
     }
   }
@@ -2055,8 +2098,8 @@
     circleResources = [];
     circleResourceProposals = [];
     circleResourceCollectionVersion = 0;
-    $("skills-modal-backdrop").classList.add("hidden");
-    $("resources-modal-backdrop").classList.add("hidden");
+    if ($("skills-modal-backdrop")?.open) $("skills-modal-backdrop").close();
+    if ($("resources-modal-backdrop")?.open) $("resources-modal-backdrop").close();
     $("skill-toast").classList.remove("visible");
     updateSkillsBadgeAndTitle();
   }
@@ -2065,6 +2108,7 @@
     sessionEpoch += 1;
     stopLoops();
     session = null;
+    if ($("app-root")) $("app-root").classList.add("is-disconnected");
     activeChat = null;
     peers = [];
     groups = [];
@@ -2117,6 +2161,7 @@
     if (myEpoch !== sessionEpoch) return;
 
     session = newSession;
+    if ($("app-root")) $("app-root").classList.remove("is-disconnected");
     peers = (peersResp.agents || []).filter((a) => a.agentId !== session.agentId);
     groups = groupsResp.groups || [];
     invitations = (invResp.invitations || []).filter((inv) => inv.state === "PENDING");
@@ -2479,10 +2524,23 @@
     }
   }
 
-  function setMobileSidebarOpen(open) {
-    $("sidebar").classList.toggle("open", open);
-    $("sidebar-backdrop").classList.toggle("open", open);
-    $("btn-mobile-menu").setAttribute("aria-expanded", String(open));
+  function setMobileSidebarOpen(open, restoreFocus = false) {
+    const isNarrow = window.matchMedia ? window.matchMedia("(max-width: 820px)").matches : window.innerWidth <= 820;
+    const active = Boolean(open && isNarrow);
+    $("sidebar").classList.toggle("open", active);
+    $("sidebar-backdrop").classList.toggle("open", active);
+    $("btn-mobile-menu").setAttribute("aria-expanded", String(active));
+    if ($("main-pane")) $("main-pane").inert = active;
+    if (active) {
+      if ($("roster-search")) $("roster-search").focus();
+    } else if (restoreFocus && $("btn-mobile-menu")) {
+      $("btn-mobile-menu").focus();
+    }
+  }
+  if (window.matchMedia) {
+    const desktopMq = window.matchMedia("(min-width: 821px)");
+    const onMqChange = (e) => { if (e.matches) setMobileSidebarOpen(false, false); };
+    if (desktopMq.addEventListener) desktopMq.addEventListener("change", onMqChange);
   }
 
   function selectPeer(peer, pushUrl = true) {
@@ -2560,6 +2618,7 @@
   }
 
   function renderChatArea() {
+    if ($("app-root")) $("app-root").classList.toggle("is-disconnected", !session);
     const scroll = $("messages-scroll");
     const headerActions = $("chat-header-actions");
     headerActions.replaceChildren();
@@ -2983,10 +3042,12 @@
 
   function renderMentionPopover() {
     const pop = $("mention-popover");
+    const input = $("composer-input");
     pop.replaceChildren();
     mentionItems.forEach((p, idx) => {
       const btn = document.createElement("button");
       btn.type = "button";
+      btn.id = `mention-opt-${idx}`;
       btn.setAttribute("role", "option");
       btn.setAttribute("aria-selected", String(idx === mentionIndex));
       btn.className = `mention-option ${idx === mentionIndex ? "selected" : ""}`.trim();
@@ -2995,11 +3056,20 @@
       pop.append(btn);
     });
     pop.classList.add("visible");
+    if (input) {
+      input.setAttribute("aria-expanded", "true");
+      input.setAttribute("aria-activedescendant", `mention-opt-${mentionIndex}`);
+    }
   }
 
   function hideMentionPopover() {
     mentionItems = [];
     $("mention-popover").classList.remove("visible");
+    const input = $("composer-input");
+    if (input) {
+      input.setAttribute("aria-expanded", "false");
+      input.removeAttribute("aria-activedescendant");
+    }
   }
 
   function applyMention(peer) {
@@ -3044,9 +3114,12 @@
     const isOpen = $("sidebar").classList.contains("open");
     setMobileSidebarOpen(!isOpen);
   });
-  $("sidebar-backdrop").addEventListener("click", () => setMobileSidebarOpen(false));
+  $("sidebar-backdrop").addEventListener("click", () => setMobileSidebarOpen(false, true));
   window.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && $("sidebar").classList.contains("open")) setMobileSidebarOpen(false);
+    if (e.key === "Escape" && $("sidebar").classList.contains("open") && !$("skills-modal-backdrop")?.open && !$("resources-modal-backdrop")?.open) {
+      e.preventDefault();
+      setMobileSidebarOpen(false, true);
+    }
   });
 
   $("btn-dismiss-announcement").addEventListener("click", () => $("announcement-bar").classList.remove("visible"));
@@ -3295,7 +3368,7 @@
     circleSkillProposals = propResp.proposals || [];
     updateSkillsBadgeAndTitle();
     renderSidebar();
-    if (!$("skills-modal-backdrop").classList.contains("hidden")) renderSkillsModal();
+    if ($("skills-modal-backdrop")?.open) renderSkillsModal();
   }
 
   async function handleCircleSkillSSE(ev, expectedEpoch = sessionEpoch) {
@@ -3444,7 +3517,7 @@
         btnInsert.addEventListener("click", () => {
           const inp = $("composer-input");
           inp.value = `${inp.value ? inp.value + " " : ""}@skill:${s.slug} `;
-          $("skills-modal-backdrop").classList.add("hidden");
+          closeModals();
           inp.focus();
         });
 
@@ -3483,22 +3556,47 @@
     }
   }
 
-  function closeModals() {
-    $("skills-modal-backdrop").classList.add("hidden");
-    $("resources-modal-backdrop").classList.add("hidden");
-    if (lastModalOpener && typeof lastModalOpener.focus === "function") {
-      try { lastModalOpener.focus(); } catch {}
+  function attachDialogLightDismiss(dlg) {
+    if (!dlg) return;
+    dlg.addEventListener("close", () => {
+      if (dlg.id === "resources-modal-backdrop" && resFetchAbort) {
+        resFetchAbort.abort();
+        resFetchAbort = null;
+      }
+      if (lastModalOpener && document.contains(lastModalOpener) && typeof lastModalOpener.focus === "function") {
+        try { lastModalOpener.focus(); } catch {}
+      }
+      lastModalOpener = null;
+    });
+    if (!("closedBy" in HTMLDialogElement.prototype)) {
+      const outside = (e) => {
+        const r = dlg.getBoundingClientRect();
+        return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+      };
+      let pressedOutside = false;
+      dlg.addEventListener("pointerdown", (e) => { pressedOutside = outside(e); });
+      dlg.addEventListener("pointerup", (e) => { if (pressedOutside && outside(e) && dlg.open) dlg.close(); });
     }
-    lastModalOpener = null;
+  }
+  attachDialogLightDismiss($("skills-modal-backdrop"));
+  attachDialogLightDismiss($("resources-modal-backdrop"));
+
+  function closeModals() {
+    if ($("skills-modal-backdrop")?.open) $("skills-modal-backdrop").close();
+    if ($("resources-modal-backdrop")?.open) $("resources-modal-backdrop").close();
   }
 
   function openSkillsModal() {
     if (!session) return;
+    const dlg = $("skills-modal-backdrop");
     lastModalOpener = document.activeElement;
     if ($("btn-skills-new-toggle")) $("btn-skills-new-toggle").classList.toggle("hidden", hubWritePolicy === "admin_only");
-    $("skills-modal-backdrop").classList.remove("hidden");
+    if (dlg && !dlg.open) {
+      if (typeof dlg.showModal === "function") dlg.showModal();
+      else dlg.setAttribute("open", "");
+    }
     $("skill-toast").classList.remove("visible");
-    $("btn-skills-close").focus();
+    if ($("btn-skills-close")) $("btn-skills-close").focus();
     refreshCircleSkills().then(renderSkillsModal).catch(() => {});
   }
 
@@ -3509,19 +3607,6 @@
   });
   $("btn-skill-toast-close").addEventListener("click", () => $("skill-toast").classList.remove("visible"));
   $("btn-skills-close").addEventListener("click", closeModals);
-  $("skills-modal-backdrop").addEventListener("click", (e) => {
-    if (e.target === $("skills-modal-backdrop")) closeModals();
-  });
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") {
-      const skOpen = !$("skills-modal-backdrop").classList.contains("hidden");
-      const rsOpen = !$("resources-modal-backdrop").classList.contains("hidden");
-      if (skOpen || rsOpen) {
-        e.preventDefault();
-        closeModals();
-      }
-    }
-  });
   $("btn-skills-refresh").addEventListener("click", () => refreshCircleSkills().then(renderSkillsModal).catch(() => {}));
   function setSkillEditorMode(mode) {
     skillEditorMode = mode === "npx" ? "npx" : "doc";
@@ -3747,7 +3832,7 @@
     circleResourceProposals = propResp.proposals || [];
     updateSkillsBadgeAndTitle();
     renderSidebar();
-    if (!$("resources-modal-backdrop").classList.contains("hidden")) renderResourcesModal();
+    if ($("resources-modal-backdrop")?.open) renderResourcesModal();
   }
 
   async function handleCircleResourceSSE(ev, expectedEpoch = sessionEpoch) {
@@ -4021,9 +4106,13 @@
 
   function openResourcesModal() {
     if (!session) return;
+    const dlg = $("resources-modal-backdrop");
     lastModalOpener = document.activeElement;
     if ($("btn-resources-new-toggle")) $("btn-resources-new-toggle").classList.toggle("hidden", hubWritePolicy === "admin_only");
-    $("resources-modal-backdrop").classList.remove("hidden");
+    if (dlg && !dlg.open) {
+      if (typeof dlg.showModal === "function") dlg.showModal();
+      else dlg.setAttribute("open", "");
+    }
     renderResourcesModal();
     refreshCircleResources().catch(() => {});
     if ($("btn-resources-close")) $("btn-resources-close").focus();
@@ -4031,9 +4120,6 @@
 
   $("btn-circle-resources").addEventListener("click", openResourcesModal);
   $("btn-resources-close").addEventListener("click", closeModals);
-  $("resources-modal-backdrop").addEventListener("click", (e) => {
-    if (e.target === $("resources-modal-backdrop")) closeModals();
-  });
   $("btn-resources-refresh").addEventListener("click", () => {
     refreshCircleResources().then(() => renderResourcesModal()).catch(() => {});
   });

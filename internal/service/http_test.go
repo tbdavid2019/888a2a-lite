@@ -1020,6 +1020,16 @@ func TestHostedWebChatAndAdminChatRoutes(t *testing.T) {
 		if !strings.Contains(body, "david888.com") || !strings.Contains(body, "技術提供") || !strings.Contains(body, `data-theme="dark"`) || !strings.Contains(body, `id="lang-select"`) {
 			t.Fatalf("GET %s missing footer, dark mode, or language switcher", path)
 		}
+		for _, a11yMarker := range []string{
+			`<dialog id="skills-modal-backdrop"`,
+			`<dialog id="resources-modal-backdrop"`,
+			`prefers-reduced-motion`,
+			`aria-activedescendant`,
+		} {
+			if !strings.Contains(body, a11yMarker) {
+				t.Fatalf("GET %s missing accessibility/modernization marker %q", path, a11yMarker)
+			}
+		}
 		for _, seoMarker := range []string{
 			`<meta name="description"`,
 			`<meta property="og:description"`,
@@ -1080,6 +1090,18 @@ func TestHostedWebChatAndAdminChatRoutes(t *testing.T) {
 	}
 	if !strings.Contains(adminRec.Body.String(), "david888.com") || !strings.Contains(adminRec.Body.String(), "技術提供") || !strings.Contains(adminRec.Body.String(), `data-theme="dark"`) || !strings.Contains(adminRec.Body.String(), `id="admin-lang-select"`) {
 		t.Fatalf("GET /admin/chat missing footer, dark mode, or language switcher")
+	}
+	for _, adminMarker := range []string{
+		`<meta name="description"`,
+		`--accent-btn-bg`,
+		`prefers-reduced-motion`,
+	} {
+		if !strings.Contains(adminRec.Body.String(), adminMarker) {
+			t.Fatalf("GET /admin/chat missing accessibility/modernization marker %q", adminMarker)
+		}
+	}
+	if strings.Contains(adminRec.Body.String(), "{{CSP_NONCE}}") {
+		t.Fatalf("GET /admin/chat left unreplaced {{CSP_NONCE}} placeholder")
 	}
 	if csp := adminRec.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "script-src 'nonce-") {
 		t.Fatalf("GET /admin/chat missing CSP nonce header: %q", csp)
