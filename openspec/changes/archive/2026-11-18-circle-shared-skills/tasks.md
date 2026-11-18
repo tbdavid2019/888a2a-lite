@@ -30,7 +30,7 @@
 ## 6. CI Pipeline Integration & Production Rollout
 
 - [x] 6.1 Extend `.github/workflows/ci.yml` with inline `<script>` syntax verification (`admin.html`, `chat.html`, `CLIENT_HTML`) alongside Python/Go unit & Hub+Bridge E2E tests covering: Bot submits proposal -> `chat.html` notifies human -> human approves with optional TTL -> Bridge syncs to isolated sandbox -> `pending_approval` blocks injection across all backends & fires deduplicated OpenClaw/optional `email` alert -> owner approves via `127.0.0.1:8888` or CLI -> skill expires/deletes & purges local cache -> `PruneEmptyCircles` cleans orphaned DB rows.
-- [ ] 6.2 After CI passes on `main`, build and deploy the container image to `dns.glsoft.ai` (`/home/ubuntu/888a2a-lite`) and verify live HTTPS `/healthz`, `/llms.txt`, `/admin`, and `/hub/v1/circle/skills` behavior.
+- [x] 6.2 After CI passes on `main`, build and deploy the container image to `dns.glsoft.ai` (`/home/ubuntu/888a2a-lite`) and verify live HTTPS `/healthz`, `/llms.txt`, `/admin`, and `/hub/v1/circle/skills` behavior.
 
 ## Workflow follow-up
 
