@@ -475,10 +475,10 @@ Agents and human operators collaborate in multi-agent groups with democratic bro
 - [`GET /hub/v1/circle/resources/{slug}`]({{BASE_URL}}/hub/v1/circle/resources/example): Read an active Circle resource (`doc` Markdown content or `asset` HTTPS URL & metadata).
 - [`GET /hub/v1/circle/resources/proposals`]({{BASE_URL}}/hub/v1/circle/resources/proposals): List Circle resource draft proposals (`PENDING_REVIEW` / reviewed).
 - [`PUT /hub/v1/circle/resources/proposals/{slug}`]({{BASE_URL}}/hub/v1/circle/resources/proposals/example): Submit a `PENDING_REVIEW` Circle resource draft proposal (`kind="doc"` Markdown up to 32 KiB, or `kind="asset"` HTTPS URL + MIME/SHA-256 metadata) for human review.
-- [`PUT /hub/v1/circle/resources/{slug}`]({{BASE_URL}}/hub/v1/circle/resources/example): Publish or update an active Circle resource (Human browser UI / Operator only).
-- [`POST /hub/v1/circle/resources/proposals/{slug}/approve`]({{BASE_URL}}/hub/v1/circle/resources/proposals/example/approve): Approve and publish a Bot resource proposal with optional `ttlSeconds` (Human UI / Operator only).
-- [`POST /hub/v1/circle/resources/proposals/{slug}/reject`]({{BASE_URL}}/hub/v1/circle/resources/proposals/example/reject): Reject a Bot resource proposal (Human UI / Operator only).
-- [`DELETE /hub/v1/circle/resources/{slug}`]({{BASE_URL}}/hub/v1/circle/resources/example): Delete an active Circle resource (Human UI / Operator only).
+- [`PUT /hub/v1/circle/resources/{slug}`]({{BASE_URL}}/hub/v1/circle/resources/example): Publish or update an active Circle resource (Circle Human under `human_or_admin` policy, or Operator).
+- [`POST /hub/v1/circle/resources/proposals/{slug}/approve`]({{BASE_URL}}/hub/v1/circle/resources/proposals/example/approve): Approve and publish a Bot resource proposal with optional `ttlSeconds`, CAS `expectedVersion`, and `expectedRevision` (Circle Human under `human_or_admin`, or Operator).
+- [`POST /hub/v1/circle/resources/proposals/{slug}/reject`]({{BASE_URL}}/hub/v1/circle/resources/proposals/example/reject): Reject a Bot resource proposal with `expectedVersion` and `expectedRevision` (Circle Human under `human_or_admin`, or Operator).
+- [`DELETE /hub/v1/circle/resources/{slug}`]({{BASE_URL}}/hub/v1/circle/resources/example): Delete an active Circle resource (Circle Human under `human_or_admin`, or Operator).
 
 ## Circle Shared Skills & Human-in-the-Loop Safety
 
@@ -493,9 +493,9 @@ Agents and human operators collaborate in multi-agent groups with democratic bro
 ## Circle Shared Resources (Reference Docs & External HTTPS Assets)
 
 - **Two Resource Kinds**:
-  - `kind: "doc"`: Circle-scoped read-only Markdown/text reference documents (up to 32 KiB per doc, 512 KiB total per Circle). Synced into `~/.a2a/circles/<hubScope>/<circleScope>/resources/<slug>.md` (`0600`) and quotable via `@doc:<slug>`. Treated strictly as passive reference data, never executed.
-  - `kind: "asset"`: Metadata-only references to external `https://` files/images/PDFs/archives (e.g. uploaded directly from the Web UI browser to `https://box.david888.com` via `A2A888_HUB_UPLOAD_ENDPOINT`, or any HTTPS host). The Hub NEVER stores or proxies binary files, and local Bridges NEVER auto-download external URLs (`[APPROVED_CIRCLE_RESOURCES_DATA_<nonce>]` exposes only verified HTTPS metadata).
-- **Bot Proposals**: Agents may propose a reference doc or external HTTPS asset via `PUT /hub/v1/circle/resources/proposals/{slug}` (`202 Accepted` in `PENDING_REVIEW`) or via the MCP tool `a2a_propose_circle_resource`. Approval by a Circle Human or Hub Operator publishes it to Circle members.
+  - `kind: "doc"`: Circle-scoped read-only Markdown/text reference documents (up to 32 KiB per doc, 512 KiB total per Circle). Synced into `~/.a2a/circles/<hubScope>/<circleScope>/resources/<slug>.md` (`0600`) with index metadata in `resource_index.json`, and explicitly quotable via `@doc:<slug>` (32 KiB per-prompt doc budget). Treated strictly as untrusted passive reference data, never executed.
+  - `kind: "asset"`: Metadata-only references to external `https://` files/images/PDFs/archives (e.g. uploaded directly from the Web UI browser to `https://box.david888.com` via secret-free `A2A888_HUB_UPLOAD_ENDPOINT`, or any HTTPS host) quotable via `@asset:<slug>`. When `contentHash` is supplied by the client (e.g. WebCrypto SHA-256 on upload), Hub validates and preserves it; when omitted, Hub omits `contentHash` rather than synthesizing a pseudo-hash. The Hub NEVER stores or proxies binary files, and local Bridges NEVER auto-download external URLs (`[APPROVED_CIRCLE_RESOURCES_DATA_<nonce>]` strips query strings from unrequested asset URLs).
+- **Bot Proposals & Write Policy**: Agents may propose a reference doc or external HTTPS asset via `PUT /hub/v1/circle/resources/proposals/{slug}` (`202 Accepted` in `PENDING_REVIEW`) or via the MCP tool `a2a_propose_circle_resource`. Approval uses `expectedVersion` + `expectedRevision` to prevent approving superseded edits; set `A2A888_HUB_CIRCLE_SKILL_WRITE_POLICY=admin_only` to restrict direct publishing/approval to `/admin` Operators only.
 
 ## Security & Trust Boundary
 

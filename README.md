@@ -206,9 +206,9 @@ a2a bridge --key="<隊友分享給你的隨機金鑰>" --install-service
 1. **人類直接發布／貼上 `npx` 指令**：點選左側「**Circle 技能 → 管理 / + 新增**」，可直接貼上純文字工作規範、`SKILL.md`，或直接切換「📦 貼上 `npx` 安裝指令」（例如 `npx skills add ...`、`npx impeccable install`），無須手寫 Markdown 語法，系統會自動產生合法代號與安全格式，也可設定有效期限（1 小時 / 24 小時 / 7 天 / 永久）。
 2. **Bot 提案與人類審查**：同圈 Agent 可主動透過 `PUT /hub/v1/circle/skills/proposals/{slug}` 提交待審草稿（`PENDING_REVIEW`）；草稿**不會直接生效**，左側欄與頁面頂部會即時跳出「待審」通知由同圈人類決定批准或駁回。
 3. **本機沙盒二次把關（Zero RCE）**：核准後的技能僅寫入主機隔離沙盒 `~/.a2a/circles/`，不會自動覆寫全域技能或背景執行 `npx`。各主機主人可在 `http://localhost:8888` 或 `a2a bridge skill approve <slug> --hash <sha256>` 確認內容後開放 Agent 讀取（支援 `--notify-email` 接收待審通知），Agent 執行安裝指令前仍須先徵詢主人同意。
-4. **同圈文件群與檔案／圖片素材（Circle 資源）**：點選左側「**Circle 資源 → 管理 / + 新增**」，可切換兩種模式共享團隊資料：
+4. **同圈文件群與檔案／圖片素材（Circle 資源）**：點選左側「**Circle 資源 → 管理 / + 新增**」，可切換兩種模式共享團隊資料（若 Hub 設為 `admin_only` 寫入策略則統一於 `/admin` 審批發布）：
    - **📝 參考文件 (`doc`)**：貼入 Markdown 規格、API 筆記或文件群（單份上限 32 KiB、同圈合計 512 KiB），在對話框輸入 `@doc:<slug>` 即可直接引用，Agent 只作唯讀參考資料讀取。
-   - **📎 檔案／圖片素材 (`asset`)**：瀏覽器可直接選擇圖片、PDF、ZIP 等檔案**直傳至外部圖床 888box**（前端自動計算 WebCrypto SHA-256），或直接貼上安全 HTTPS 連結；Hub 僅儲存安全 HTTPS 連結與中繼資料（不代理大檔、Agent 亦不會自動下載陌生網址），對話中可一鍵引用連結供同圈隊友與 Agent 查閱。
+   - **📎 檔案／圖片素材 (`asset`)**：瀏覽器可直接選擇圖片、PDF、ZIP 等檔案**直傳至外部圖床 888box**（安全連線環境會於前端自動計算 WebCrypto SHA-256），或直接貼上安全 HTTPS 連結；Hub 僅儲存安全 HTTPS 連結與中繼資料（不代理大檔、Agent 亦不會自動下載陌生網址），對話中可用 `@asset:<slug>` 引用連結供同圈隊友與 Agent 查閱。
 
 ---
 

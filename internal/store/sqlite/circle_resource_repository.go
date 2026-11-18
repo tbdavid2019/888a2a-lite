@@ -95,12 +95,68 @@ func migrateCircleResources(ctx context.Context, database *sql.DB) error {
 )`,
 		`INSERT INTO schema_migrations (version, applied_at) VALUES (12, CURRENT_TIMESTAMP)`,
 	}
+	tx, err := database.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
 	for _, statement := range statements {
-		if _, err := database.ExecContext(ctx, statement); err != nil {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
 			return fmt.Errorf("migrate circle resources schema: %w", err)
 		}
 	}
-	return nil
+	return tx.Commit()
+}
+
+func migrateCircleResourcesV13(ctx context.Context, database *sql.DB) error {
+	var applied int
+	if err := database.QueryRowContext(ctx, "SELECT COUNT(*) FROM schema_migrations WHERE version = 13").Scan(&applied); err != nil {
+		return err
+	}
+	if applied > 0 {
+		return nil
+	}
+	tx, err := database.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	rows, err := tx.QueryContext(ctx, `PRAGMA table_info(circle_resource_proposals)`)
+	if err != nil {
+		return err
+	}
+	hasRevision := false
+	for rows.Next() {
+		var cid int
+		var name, colType string
+		var notNull int
+		var dflt sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &dflt, &pk); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		if name == "revision" {
+			hasRevision = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if !hasRevision {
+		if _, err := tx.ExecContext(ctx, `ALTER TABLE circle_resource_proposals ADD COLUMN revision INTEGER NOT NULL DEFAULT 1`); err != nil {
+			return fmt.Errorf("migrate circle resource proposals revision column: %w", err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations (version, applied_at) VALUES (13, CURRENT_TIMESTAMP)`); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 type cachedResourceIdempotencyPayload struct {
@@ -176,59 +232,64 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 }
 
 func (repository *Repository) ListCircleResourceManifest(ctx context.Context, hubID, circleID string, now time.Time) (hub.CircleResourceManifest, error) {
-	colVersion, err := repository.getCircleResourceCollectionVersionTx(ctx, hubID, circleID)
-	if err != nil {
-		return hub.CircleResourceManifest{}, err
-	}
 	nowUnix := now.UTC().UnixNano()
-	rows, err := repository.executor().QueryContext(ctx, `
+	var colVersion int64
+	items := make([]hub.CircleResourceManifestItem, 0)
+	totalDocBytes := 0
+	err := repository.withTransaction(ctx, func(tx *Repository) error {
+		var err error
+		colVersion, err = tx.getCircleResourceCollectionVersionTx(ctx, hubID, circleID)
+		if err != nil {
+			return err
+		}
+		rows, err := tx.executor().QueryContext(ctx, `
 SELECT slug, kind, title, summary, url, media_type, filename, size_bytes, version, content_hash, byte_size, ttl_seconds, expires_at, updated_by, updated_at
 FROM circle_resources
 WHERE hub_id = ? AND circle_id = ?
   AND deleted_at IS NULL
   AND (expires_at_unix = 0 OR expires_at_unix > ?)
 ORDER BY slug ASC`,
-		hubID, circleID, nowUnix,
-	)
-	if err != nil {
-		return hub.CircleResourceManifest{}, err
-	}
-	defer func() { _ = rows.Close() }()
+			hubID, circleID, nowUnix,
+		)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = rows.Close() }()
 
-	items := make([]hub.CircleResourceManifestItem, 0)
-	totalDocBytes := 0
-	for rows.Next() {
-		var item hub.CircleResourceManifestItem
-		var ttlVal sql.NullInt64
-		var expVal sql.NullString
-		if err := rows.Scan(
-			&item.Slug, &item.Kind, &item.Title, &item.Summary, &item.URL, &item.MediaType,
-			&item.Filename, &item.SizeBytes, &item.Version, &item.ContentHash, &item.ByteSize,
-			&ttlVal, &expVal, &item.UpdatedBy, &item.UpdatedAt,
-		); err != nil {
-			return hub.CircleResourceManifest{}, err
+		for rows.Next() {
+			var item hub.CircleResourceManifestItem
+			var ttlVal sql.NullInt64
+			var expVal sql.NullString
+			if err := rows.Scan(
+				&item.Slug, &item.Kind, &item.Title, &item.Summary, &item.URL, &item.MediaType,
+				&item.Filename, &item.SizeBytes, &item.Version, &item.ContentHash, &item.ByteSize,
+				&ttlVal, &expVal, &item.UpdatedBy, &item.UpdatedAt,
+			); err != nil {
+				return err
+			}
+			if ttlVal.Valid {
+				v := ttlVal.Int64
+				item.TTLSeconds = &v
+			}
+			if expVal.Valid && expVal.String != "" {
+				s := expVal.String
+				item.ExpiresAt = &s
+			}
+			if item.Kind == hub.ResourceKindDoc {
+				totalDocBytes += item.ByteSize
+			}
+			items = append(items, item)
 		}
-		if ttlVal.Valid {
-			v := ttlVal.Int64
-			item.TTLSeconds = &v
-		}
-		if expVal.Valid && expVal.String != "" {
-			s := expVal.String
-			item.ExpiresAt = &s
-		}
-		if item.Kind == hub.ResourceKindDoc {
-			totalDocBytes += item.ByteSize
-		}
-		items = append(items, item)
-	}
-	if err := rows.Err(); err != nil {
+		return rows.Err()
+	})
+	if err != nil {
 		return hub.CircleResourceManifest{}, err
 	}
 	return hub.CircleResourceManifest{
 		HubID:             hubID,
 		CircleID:          circleID,
 		CollectionVersion: colVersion,
-		ETag:              hub.CircleResourceManifestETag(circleID, colVersion),
+		ETag:              hub.CircleResourceManifestETagWithItems(circleID, colVersion, items),
 		ResourceCount:     len(items),
 		TotalDocBytes:     totalDocBytes,
 		Resources:         items,
@@ -526,11 +587,12 @@ func (repository *Repository) SubmitCircleResourceProposal(ctx context.Context, 
 
 		var existingStatus string
 		var existingCreatedAt string
+		var existingRevision int64
 		qErr := tx.executor().QueryRowContext(ctx, `
-SELECT status, created_at FROM circle_resource_proposals
+SELECT status, created_at, revision FROM circle_resource_proposals
 WHERE hub_id = ? AND circle_id = ? AND slug = ?`,
 			proposal.HubID, proposal.CircleID, proposal.Slug,
-		).Scan(&existingStatus, &existingCreatedAt)
+		).Scan(&existingStatus, &existingCreatedAt, &existingRevision)
 		if qErr != nil && !errors.Is(qErr, sql.ErrNoRows) {
 			return qErr
 		}
@@ -550,6 +612,7 @@ WHERE hub_id = ? AND circle_id = ? AND status = ?`,
 			}
 		}
 
+		nextRevision := existingRevision + 1
 		createdAt := nowStr
 		if existingCreatedAt != "" && isUpdate {
 			createdAt = existingCreatedAt
@@ -568,12 +631,13 @@ WHERE hub_id = ? AND circle_id = ? AND status = ?`,
 
 		if _, err := tx.executor().ExecContext(ctx, `
 INSERT INTO circle_resource_proposals (
-    hub_id, circle_id, slug, kind, base_version, title, summary, content, url, media_type, filename, size_bytes,
+    hub_id, circle_id, slug, kind, revision, base_version, title, summary, content, url, media_type, filename, size_bytes,
     content_hash, byte_size, requested_ttl_seconds, proposed_by, status, rejection_reason,
     created_at, updated_at, reviewed_by, reviewed_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?, '', NULL)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?, '', NULL)
 ON CONFLICT (hub_id, circle_id, slug) DO UPDATE SET
     kind = excluded.kind,
+    revision = excluded.revision,
     base_version = excluded.base_version,
     title = excluded.title,
     summary = excluded.summary,
@@ -592,7 +656,7 @@ ON CONFLICT (hub_id, circle_id, slug) DO UPDATE SET
     updated_at = excluded.updated_at,
     reviewed_by = '',
     reviewed_at = NULL`,
-			proposal.HubID, proposal.CircleID, proposal.Slug, proposal.Kind, proposal.BaseVersion,
+			proposal.HubID, proposal.CircleID, proposal.Slug, proposal.Kind, nextRevision, proposal.BaseVersion,
 			proposal.Title, proposal.Summary, proposal.Content, proposal.URL, proposal.MediaType,
 			proposal.Filename, proposal.SizeBytes, proposal.ContentHash, docBytes,
 			reqTTL, proposal.ProposedBy, hub.ResourceProposalStatusPending, createdAt, nowStr,
@@ -605,6 +669,7 @@ ON CONFLICT (hub_id, circle_id, slug) DO UPDATE SET
 			return err
 		}
 		saved = proposal
+		saved.Revision = nextRevision
 		saved.ByteSize = docBytes
 		saved.RequestedTTLSeconds = reqTTLCopy
 		saved.Status = hub.ResourceProposalStatusPending
@@ -625,7 +690,7 @@ ON CONFLICT (hub_id, circle_id, slug) DO UPDATE SET
 
 func (repository *Repository) ListCircleResourceProposals(ctx context.Context, hubID, circleID string) ([]hub.CircleResourceProposal, error) {
 	rows, err := repository.executor().QueryContext(ctx, `
-SELECT hub_id, circle_id, slug, kind, base_version, title, summary, content, url, media_type, filename, size_bytes, content_hash, byte_size, requested_ttl_seconds, proposed_by, status, rejection_reason, created_at, updated_at, reviewed_by, reviewed_at
+SELECT hub_id, circle_id, slug, kind, revision, base_version, title, summary, content, url, media_type, filename, size_bytes, content_hash, byte_size, requested_ttl_seconds, proposed_by, status, rejection_reason, created_at, updated_at, reviewed_by, reviewed_at
 FROM circle_resource_proposals
 WHERE hub_id = ? AND circle_id = ?
 ORDER BY CASE WHEN status = 'PENDING_REVIEW' THEN 0 ELSE 1 END, updated_at DESC, slug ASC`,
@@ -649,7 +714,7 @@ ORDER BY CASE WHEN status = 'PENDING_REVIEW' THEN 0 ELSE 1 END, updated_at DESC,
 
 func (repository *Repository) GetCircleResourceProposal(ctx context.Context, hubID, circleID, slug string) (hub.CircleResourceProposal, error) {
 	row := repository.executor().QueryRowContext(ctx, `
-SELECT hub_id, circle_id, slug, kind, base_version, title, summary, content, url, media_type, filename, size_bytes, content_hash, byte_size, requested_ttl_seconds, proposed_by, status, rejection_reason, created_at, updated_at, reviewed_by, reviewed_at
+SELECT hub_id, circle_id, slug, kind, revision, base_version, title, summary, content, url, media_type, filename, size_bytes, content_hash, byte_size, requested_ttl_seconds, proposed_by, status, rejection_reason, created_at, updated_at, reviewed_by, reviewed_at
 FROM circle_resource_proposals
 WHERE hub_id = ? AND circle_id = ? AND slug = ?`,
 		hubID, circleID, slug,
@@ -666,7 +731,7 @@ func scanCircleResourceProposal(scanner interface{ Scan(...any) error }) (hub.Ci
 	var reqTTL sql.NullInt64
 	var reviewedAt sql.NullString
 	if err := scanner.Scan(
-		&p.HubID, &p.CircleID, &p.Slug, &p.Kind, &p.BaseVersion, &p.Title, &p.Summary,
+		&p.HubID, &p.CircleID, &p.Slug, &p.Kind, &p.Revision, &p.BaseVersion, &p.Title, &p.Summary,
 		&p.Content, &p.URL, &p.MediaType, &p.Filename, &p.SizeBytes,
 		&p.ContentHash, &p.ByteSize, &reqTTL, &p.ProposedBy,
 		&p.Status, &p.ReviewReason, &p.CreatedAt, &p.UpdatedAt, &p.ReviewedBy, &reviewedAt,
@@ -684,7 +749,7 @@ func scanCircleResourceProposal(scanner interface{ Scan(...any) error }) (hub.Ci
 }
 
 func (repository *Repository) ApproveCircleResourceProposal(ctx context.Context, hubID, circleID, slug, reviewer string, decision hub.CircleResourceDecisionInput, now time.Time) (hub.CircleResource, int64, bool, error) {
-	reqHash, err := computeRequestHash("APPROVE_RESOURCE_PROPOSAL", slug, decision.ExpectedVersion, decision.TTLSeconds)
+	reqHash, err := computeRequestHash("APPROVE_RESOURCE_PROPOSAL", slug, decision.ExpectedVersion, decision.ExpectedRevision, decision.TTLSeconds)
 	if err != nil {
 		return hub.CircleResource{}, 0, false, err
 	}
@@ -707,6 +772,9 @@ func (repository *Repository) ApproveCircleResourceProposal(ctx context.Context,
 			return err
 		}
 		if proposal.Status != hub.ResourceProposalStatusPending {
+			return store.ErrConflict
+		}
+		if decision.ExpectedRevision > 0 && decision.ExpectedRevision != proposal.Revision {
 			return store.ErrConflict
 		}
 		ttl := proposal.RequestedTTLSeconds
@@ -753,7 +821,7 @@ WHERE hub_id = ? AND circle_id = ? AND slug = ?`,
 }
 
 func (repository *Repository) RejectCircleResourceProposal(ctx context.Context, hubID, circleID, slug, reviewer string, decision hub.CircleResourceDecisionInput, now time.Time) (hub.CircleResourceProposal, int64, bool, error) {
-	reqHash, err := computeRequestHash("REJECT_RESOURCE_PROPOSAL", slug, decision.Reason)
+	reqHash, err := computeRequestHash("REJECT_RESOURCE_PROPOSAL", slug, decision.ExpectedVersion, decision.ExpectedRevision, decision.Reason)
 	if err != nil {
 		return hub.CircleResourceProposal{}, 0, false, err
 	}
@@ -776,6 +844,9 @@ func (repository *Repository) RejectCircleResourceProposal(ctx context.Context, 
 			return err
 		}
 		if proposal.Status != hub.ResourceProposalStatusPending {
+			return store.ErrConflict
+		}
+		if decision.ExpectedRevision > 0 && decision.ExpectedRevision != proposal.Revision {
 			return store.ErrConflict
 		}
 		nowStr := formatTime(now.UTC())
@@ -874,6 +945,13 @@ WHERE hub_id = ? AND circle_id = ? AND slug = ?`,
 				UpdatedBy:         "system:ttl",
 				UpdatedAt:         nowStr,
 			})
+		}
+		idempotencyCutoff := formatTime(nowUTC.Add(-7 * 24 * time.Hour))
+		if _, err := tx.executor().ExecContext(ctx,
+			`DELETE FROM circle_resource_idempotency WHERE created_at < ?`,
+			idempotencyCutoff,
+		); err != nil {
+			return err
 		}
 		return nil
 	})

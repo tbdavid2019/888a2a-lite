@@ -37,8 +37,23 @@ func TestValidateCircleResourcePayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected valid asset resource, got %v", err)
 	}
-	if assetRes.Kind != ResourceKindAsset || assetRes.Filename != "banner.webp" || assetRes.ByteSize != 0 || len(assetRes.ContentHash) != 64 {
-		t.Fatalf("unexpected validated asset: %+v", err)
+	if assetRes.Kind != ResourceKindAsset || assetRes.Filename != "banner.webp" || assetRes.ByteSize != 0 || assetRes.ContentHash != "" {
+		t.Fatalf("unexpected validated asset: %+v", assetRes)
+	}
+	assetWithHash, err := ValidateCircleResourcePayload(
+		"hero-banner",
+		ResourceKindAsset,
+		"Space Banner",
+		"",
+		"",
+		"https://box.david888.com/storage/banner.webp",
+		"image/webp",
+		"",
+		12840,
+		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+	)
+	if err != nil || len(assetWithHash.ContentHash) != 64 {
+		t.Fatalf("expected asset with supplied hash to preserve 64-hex hash: %+v err=%v", assetWithHash, err)
 	}
 
 	badCases := []struct {
@@ -63,5 +78,8 @@ func TestValidateCircleResourcePayload(t *testing.T) {
 		if _, err := ValidateCircleResourcePayload("valid-slug", tc.kind, "", "", tc.content, tc.url, tc.mediaType, "", tc.size, tc.hash); err == nil {
 			t.Fatalf("%s: expected error but succeeded", tc.name)
 		}
+	}
+	if _, err := ValidateCircleResourcePayload("proposals", ResourceKindDoc, "", "", "# Reserved", "", "", "", 0, ""); err == nil {
+		t.Fatal("expected reserved slug 'proposals' to fail validation")
 	}
 }

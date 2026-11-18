@@ -232,8 +232,29 @@ func TestCircleResourcesHTTPProposalApproveETagSSEAndCSP(t *testing.T) {
 	if respGetDoc.Code != http.StatusOK || !strings.Contains(respGetDoc.Body.String(), "Use v1 carefully.") {
 		t.Fatalf("GET doc failed: %d %s", respGetDoc.Code, respGetDoc.Body.String())
 	}
+	etag1 := respGetDoc.Header().Get("ETag")
 
-	reqDel := httptest.NewRequest(http.MethodDelete, "/hub/v1/circle/resources/api-notes?expectedVersion=1&idempotencyKey=del-doc-1", nil)
+	// Updating title without changing content must produce a distinct ETag (no stale 304)
+	docBodyV2 := `{"kind":"doc","title":"Renamed API Notes","content":"# API Notes\nUse v1 carefully.","expectedVersion":1,"idempotencyKey":"put-doc-2"}`
+	reqDocV2 := httptest.NewRequest(http.MethodPut, "/hub/v1/circle/resources/api-notes", strings.NewReader(docBodyV2))
+	reqDocV2.Header.Set("X-Agent-ID", human.AgentID)
+	reqDocV2.Header.Set("Authorization", "Bearer "+human.AgentToken)
+	respDocV2 := httptest.NewRecorder()
+	handler.ServeHTTP(respDocV2, reqDocV2)
+	if respDocV2.Code != http.StatusOK {
+		t.Fatalf("human PUT doc v2 status = %d, want 200", respDocV2.Code)
+	}
+	reqGetDoc2 := httptest.NewRequest(http.MethodGet, "/hub/v1/circle/resources/api-notes", nil)
+	reqGetDoc2.Header.Set("X-Agent-ID", bot.AgentID)
+	reqGetDoc2.Header.Set("Authorization", "Bearer "+bot.AgentToken)
+	reqGetDoc2.Header.Set("If-None-Match", etag1)
+	respGetDoc2 := httptest.NewRecorder()
+	handler.ServeHTTP(respGetDoc2, reqGetDoc2)
+	if respGetDoc2.Code != http.StatusOK || respGetDoc2.Header().Get("ETag") == etag1 {
+		t.Fatalf("expected 200 with updated ETag after metadata edit, got %d etag1=%q etag2=%q", respGetDoc2.Code, etag1, respGetDoc2.Header().Get("ETag"))
+	}
+
+	reqDel := httptest.NewRequest(http.MethodDelete, "/hub/v1/circle/resources/api-notes?expectedVersion=2&idempotencyKey=del-doc-1", nil)
 	reqDel.Header.Set("X-Agent-ID", human.AgentID)
 	reqDel.Header.Set("Authorization", "Bearer "+human.AgentToken)
 	respDel := httptest.NewRecorder()

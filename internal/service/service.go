@@ -32,14 +32,15 @@ var (
 )
 
 type HubStatus struct {
-	HubID               string `json:"hubId"`
-	Mode                string `json:"mode"`
-	CircleID            string `json:"circleId,omitempty"`
-	AllowDynamicCircles bool   `json:"allowDynamicCircles,omitempty"`
-	RegistrationEnabled bool   `json:"registrationEnabled"`
-	RegisteredAgents    int    `json:"registeredAgents"`
-	PendingTasks        int    `json:"pendingTasks"`
-	UploadEndpoint      string `json:"uploadEndpoint,omitempty"`
+	HubID                  string `json:"hubId"`
+	Mode                   string `json:"mode"`
+	CircleID               string `json:"circleId,omitempty"`
+	AllowDynamicCircles    bool   `json:"allowDynamicCircles,omitempty"`
+	RegistrationEnabled    bool   `json:"registrationEnabled"`
+	RegisteredAgents       int    `json:"registeredAgents"`
+	PendingTasks           int    `json:"pendingTasks"`
+	UploadEndpoint         string `json:"uploadEndpoint,omitempty"`
+	CircleSkillWritePolicy string `json:"circleSkillWritePolicy,omitempty"`
 }
 
 type Service struct {
@@ -475,10 +476,11 @@ func (service *Service) status(ctx context.Context, circleID string, scoped, inc
 		mode = "SEMI_OPEN"
 	}
 	status := HubStatus{
-		HubID:               policy.HubID,
-		Mode:                mode,
-		RegistrationEnabled: policy.RegistrationEnabled,
-		UploadEndpoint:      service.config.UploadEndpoint,
+		HubID:                  policy.HubID,
+		Mode:                   mode,
+		RegistrationEnabled:    policy.RegistrationEnabled,
+		UploadEndpoint:         service.config.UploadEndpoint,
+		CircleSkillWritePolicy: service.config.CircleSkillWritePolicy,
 	}
 	if service.circleResolver.Mode() == circle.ModeMulti {
 		status.AllowDynamicCircles = service.config.AllowDynamicCircles
@@ -627,7 +629,9 @@ func (service *Service) RunScheduledMaintenance(ctx context.Context) (int64, int
 		return prunedAgents, prunedCircles, err
 	}
 	_, _ = service.store.StandardTasks().ExpireStandardTasks(ctx, now)
-	if expiredEvents, expErr := service.store.CircleSkills().SweepExpiredCircleSkills(ctx, now); expErr == nil {
+	if expiredEvents, expErr := service.store.CircleSkills().SweepExpiredCircleSkills(ctx, now); expErr != nil {
+		return prunedAgents, prunedCircles, expErr
+	} else {
 		for _, ev := range expiredEvents {
 			service.audit(ctx, hub.Event{
 				Type:         hub.EventCircleSkillExpired,
@@ -640,7 +644,9 @@ func (service *Service) RunScheduledMaintenance(ctx context.Context) (int64, int
 			}
 		}
 	}
-	if expiredResources, expErr := service.store.CircleResources().SweepExpiredCircleResources(ctx, now); expErr == nil {
+	if expiredResources, expErr := service.store.CircleResources().SweepExpiredCircleResources(ctx, now); expErr != nil {
+		return prunedAgents, prunedCircles, expErr
+	} else {
 		for _, ev := range expiredResources {
 			service.audit(ctx, hub.Event{
 				Type:         hub.EventCircleResourceExpired,

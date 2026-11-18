@@ -78,4 +78,14 @@ func TestLoadUploadEndpointAndDisable(t *testing.T) {
 	if _, err := Load(); err == nil {
 		t.Fatal("expected non-https upload endpoint to fail validation")
 	}
+
+	t.Setenv("A2A888_HUB_UPLOAD_ENDPOINT", "https://user:pass@box.david888.com/api.php")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected userinfo in upload endpoint to fail validation")
+	}
+
+	t.Setenv("A2A888_HUB_UPLOAD_ENDPOINT", "https://box.david888.com/api.php?action=upload&token=secret")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected secret query param in upload endpoint to fail validation")
+	}
 }

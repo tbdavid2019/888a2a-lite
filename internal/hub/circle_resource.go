@@ -54,7 +54,7 @@ type CircleResource struct {
 	Filename    string  `json:"filename,omitempty"`
 	SizeBytes   int64   `json:"sizeBytes,omitempty"`
 	Version     int64   `json:"version"`
-	ContentHash string  `json:"contentHash"`
+	ContentHash string  `json:"contentHash,omitempty"`
 	ByteSize    int     `json:"byteSize"`
 	TTLSeconds  *int64  `json:"ttlSeconds,omitempty"`
 	ExpiresAt   *string `json:"expiresAt,omitempty"`
@@ -75,7 +75,7 @@ type CircleResourceManifestItem struct {
 	Filename    string  `json:"filename,omitempty"`
 	SizeBytes   int64   `json:"sizeBytes,omitempty"`
 	Version     int64   `json:"version"`
-	ContentHash string  `json:"contentHash"`
+	ContentHash string  `json:"contentHash,omitempty"`
 	ByteSize    int     `json:"byteSize"`
 	TTLSeconds  *int64  `json:"ttlSeconds,omitempty"`
 	ExpiresAt   *string `json:"expiresAt,omitempty"`
@@ -98,6 +98,7 @@ type CircleResourceProposal struct {
 	CircleID            string `json:"circleId,omitempty"`
 	Slug                string `json:"slug"`
 	Kind                string `json:"kind"`
+	Revision            int64  `json:"revision"`
 	BaseVersion         int64  `json:"baseVersion"`
 	Title               string `json:"title"`
 	Summary             string `json:"summary"`
@@ -106,7 +107,7 @@ type CircleResourceProposal struct {
 	MediaType           string `json:"mediaType,omitempty"`
 	Filename            string `json:"filename,omitempty"`
 	SizeBytes           int64  `json:"sizeBytes,omitempty"`
-	ContentHash         string `json:"contentHash"`
+	ContentHash         string `json:"contentHash,omitempty"`
 	ByteSize            int    `json:"byteSize"`
 	RequestedTTLSeconds *int64 `json:"requestedTtlSeconds,omitempty"`
 	Status              string `json:"status"`
@@ -149,10 +150,11 @@ type CircleResourceProposalInput struct {
 }
 
 type CircleResourceDecisionInput struct {
-	ExpectedVersion int64  `json:"expectedVersion"`
-	TTLSeconds      *int64 `json:"ttlSeconds,omitempty"`
-	Reason          string `json:"reason,omitempty"`
-	IdempotencyKey  string `json:"idempotencyKey"`
+	ExpectedVersion  int64  `json:"expectedVersion"`
+	ExpectedRevision int64  `json:"expectedRevision,omitempty"`
+	TTLSeconds       *int64 `json:"ttlSeconds,omitempty"`
+	Reason           string `json:"reason,omitempty"`
+	IdempotencyKey   string `json:"idempotencyKey"`
 }
 
 type CircleResourceDeleteInput struct {
@@ -195,9 +197,48 @@ func CircleResourceManifestETag(circleID string, collectionVersion int64) string
 	return fmt.Sprintf(`W/"cr-%s-%d"`, shortCircle, collectionVersion)
 }
 
+func CircleResourceManifestETagWithItems(circleID string, collectionVersion int64, items []CircleResourceManifestItem) string {
+	var b strings.Builder
+	b.WriteString(circleID)
+	b.WriteByte('|')
+	b.WriteString(fmt.Sprintf("%d", collectionVersion))
+	for _, item := range items {
+		exp := ""
+		if item.ExpiresAt != nil {
+			exp = *item.ExpiresAt
+		}
+		b.WriteString(fmt.Sprintf("|%s:%d:%s:%s", item.Slug, item.Version, exp, item.UpdatedAt))
+	}
+	digest := computeContentHash(b.String())
+	if len(digest) > 16 {
+		digest = digest[:16]
+	}
+	return fmt.Sprintf(`W/"cr-%d-%s"`, collectionVersion, digest)
+}
+
+func CircleResourceItemETag(res CircleResource) string {
+	exp := ""
+	if res.ExpiresAt != nil {
+		exp = *res.ExpiresAt
+	}
+	digest := computeContentHash(fmt.Sprintf(
+		"%s|%s|%d|%s|%s|%s|%s|%s|%s|%d|%s|%s",
+		res.Slug, res.Kind, res.Version, res.Title, res.Summary,
+		res.ContentHash, res.URL, res.Filename, res.MediaType,
+		res.SizeBytes, exp, res.UpdatedAt,
+	))
+	if len(digest) > 20 {
+		digest = digest[:20]
+	}
+	return fmt.Sprintf(`"cr-%s-v%d-%s"`, res.Slug, res.Version, digest)
+}
+
 func ValidateCircleResourcePayload(slug, kind, title, summary, content, rawURL, mediaType, filename string, sizeBytes int64, suppliedHash string) (ValidatedCircleResourcePayload, error) {
 	if err := ValidateCircleSkillSlug(slug); err != nil {
 		return ValidatedCircleResourcePayload{}, err
+	}
+	if strings.EqualFold(strings.TrimSpace(slug), "proposals") {
+		return ValidatedCircleResourcePayload{}, errors.New(`resource slug "proposals" is reserved`)
 	}
 	normKind := strings.ToLower(strings.TrimSpace(kind))
 	if normKind == "" {
@@ -266,8 +307,6 @@ func ValidateCircleResourcePayload(slug, kind, title, summary, content, rawURL, 
 			if !sha256HexPattern.MatchString(hash) {
 				return ValidatedCircleResourcePayload{}, errors.New("contentHash must be a 64-character lowercase SHA-256 hex digest")
 			}
-		} else {
-			hash = computeContentHash(fmt.Sprintf("%s\n%s\n%s", cleanURL, cleanMedia, cleanName))
 		}
 		finalTitle := truncateRunes(title, MaxCircleSkillTitleLength)
 		if finalTitle == "" {

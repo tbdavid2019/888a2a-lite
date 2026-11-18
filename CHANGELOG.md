@@ -19,6 +19,10 @@
 
 ### Fixed
 
+- 依據三方獨立 Code Review（`OMP`、`Codex`、`OpenCode`）全面補強 `circle-shared-resources` 安全性與可靠性：
+  - **Hub 與 SQLite 遷移／一致性（Schema v13）**：`circle_resource_proposals` 新增單調 `revision` 欄位，批准／駁回強制校驗 `expectedRevision` 防範審查期間提案被覆寫（TOCTOU）；強化 `migrateCircleResources` / `migrateCircleResourcesV13` 與 `ListCircleResourceManifest` 交易一致性；擴大資源單筆及 Manifest ETag 涵蓋完整中繼資料與到期時間；移除未提供 `contentHash` 時之偽造資產雜湊；封鎖保留 slug `"proposals"`；新增 7 天逾期冪等紀錄清理；拒絕含 `userinfo`/`#fragment` 或疑似密鑰查詢參數之 `A2A888_HUB_UPLOAD_ENDPOINT`；使用 `utf8.RuneCountInString` 校驗駁回理由長度並將維護掃描錯誤確實回傳。
+  - **Web UI（`chat.html` / `admin.html`）與無障礙對比度**：於 `/hub/v1/status` 公開 `circleSkillWritePolicy` 並於 `admin_only` 模式隱藏瀏覽器寫入／審核按鈕；修復提案檢視 Toast 分類、`keep` 沿用剩餘 TTL、編輯中止競態（AbortController + epoch）與 32 KiB UTF-8 位元組前端檢核；支援 `@asset:<slug>` 與 `@doc:<slug>` 補全、補齊 `<label>`/`aria-live`/`Escape` 鍵盤關閉與焦點還原，並將實心按鈕與未讀徽章強化至 WCAG AA 對比；`admin.html` 補齊請求競態防護、操作錯誤提示及完整三語系（`zh-TW`/`en`/`ja`）資源表格翻譯。
+  - **Bridge 與 Prompt 隔離防護（`a2a_bridge.py`）**：補齊 `APPROVED_CIRCLE_RESOURCES_DATA` 標記消毒、`O_NONBLOCK` + `stat.S_ISREG` 防 FIFO／符號連結置換與損毀 `resource_index.json` 自動復原；新增跨行程 `resource_sync.lock`、`collectionVersion` 單調防回退、所有 `doc` 下載完成才提交 `manifestETag`，以及依 manifest 解析真實 `circleId`；修正 `@doc:<slug>`／`@asset:<slug>` 嚴格邊界比對、未引用素材自動剝除查詢字串、`32 KiB` 文件截斷提示，以及分開隔離技能／資源同步錯誤處理。
 - 修正 `internal/service/chat.html` `.app` Grid 版面因 `#skill-toast` 與 `#skills-modal-backdrop` 位移 `.workspace` 軌道導致下方出現空白區塊的問題，並將「Circle 技能」區塊整合進左側同圈側邊欄清單（含待審 Bot 提案徽章、已生效技能與快捷管理按鈕）。
 - 補齊 `internal/service/chat.html` 與 `internal/service/admin.html` 之三語系（`zh-TW`、`en`、`ja`）動態與靜態翻譯（涵蓋同圈人數、SSE 連線狀態、左側欄 Circle 技能區塊與技能審查／`npx` 編輯抽屜之所有按鈕與提示文字）。
 

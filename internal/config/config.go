@@ -209,8 +209,14 @@ func (config Config) Validate() error {
 	}
 	if config.UploadEndpoint != "" {
 		parsed, err := url.Parse(config.UploadEndpoint)
-		if err != nil || parsed.Scheme != "https" || parsed.Host == "" || strings.ContainsAny(config.UploadEndpoint, "<>\"'\\\r\n\t ") {
-			return fmt.Errorf("upload endpoint must be a clean https url")
+		if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" || strings.ContainsAny(config.UploadEndpoint, "<>\"'\\\r\n\t ") {
+			return fmt.Errorf("upload endpoint must be a clean https url without credentials or fragment")
+		}
+		for param := range parsed.Query() {
+			switch strings.ToLower(strings.TrimSpace(param)) {
+			case "token", "key", "secret", "password", "api_key", "apikey", "auth":
+				return fmt.Errorf("upload endpoint must not contain secret query parameters")
+			}
 		}
 	}
 	return nil

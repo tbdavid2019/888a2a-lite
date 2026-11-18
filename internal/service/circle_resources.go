@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/tbdavid2019/888a2a-lite/internal/hub"
 )
@@ -41,10 +42,11 @@ type circleResourceProposalRequest struct {
 }
 
 type circleResourceDecisionRequest struct {
-	ExpectedVersion int64  `json:"expectedVersion"`
-	TTLSeconds      *int64 `json:"ttlSeconds,omitempty"`
-	Reason          string `json:"reason,omitempty"`
-	IdempotencyKey  string `json:"idempotencyKey"`
+	ExpectedVersion  int64  `json:"expectedVersion"`
+	ExpectedRevision int64  `json:"expectedRevision,omitempty"`
+	TTLSeconds       *int64 `json:"ttlSeconds,omitempty"`
+	Reason           string `json:"reason,omitempty"`
+	IdempotencyKey   string `json:"idempotencyKey"`
 }
 
 func (service *Service) publishCircleResourceEvent(event hub.CircleResourceEvent) {
@@ -352,6 +354,9 @@ func (service *Service) approveCircleResourceProposalInternal(ctx context.Contex
 	if input.ExpectedVersion < 0 {
 		return hub.CircleResource{}, false, fmt.Errorf("%w: expectedVersion must be non-negative", ErrValidation)
 	}
+	if input.ExpectedRevision < 0 {
+		return hub.CircleResource{}, false, fmt.Errorf("%w: expectedRevision must be non-negative", ErrValidation)
+	}
 	input.IdempotencyKey = strings.TrimSpace(input.IdempotencyKey)
 	saved, colVersion, duplicate, err := service.store.CircleResources().ApproveCircleResourceProposal(ctx, service.config.HubID, circleID, slug, actor, input, service.now().UTC())
 	if err != nil {
@@ -388,8 +393,11 @@ func (service *Service) rejectCircleResourceProposalInternal(ctx context.Context
 	if err := hub.ValidateCircleSkillIdempotencyKey(input.IdempotencyKey); err != nil {
 		return hub.CircleResourceProposal{}, false, fmt.Errorf("%w: %s", ErrValidation, err.Error())
 	}
-	if len(input.Reason) > 280 {
+	if utf8.RuneCountInString(input.Reason) > 280 {
 		return hub.CircleResourceProposal{}, false, fmt.Errorf("%w: reason exceeds 280 characters", ErrValidation)
+	}
+	if input.ExpectedRevision < 0 {
+		return hub.CircleResourceProposal{}, false, fmt.Errorf("%w: expectedRevision must be non-negative", ErrValidation)
 	}
 	input.IdempotencyKey = strings.TrimSpace(input.IdempotencyKey)
 	input.Reason = strings.TrimSpace(input.Reason)
@@ -453,8 +461,7 @@ func (server *HTTPServer) getCircleResource(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	w.Header().Set("Cache-Control", "private, no-store")
-	if resource.ContentHash != "" {
-		etag := fmt.Sprintf(`"%s"`, resource.ContentHash)
+	if etag := hub.CircleResourceItemETag(resource); etag != "" {
 		w.Header().Set("ETag", etag)
 		if etagMatches(r.Header.Get("If-None-Match"), etag) {
 			w.WriteHeader(http.StatusNotModified)
@@ -576,10 +583,11 @@ func (server *HTTPServer) approveCircleResourceProposal(w http.ResponseWriter, r
 		return
 	}
 	resource, duplicate, err := server.service.ApproveCircleResourceProposalByMember(r.Context(), agentID, token, r.PathValue("slug"), hub.CircleResourceDecisionInput{
-		ExpectedVersion: req.ExpectedVersion,
-		TTLSeconds:      req.TTLSeconds,
-		Reason:          req.Reason,
-		IdempotencyKey:  req.IdempotencyKey,
+		ExpectedVersion:  req.ExpectedVersion,
+		ExpectedRevision: req.ExpectedRevision,
+		TTLSeconds:       req.TTLSeconds,
+		Reason:           req.Reason,
+		IdempotencyKey:   req.IdempotencyKey,
 	})
 	if err != nil {
 		writeServiceError(w, err)
@@ -598,9 +606,10 @@ func (server *HTTPServer) rejectCircleResourceProposal(w http.ResponseWriter, r 
 		return
 	}
 	proposal, duplicate, err := server.service.RejectCircleResourceProposalByMember(r.Context(), agentID, token, r.PathValue("slug"), hub.CircleResourceDecisionInput{
-		ExpectedVersion: req.ExpectedVersion,
-		Reason:          req.Reason,
-		IdempotencyKey:  req.IdempotencyKey,
+		ExpectedVersion:  req.ExpectedVersion,
+		ExpectedRevision: req.ExpectedRevision,
+		Reason:           req.Reason,
+		IdempotencyKey:   req.IdempotencyKey,
 	})
 	if err != nil {
 		writeServiceError(w, err)
@@ -701,10 +710,11 @@ func (server *HTTPServer) adminApproveCircleResourceProposal(w http.ResponseWrit
 		return
 	}
 	resource, duplicate, err := server.service.AdminApproveCircleResourceProposal(r.Context(), token, r.PathValue("circleId"), r.PathValue("slug"), hub.CircleResourceDecisionInput{
-		ExpectedVersion: req.ExpectedVersion,
-		TTLSeconds:      req.TTLSeconds,
-		Reason:          req.Reason,
-		IdempotencyKey:  req.IdempotencyKey,
+		ExpectedVersion:  req.ExpectedVersion,
+		ExpectedRevision: req.ExpectedRevision,
+		TTLSeconds:       req.TTLSeconds,
+		Reason:           req.Reason,
+		IdempotencyKey:   req.IdempotencyKey,
 	})
 	if err != nil {
 		writeServiceError(w, err)
@@ -723,9 +733,10 @@ func (server *HTTPServer) adminRejectCircleResourceProposal(w http.ResponseWrite
 		return
 	}
 	proposal, duplicate, err := server.service.AdminRejectCircleResourceProposal(r.Context(), token, r.PathValue("circleId"), r.PathValue("slug"), hub.CircleResourceDecisionInput{
-		ExpectedVersion: req.ExpectedVersion,
-		Reason:          req.Reason,
-		IdempotencyKey:  req.IdempotencyKey,
+		ExpectedVersion:  req.ExpectedVersion,
+		ExpectedRevision: req.ExpectedRevision,
+		Reason:           req.Reason,
+		IdempotencyKey:   req.IdempotencyKey,
 	})
 	if err != nil {
 		writeServiceError(w, err)

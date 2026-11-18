@@ -104,13 +104,39 @@ func TestCircleResourceRepositoryLifecycleProposalsExpiryAndPrune(t *testing.T) 
 		RequestedTTLSeconds: &ttl60,
 		ProposedBy:          "bot-hermes",
 	}, "prop-asset-1", now.Add(-30*time.Hour))
-	if err != nil || isUpdate || dup || proposal.Status != hub.ResourceProposalStatusPending {
+	if err != nil || isUpdate || dup || proposal.Status != hub.ResourceProposalStatusPending || proposal.Revision != 1 {
 		t.Fatalf("SubmitCircleResourceProposal failed: %+v isUpdate=%v dup=%v err=%v", proposal, isUpdate, dup, err)
+	}
+	// Updating pending proposal increments revision and invalidates stale expectedRevision on approve/reject
+	proposalV2, _, isUpdateV2, _, err := repo.CircleResources().SubmitCircleResourceProposal(ctx, hub.CircleResourceProposal{
+		HubID:               "hub",
+		CircleID:            "circle-res-empty",
+		Slug:                "wireframe-png",
+		Kind:                hub.ResourceKindAsset,
+		Title:               "Wireframe v2",
+		Summary:             "Updated UI mockup",
+		URL:                 "https://box.david888.com/f/wireframe.png",
+		MediaType:           "image/png",
+		Filename:            "wireframe.png",
+		SizeBytes:           20480,
+		ContentHash:         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		RequestedTTLSeconds: &ttl60,
+		ProposedBy:          "bot-hermes",
+	}, "prop-asset-2", now.Add(-29*time.Hour))
+	if err != nil || !isUpdateV2 || proposalV2.Revision != 2 {
+		t.Fatalf("expected proposal revision 2, got rev=%d isUpdate=%v err=%v", proposalV2.Revision, isUpdateV2, err)
+	}
+	if _, _, _, err := repo.CircleResources().ApproveCircleResourceProposal(
+		ctx, "hub", "circle-res-empty", "wireframe-png", "human-admin",
+		hub.CircleResourceDecisionInput{ExpectedVersion: 0, ExpectedRevision: 1, IdempotencyKey: "app-stale-rev"},
+		now.Add(-2*time.Minute),
+	); !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("expected ErrConflict on stale expectedRevision, got %v", err)
 	}
 
 	approved, colV2, dup, err := repo.CircleResources().ApproveCircleResourceProposal(
 		ctx, "hub", "circle-res-empty", "wireframe-png", "human-admin",
-		hub.CircleResourceDecisionInput{ExpectedVersion: 0, IdempotencyKey: "app-asset-1"},
+		hub.CircleResourceDecisionInput{ExpectedVersion: 0, ExpectedRevision: 2, IdempotencyKey: "app-asset-1"},
 		now.Add(-2*time.Minute),
 	)
 	if err != nil || dup || colV2 != 2 || approved.Version != 1 || approved.Kind != hub.ResourceKindAsset || approved.ByteSize != 0 {

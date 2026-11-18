@@ -1802,7 +1802,7 @@ func writeServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrInvitationInvalid):
 		writeError(w, http.StatusConflict, "INVITATION_INVALID", "invitation is invalid")
 	case errors.Is(err, store.ErrLimitReached):
-		writeError(w, http.StatusTooManyRequests, "RESOURCE_LIMIT_REACHED", "workflow resource limit reached")
+		writeError(w, http.StatusTooManyRequests, "RESOURCE_LIMIT_REACHED", "resource limit reached")
 	case errors.Is(err, store.ErrInvalidState):
 		writeError(w, http.StatusConflict, "INVALID_STATE", "resource state does not allow this operation")
 	case errors.Is(err, store.ErrConflict):
