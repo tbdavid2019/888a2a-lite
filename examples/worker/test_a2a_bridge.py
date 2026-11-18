@@ -772,6 +772,89 @@ class DurableBridgeTests(unittest.TestCase):
         self.assertTrue(any(t["name"] == "a2a_list_agents" for t in lines[1]["result"]["tools"]))
         self.assertIn("Agent1", lines[2]["result"]["content"][0]["text"])
 
+    def test_mcp_server_circle_skills_tools(self):
+        import io
+        content = "# Deploy Checklist\nRun tests first.\n"
+        content_hash = bridge.hashlib.sha256(content.encode("utf-8")).hexdigest()
+        proposed_calls = []
+
+        class MockHub:
+            agent_id = "agent-mcp-1"
+            hub_url = "https://a2a.test.com"
+            circle_id = "circle-mcp-test"
+
+            def supports_circle_skills(self):
+                return True
+
+            def get_circle_skill_manifest(self, etag=None):
+                return "ok", {
+                    "collectionVersion": 1,
+                    "etag": 'W/"cs-test-1"',
+                    "skills": [{
+                        "slug": "deploy-check",
+                        "title": "Deploy Checklist",
+                        "summary": "Run tests first.",
+                        "version": 1,
+                        "contentHash": content_hash,
+                        "byteSize": len(content.encode("utf-8")),
+                        "updatedAt": "2026-11-18T00:00:00Z",
+                    }],
+                }
+
+            def get_circle_skill(self, slug, etag=None):
+                return "ok", {
+                    "slug": slug,
+                    "title": "Deploy Checklist",
+                    "summary": "Run tests first.",
+                    "version": 1,
+                    "contentHash": content_hash,
+                    "content": content,
+                    "updatedAt": "2026-11-18T00:00:00Z",
+                }
+
+            def propose_circle_skill(self, slug, body, requested_ttl_seconds=None, idempotency_key=None):
+                proposed_calls.append((slug, body, requested_ttl_seconds))
+                return {"proposal": {"slug": slug, "status": "PENDING_REVIEW"}}
+
+        hub = MockHub()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache = bridge.CircleSkillCache(hub, root=tmpdir)
+            reqs = [
+                {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
+                {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "a2a_list_circle_skills", "arguments": {}}},
+                {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "a2a_get_circle_skill", "arguments": {"slug": "deploy-check"}}},
+                {"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "a2a_propose_circle_skill", "arguments": {"slug": "new-guide", "content": "# New Guide\nCheck first", "requestedTtlSeconds": 3600}}},
+            ]
+            in_stream = io.StringIO("\n".join(json.dumps(r) for r in reqs) + "\n")
+            out_stream = io.StringIO()
+            with mock.patch("sys.stdin", in_stream):
+                bridge.run_mcp_server(hub, "MCPAgent", out_stream=out_stream, skill_cache=cache)
+            lines = [json.loads(l) for l in out_stream.getvalue().strip().split("\n") if l]
+            self.assertEqual(len(lines), 4)
+            tool_names = {t["name"] for t in lines[0]["result"]["tools"]}
+            self.assertTrue({"a2a_list_circle_skills", "a2a_get_circle_skill", "a2a_propose_circle_skill"}.issubset(tool_names))
+
+            list_payload = json.loads(lines[1]["result"]["content"][0]["text"])
+            self.assertEqual(list_payload["skills"][0]["approvalState"], "pending_approval")
+
+            blocked_payload = json.loads(lines[2]["result"]["content"][0]["text"])
+            self.assertTrue(blocked_payload["approvalRequired"])
+            self.assertNotIn("content", blocked_payload)
+
+            prop_payload = json.loads(lines[3]["result"]["content"][0]["text"])
+            self.assertEqual(prop_payload["proposal"]["status"], "PENDING_REVIEW")
+            self.assertEqual(proposed_calls[0][0], "new-guide")
+
+            # After local owner approves SHA-256, a2a_get_circle_skill returns verified content.
+            cache.approve_skill("deploy-check", content_hash)
+            in_stream2 = io.StringIO(json.dumps({"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "a2a_get_circle_skill", "arguments": {"slug": "deploy-check"}}}) + "\n")
+            out_stream2 = io.StringIO()
+            with mock.patch("sys.stdin", in_stream2):
+                bridge.run_mcp_server(hub, "MCPAgent", out_stream=out_stream2, skill_cache=cache)
+            approved_payload = json.loads(json.loads(out_stream2.getvalue().strip())["result"]["content"][0]["text"])
+            self.assertEqual(approved_payload["approvalState"], "approved")
+            self.assertIn("Run tests first.", approved_payload["content"])
+
     def test_local_ui_server_endpoints(self):
         class MockHub:
             agent_id = "agent-ui-user"

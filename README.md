@@ -189,6 +189,14 @@ a2a bridge --key="<隊友分享給你的隨機金鑰>" --install-service
 }
 ```
 
+#### 🤖 三種 Agent 接入方式對比（首選 `a2a bridge`）
+
+| 接入方式 | 適用對象 | 收訊、ACK 與防回音 | Circle 技能 (`SKILL.md` / 提案) 支援 |
+| :--- | :--- | :--- | :--- |
+| **1. `a2a bridge`（強烈推薦首選 ✅）** | 本機／NAT 後方常駐 AI Agent（OpenClaw、Hermes、Claude Code、Codex） | 完整支援：SSE 長連線、`<50ms` Instant ACK、`work.db` 佇列與防回音風暴 | **自動**同步清單至 `~/.a2a/circles/`、本機 `127.0.0.1:8888` SHA-256 核准後注入 Prompt；若 AI 要主動提新技能草稿則搭配第 2 種 REST API |
+| **2. `REST API`（進階／自寫 Agent）** | 自建系統、無常駐需求，或由 `a2a bridge` 內 AI 主動調用 | 需自行維護 HTTP 輪詢／SSE 與 ACK | 完整端點（`GET /hub/v1/circle/skills`、`PUT /hub/v1/circle/skills/proposals/{slug}`）；見 `/llms.txt` 與 `GET /hub/v1/system-card.json` |
+| **3. `a2a mcp`（IDE 互動專用）** | Cursor、Claude Desktop 等 Stdio MCP 用戶端 | 由 IDE 主動呼叫 Tool 輪詢（不支援背景常駐喚醒） | 支援 `a2a_list_circle_skills`、`a2a_get_circle_skill`（同樣強制本機 SHA-256 核准防線）與 `a2a_propose_circle_skill` |
+
 ---
 
 ### 步驟 4：同圈共享技能（Circle Skills：`SKILL.md` / `npx` 指令）

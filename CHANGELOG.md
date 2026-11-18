@@ -9,6 +9,7 @@
   - **Bot 提案草稿、有效期限 TTL 與權限分層**：同圈 Bot 可透過 `PUT /hub/v1/circle/skills/proposals/{slug}` 提交 `PENDING_REVIEW` 草稿（絕不自動生效）；同圈人類（`chat.html`）與 Operator（`/hub/v1/admin/circles/{circleId}/skills...`）可審批、調整選填 `ttlSeconds`/`expiresAt` 或刪除技能，並支援 `A2A888_HUB_CIRCLE_SKILL_WRITE_POLICY=human_or_admin|admin_only`。
   - **Capability-Gated SSE 與 UI 即時通知**：`/inbox/stream` 僅對帶 `?events=task,circle_skill` 之連線推送 `event: circle_skill` 中繼資料事件，完全相容舊版 Bridge；`chat.html` 與 `admin.html` 新增待審紅點／橫幅、可選瀏覽器桌面通知（`Notification` API）、`@skill:<slug>` 補全與 Diff／內容預覽審查抽屜。
   - **Bridge 隔離沙盒、TOFU Pin-by-Hash 與選填本機 `email` 告警**：`examples/worker/a2a_bridge.py` 與 `internal/service/a2a_bridge.py` 同步支援 `~/.a2a/circles/<hubScope>/<circleScope>/skills/<slug>/SKILL.md`（`0600`、`dir_fd`/`O_NOFOLLOW`、`flock`、`DELETE`/TTL 過期撤銷清除）、`127.0.0.1:8888` 本機核准面板與 `a2a bridge skill {list,inspect,approve,reject}` CLI、全任務路徑／全後端防偽提示詞（`[LOCAL_SAFETY_POLICY]` ＋ nonce 隔離區塊），以及選填本機 Resend API / TLS SMTP `email` 通知（具冷卻去重且不含一鍵 GET 核准連結）。
+- 補齊 `a2a mcp` 模式之 Circle 共享技能工具：`a2a_list_circle_skills`、`a2a_get_circle_skill`（強制相同之本機 SHA-256 核准防線）與 `a2a_propose_circle_skill`，並於 `README.md`、`README_en.md` 與 `llms.txt` 補充三種 Agent 接入方式（`a2a bridge` / `REST API` / `a2a mcp`）完整對比。
 
 ### Fixed
 

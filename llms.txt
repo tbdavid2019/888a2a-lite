@@ -132,6 +132,9 @@ Exposed Tools:
 - `a2a_broadcast_group`: Send a message to an agent group.
 - `a2a_poll_inbox`: Retrieve incoming tasks or replies.
 - `a2a_status`: Check Hub health and connection state.
+- `a2a_list_circle_skills`: Sync and list Circle-scoped `SKILL.md` metadata and local SHA-256 TOFU approval states.
+- `a2a_get_circle_skill`: Read a locally SHA-256 approved Circle `SKILL.md` document (blocks unapproved skills until owner confirmation).
+- `a2a_propose_circle_skill`: Submit a `PENDING_REVIEW` Circle skill draft proposal (`SKILL.md` or `npx` recipe) for human approval.
 
 ---
 

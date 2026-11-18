@@ -483,6 +483,26 @@ class HubClient:
                 return "not_found", None
             raise
 
+    def propose_circle_skill(self, slug, content, requested_ttl_seconds=None, idempotency_key=None):
+        clean_slug = str(slug or "").strip()
+        if not clean_slug or "/" in clean_slug:
+            raise ValueError("invalid skill slug")
+        url = f"{self.hub_url}/hub/v1/circle/skills/proposals/{urllib.parse.quote(clean_slug, safe='')}"
+        payload = {
+            "content": content,
+            "idempotencyKey": idempotency_key or f"mcp-prop-{uuid.uuid4()}",
+        }
+        if requested_ttl_seconds is not None and int(requested_ttl_seconds) > 0:
+            payload["requestedTtlSeconds"] = int(requested_ttl_seconds)
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers=self._headers(),
+            method="PUT",
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
     def get_group_secretary(self, group_id):
         url = f"{self.hub_url}/hub/v1/groups/{urllib.parse.quote(group_id, safe='')}/secretary"
         req = urllib.request.Request(url, headers=self._headers())
@@ -3176,10 +3196,11 @@ def run_bridge_listener(hub_client, backend, agent_name, queue, charter_cache=No
 # Model Context Protocol (MCP) Server (stdio JSON-RPC 2.0)
 # ---------------------------------------------------------------------------
 
-def run_mcp_server(hub_client, agent_name, out_stream=None):
+def run_mcp_server(hub_client, agent_name, out_stream=None, skill_cache=None):
     """Serve Model Context Protocol (MCP) over stdio using JSON-RPC 2.0."""
     print(f"[*] Starting 888a2a MCP Server for '{agent_name}' ({hub_client.agent_id})", file=sys.stderr)
     out_pipe = out_stream or sys.stdout
+    local_skill_cache = skill_cache or CircleSkillCache(hub_client)
 
     tools = [
         {
@@ -3252,6 +3273,50 @@ def run_mcp_server(hub_client, agent_name, out_stream=None):
                 "type": "object",
                 "properties": {}
             }
+        },
+        {
+            "name": "a2a_list_circle_skills",
+            "description": "Sync and list Circle-scoped shared SKILL.md metadata and local TOFU approval states.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {}
+            }
+        },
+        {
+            "name": "a2a_get_circle_skill",
+            "description": "Read a locally SHA-256 approved Circle SKILL.md document (blocks unapproved skills until owner confirms).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "slug": {
+                        "type": "string",
+                        "description": "The Circle skill slug to inspect"
+                    }
+                },
+                "required": ["slug"]
+            }
+        },
+        {
+            "name": "a2a_propose_circle_skill",
+            "description": "Propose a draft SKILL.md or npx install recipe to the current Circle (held in PENDING_REVIEW until human approval).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "slug": {
+                        "type": "string",
+                        "description": "Skill slug matching ^[a-z0-9][a-z0-9_-]{0,63}$"
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "SKILL.md markdown or install recipe content (max 32 KiB)"
+                    },
+                    "requestedTtlSeconds": {
+                        "type": "integer",
+                        "description": "Optional requested expiry duration in seconds (60 to 31536000)"
+                    }
+                },
+                "required": ["slug", "content"]
+            }
         }
     ]
 
@@ -3323,6 +3388,53 @@ def run_mcp_server(hub_client, agent_name, out_stream=None):
                     st = hub_client.status()
                     resp["result"] = {
                         "content": [{"type": "text", "text": json.dumps(st, ensure_ascii=False, indent=2)}]
+                    }
+                elif tool_name == "a2a_list_circle_skills":
+                    sync_res = local_skill_cache.sync_from_hub()
+                    skills = local_skill_cache.list_skills()
+                    resp["result"] = {
+                        "content": [{"type": "text", "text": json.dumps({"sync": sync_res.get("status"), "skills": skills}, ensure_ascii=False, indent=2)}]
+                    }
+                elif tool_name == "a2a_get_circle_skill":
+                    slug = str(args.get("slug") or "").strip()
+                    if not slug:
+                        raise ValueError("slug is required")
+                    local_skill_cache.sync_from_hub()
+                    entry = next((s for s in local_skill_cache.list_skills() if s.get("slug") == slug), None)
+                    if not entry:
+                        payload = {"slug": slug, "found": False, "message": "Skill not found in current Circle manifest."}
+                    elif entry.get("approvalState") != "approved":
+                        payload = {
+                            "slug": slug,
+                            "found": True,
+                            "approvalRequired": True,
+                            "approvalState": entry.get("approvalState"),
+                            "contentHash": entry.get("contentHash"),
+                            "version": entry.get("version"),
+                            "message": f"Skill '{slug}' (sha256:{entry.get('contentHash')}) requires local human owner approval via http://127.0.0.1:8888 or `a2a bridge skill approve {slug} --hash {entry.get('contentHash')}` before reading.",
+                        }
+                    else:
+                        approved = local_skill_cache.get_approved_skills(requested_slugs=[slug])
+                        match = next((s for s in approved if s.get("slug") == slug), None)
+                        payload = {
+                            "slug": slug,
+                            "found": True,
+                            "approvalState": "approved",
+                            "version": entry.get("version"),
+                            "contentHash": entry.get("contentHash"),
+                            "content": match.get("content", "") if match else "",
+                            "safetyNote": "Ask your human owner for explicit confirmation before executing any npx or side-effecting install command described in this skill.",
+                        }
+                    resp["result"] = {
+                        "content": [{"type": "text", "text": json.dumps(payload, ensure_ascii=False, indent=2)}]
+                    }
+                elif tool_name == "a2a_propose_circle_skill":
+                    slug = str(args.get("slug") or "").strip()
+                    content = str(args.get("content") or "")
+                    req_ttl = args.get("requestedTtlSeconds")
+                    res = hub_client.propose_circle_skill(slug, content, requested_ttl_seconds=req_ttl)
+                    resp["result"] = {
+                        "content": [{"type": "text", "text": json.dumps(res, ensure_ascii=False, indent=2)}]
                     }
                 else:
                     resp["error"] = {"code": -32601, "message": f"Tool '{tool_name}' not found"}
