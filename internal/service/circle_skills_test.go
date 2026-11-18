@@ -250,7 +250,7 @@ func TestCircleSkillsAdminOnlyPolicyAndDisabledCircle(t *testing.T) {
 		t.Fatalf("human PUT under admin_only = %d, want 403", resp.Code)
 	}
 
-	if err := svc.DisableCircle(context.Background(), "op-secret-token", human.CircleID); err != nil {
+	if _, err := svc.DisableCircle(context.Background(), "op-secret-token", human.CircleID); err != nil {
 		t.Fatalf("DisableCircle: %v", err)
 	}
 	req = httptest.NewRequest(http.MethodGet, "/hub/v1/circle/skills", nil)

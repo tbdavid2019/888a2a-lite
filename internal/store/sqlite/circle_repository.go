@@ -138,7 +138,7 @@ WHERE c.circle_id <> 'public'
   AND NOT EXISTS (SELECT 1 FROM agent_group g WHERE g.hub_id = c.hub_id AND g.circle_id = c.circle_id AND g.created_at > ?)
   AND NOT EXISTS (SELECT 1 FROM inbox_item i WHERE i.hub_id = c.hub_id AND i.circle_id = c.circle_id AND i.created_at > ?)
   AND NOT EXISTS (SELECT 1 FROM a2a_task t WHERE t.hub_id = c.hub_id AND t.circle_id = c.circle_id AND t.updated_at > ?)
-  AND NOT EXISTS (SELECT 1 FROM event_log e WHERE e.hub_id = c.hub_id AND e.circle_id = c.circle_id AND e.type NOT IN ('circle.skill_proposed', 'circle.skill_approved', 'circle.skill_rejected', 'circle.skill_updated', 'circle.skill_deleted', 'circle.skill_expired') AND e.created_at > ?)`,
+  AND NOT EXISTS (SELECT 1 FROM event_log e WHERE e.hub_id = c.hub_id AND e.circle_id = c.circle_id AND e.event_type NOT IN ('circle.skill_proposed', 'circle.skill_approved', 'circle.skill_rejected', 'circle.skill_updated', 'circle.skill_deleted', 'circle.skill_expired') AND e.created_at > ?)`,
 			cutoffStr, cutoffStr, cutoffStr, cutoffStr, cutoffStr)
 		if err != nil {
 			return err
