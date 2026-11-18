@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-11-18
+
+### Changed
+
+- 升級 Open Graph 首圖（`internal/service/assets/og-image.png`）與 `chat.html` SEO/OG meta 標籤：
+  - 換上深空星雲軌道網絡背景與中英雙語（English + 台灣繁體中文）1200×630 視覺首圖，並同步雙語化 `description`、`og:title`/`og:description` 與 `twitter:title`/`twitter:description`。
+
 ## 2026-11-17
 
 ### Security & Hardening
