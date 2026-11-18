@@ -167,6 +167,21 @@ type TxStore interface {
 	MeetingSessions() MeetingSessionStore
 	StandardTasks() StandardTaskStore
 	Workflows() WorkflowStore
+	CircleSkills() CircleSkillStore
+}
+
+type CircleSkillStore interface {
+	ListCircleSkillManifest(context.Context, string, string, time.Time) (hub.CircleSkillManifest, error)
+	GetCircleSkill(context.Context, string, string, string, time.Time) (hub.CircleSkill, error)
+	PutCircleSkill(context.Context, hub.CircleSkill, int64, string, time.Time) (hub.CircleSkill, int64, bool, error)
+	DeleteCircleSkill(context.Context, string, string, string, string, int64, string, time.Time) (int64, int64, bool, error)
+	ListCircleSkillRevisions(context.Context, string, string, string) ([]hub.CircleSkillRevision, error)
+	SubmitCircleSkillProposal(context.Context, hub.CircleSkillProposal, string, time.Time) (hub.CircleSkillProposal, int64, bool, bool, error)
+	ListCircleSkillProposals(context.Context, string, string) ([]hub.CircleSkillProposal, error)
+	GetCircleSkillProposal(context.Context, string, string, string) (hub.CircleSkillProposal, error)
+	ApproveCircleSkillProposal(context.Context, string, string, string, string, hub.CircleSkillDecisionInput, time.Time) (hub.CircleSkill, int64, bool, error)
+	RejectCircleSkillProposal(context.Context, string, string, string, string, hub.CircleSkillDecisionInput, time.Time) (hub.CircleSkillProposal, int64, bool, error)
+	SweepExpiredCircleSkills(context.Context, time.Time) ([]hub.CircleSkillEvent, error)
 }
 
 type Store interface {

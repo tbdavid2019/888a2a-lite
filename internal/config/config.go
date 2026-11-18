@@ -29,6 +29,7 @@ const (
 	DefaultMaxCircles            = 200
 	DefaultEmptyCircleTTL        = 24 * time.Hour
 	DefaultIdleAgentTTL          = 7 * 24 * time.Hour
+	DefaultCircleSkillWritePolicy = "human_or_admin"
 )
 
 type Config struct {
@@ -60,6 +61,7 @@ type Config struct {
 	SharedKeys             string
 	AllowDynamicCircles    bool
 	CircleDerivationSecret string
+	CircleSkillWritePolicy string
 }
 
 func Load() (Config, error) {
@@ -92,6 +94,7 @@ func Load() (Config, error) {
 		SharedKeys:             strings.TrimSpace(os.Getenv("A2A888_HUB_SHARED_KEYS")),
 		AllowDynamicCircles:    envBool("A2A888_HUB_ALLOW_DYNAMIC_CIRCLES", false),
 		CircleDerivationSecret: strings.TrimSpace(os.Getenv("A2A888_HUB_CIRCLE_DERIVATION_SECRET")),
+		CircleSkillWritePolicy: strings.ToLower(valueOr("A2A888_HUB_CIRCLE_SKILL_WRITE_POLICY", DefaultCircleSkillWritePolicy)),
 	}
 	var err error
 	if config.RegistrationTTL, err = envDurationSeconds("A2A888_HUB_REGISTRATION_TTL_SECONDS", config.RegistrationTTL); err != nil {
@@ -196,11 +199,19 @@ func (config Config) Validate() error {
 	if _, err := circle.NewResolver(mode, config.SharedKeys, config.CircleDerivationSecret, config.AllowDynamicCircles); err != nil {
 		return fmt.Errorf("circle configuration is invalid: %w", err)
 	}
+	if config.CircleSkillWritePolicy != "human_or_admin" && config.CircleSkillWritePolicy != "admin_only" {
+		return fmt.Errorf("circle skill write policy must be %q or %q", "human_or_admin", "admin_only")
+	}
 	return nil
 }
 
 func (config Config) Normalize() Config {
 	config.AttachmentLimits = config.AttachmentLimits.Normalize()
+	if strings.TrimSpace(config.CircleSkillWritePolicy) == "" {
+		config.CircleSkillWritePolicy = DefaultCircleSkillWritePolicy
+	} else {
+		config.CircleSkillWritePolicy = strings.ToLower(strings.TrimSpace(config.CircleSkillWritePolicy))
+	}
 	return config
 }
 

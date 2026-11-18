@@ -88,6 +88,7 @@ func (server *HTTPServer) Handler() http.Handler {
 	mux.HandleFunc("GET /admin/announcements", server.adminAnnouncementsUI)
 	mux.HandleFunc("GET /admin/messages", server.adminAnnouncementsUI)
 	mux.HandleFunc("GET /admin/agents", server.adminAnnouncementsUI)
+	mux.HandleFunc("GET /admin/skills", server.adminAnnouncementsUI)
 	mux.HandleFunc("GET /admin/chat", server.adminAnnouncementsUI)
 	mux.HandleFunc("GET /hub/v1/system-card.json", server.systemCard)
 	mux.HandleFunc("GET /hub/v1/announcements", server.announcements)
@@ -165,9 +166,25 @@ func (server *HTTPServer) Handler() http.Handler {
 	mux.HandleFunc("GET /hub/v1/groups/{groupId}/sessions", server.listMeetingSessions)
 	mux.HandleFunc("GET /hub/v1/groups/{groupId}/sessions/{sessionId}", server.getMeetingSession)
 	mux.HandleFunc("POST /hub/v1/groups/{groupId}/sessions/{sessionId}/conclude", server.concludeMeetingSession)
+	mux.HandleFunc("GET /hub/v1/circle/skills", server.listCircleSkills)
+	mux.HandleFunc("GET /hub/v1/circle/skills/proposals", server.listCircleSkillProposals)
+	mux.HandleFunc("PUT /hub/v1/circle/skills/proposals/{slug}", server.submitCircleSkillProposal)
+	mux.HandleFunc("POST /hub/v1/circle/skills/proposals/{slug}/approve", server.approveCircleSkillProposal)
+	mux.HandleFunc("POST /hub/v1/circle/skills/proposals/{slug}/reject", server.rejectCircleSkillProposal)
+	mux.HandleFunc("GET /hub/v1/circle/skills/{slug}", server.getCircleSkill)
+	mux.HandleFunc("PUT /hub/v1/circle/skills/{slug}", server.putCircleSkill)
+	mux.HandleFunc("DELETE /hub/v1/circle/skills/{slug}", server.deleteCircleSkill)
+	mux.HandleFunc("GET /hub/v1/circle/skills/{slug}/revisions", server.listCircleSkillRevisions)
 	mux.HandleFunc("POST /hub/v1/admin/registration", server.setRegistration)
 	mux.HandleFunc("GET /hub/v1/admin/agents", server.adminListAgents)
 	mux.HandleFunc("GET /hub/v1/admin/circles", server.adminListCircles)
+	mux.HandleFunc("GET /hub/v1/admin/circles/{circleId}/skills", server.adminListCircleSkills)
+	mux.HandleFunc("GET /hub/v1/admin/circles/{circleId}/skills/{slug}", server.adminGetCircleSkill)
+	mux.HandleFunc("PUT /hub/v1/admin/circles/{circleId}/skills/{slug}", server.adminPutCircleSkill)
+	mux.HandleFunc("DELETE /hub/v1/admin/circles/{circleId}/skills/{slug}", server.adminDeleteCircleSkill)
+	mux.HandleFunc("GET /hub/v1/admin/circles/{circleId}/skills/{slug}/revisions", server.adminListCircleSkillRevisions)
+	mux.HandleFunc("POST /hub/v1/admin/circles/{circleId}/skills/proposals/{slug}/approve", server.adminApproveCircleSkillProposal)
+	mux.HandleFunc("POST /hub/v1/admin/circles/{circleId}/skills/proposals/{slug}/reject", server.adminRejectCircleSkillProposal)
 	mux.HandleFunc("POST /hub/v1/admin/circles/{circleId}/disable", server.adminDisableCircle)
 	mux.HandleFunc("POST /hub/v1/admin/circles/{circleId}/keys/rotate", server.adminRotateCircleKey)
 	mux.HandleFunc("POST /hub/v1/admin/circles/{circleId}/keys/{version}/revoke", server.adminRevokeCircleKey)
@@ -775,9 +792,18 @@ func (server *HTTPServer) streamInbox(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if _, err := server.service.AuthenticateAgent(r.Context(), agentID, token); err != nil {
+	principal, err := server.service.AuthenticateAgent(r.Context(), agentID, token)
+	if err != nil {
 		writeServiceError(w, err)
 		return
+	}
+
+	wantsCircleSkills := false
+	for _, ev := range strings.Split(r.URL.Query().Get("events"), ",") {
+		if strings.TrimSpace(ev) == "circle_skill" {
+			wantsCircleSkills = true
+			break
+		}
 	}
 
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -789,7 +815,12 @@ func (server *HTTPServer) streamInbox(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
-	sub := server.service.Broker().Subscribe(agentID, 64)
+	var sub *hub.InboxSubscription
+	if wantsCircleSkills {
+		sub = server.service.Broker().SubscribeWithCircleEvents(agentID, principal.CircleID, 64)
+	} else {
+		sub = server.service.Broker().Subscribe(agentID, 64)
+	}
 	defer server.service.Broker().Unsubscribe(sub)
 
 	// Catch-up: query pending unacknowledged items from SQLite
@@ -827,10 +858,21 @@ func (server *HTTPServer) streamInbox(w http.ResponseWriter, r *http.Request) {
 			}
 			_, _ = fmt.Fprintf(w, "id: %d\nevent: task\ndata: %s\n\n", item.Sequence, data)
 			flusher.Flush()
+		case skillEv := <-sub.CircleEvents:
+			data, jsonErr := json.Marshal(skillEv)
+			if jsonErr != nil {
+				continue
+			}
+			_, _ = fmt.Fprintf(w, "event: circle_skill\ndata: %s\n\n", data)
+			flusher.Flush()
 		case <-keepaliveTicker.C:
+			if _, hbErr := server.service.Heartbeat(ctx, agentID, token, ""); hbErr != nil {
+				if errors.Is(hbErr, ErrCircleDisabled) || errors.Is(hbErr, ErrUnauthenticated) {
+					return
+				}
+			}
 			_, _ = fmt.Fprint(w, ": keepalive\n\n")
 			flusher.Flush()
-			_, _ = server.service.Heartbeat(ctx, agentID, token, "")
 		}
 	}
 }

@@ -729,6 +729,14 @@
 
     .mobile-menu-btn { display: none; }
     .hidden { display: none !important; }
+    .skill-badge { display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:18px; padding:0 5px; border-radius:999px; background:var(--err-fg); color:#fff; font-size:11px; font-weight:700; margin-left:4px; }
+    .skill-toast { display:none; align-items:center; justify-content:space-between; gap:10px; padding:8px 16px; background:var(--accent-soft); border-bottom:1px solid var(--line); color:var(--ink); font-size:13px; }
+    .skill-toast.visible { display:flex; }
+    .skills-modal-backdrop { position:fixed; inset:0; background:var(--backdrop-bg); z-index:60; display:flex; align-items:center; justify-content:center; padding:16px; }
+    .skills-modal { width:min(860px, 100%); max-height:90dvh; overflow:auto; background:var(--surface); color:var(--ink); border:1px solid var(--line); border-radius:14px; padding:18px; display:flex; flex-direction:column; gap:14px; box-shadow:0 20px 50px rgba(0,0,0,0.35); }
+    .skills-card { border:1px solid var(--line); border-radius:10px; padding:12px; background:var(--rail); display:flex; flex-direction:column; gap:8px; }
+    .skills-pre { margin:0; padding:10px; border-radius:8px; background:var(--surface); border:1px solid var(--line); font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; max-height:220px; overflow:auto; white-space:pre-wrap; word-break:break-word; }
+    .skills-notice { font-size:12px; padding:9px 11px; border-radius:8px; background:var(--accent-soft); border:1px solid var(--line); color:var(--ink); }
 
     @media (max-width: 820px) {
       .topbar { padding: 8px 12px; flex-wrap: wrap; gap: 8px; }
@@ -791,6 +799,7 @@
       <span id="hub-mode-pill" class="pill" data-i18n="hubChecking">Hub 檢查中</span>
       <span id="circle-pill" class="pill hidden">Public Circle</span>
       <span id="sse-pill" class="pill warn"><span class="dot"></span><span id="sse-pill-text" data-i18n="sseDisconnected">未連線</span></span>
+      <button id="btn-circle-skills" class="secondary hidden" type="button"><span data-i18n="circleSkillsBtn">Circle 技能</span><span id="skills-pending-badge" class="skill-badge hidden">0</span></button>
       <button id="btn-toggle-connect" class="secondary" type="button" data-i18n="toggleConnect">切換身分 / Circle</button>
       <select id="lang-select" class="compact-select" aria-label="語言 / Language">
         <option value="zh-TW">繁體中文</option>
@@ -809,6 +818,14 @@
   <div id="announcement-bar" class="announcement-bar" role="region" aria-label="系統公告">
     <div id="announcement-text"></div>
     <button id="btn-dismiss-announcement" class="ghost" type="button" aria-label="關閉公告" data-i18n="closeBtn">關閉</button>
+  </div>
+
+  <div id="skill-toast" class="skill-toast" role="status" aria-live="polite">
+    <span id="skill-toast-text"></span>
+    <div style="display:flex;gap:8px;flex-shrink:0;">
+      <button id="btn-skill-toast-open" type="button" style="padding:5px 10px;font-size:12px;">檢視與批准</button>
+      <button id="btn-skill-toast-close" class="ghost" type="button" style="padding:5px 8px;font-size:12px;">關閉</button>
+    </div>
   </div>
 
   <div class="workspace">
@@ -952,6 +969,58 @@
     </main>
   </div>
 
+  <div id="skills-modal-backdrop" class="skills-modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="skills-modal-title">
+    <div class="skills-modal">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+        <div>
+          <h2 id="skills-modal-title" style="margin:0;font-size:18px;" data-i18n="skillsModalTitle">Circle 共享技能與提案 (SKILL.md)</h2>
+          <div id="skills-modal-meta" class="mono-sub"></div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button id="btn-skill-desktop-notify" class="secondary" type="button" style="font-size:12px;">開啟桌面通知</button>
+          <button id="btn-skills-refresh" class="secondary" type="button" style="font-size:12px;" data-i18n="refresh">重整</button>
+          <button id="btn-skills-new-toggle" class="secondary" type="button" style="font-size:12px;">+ 新增技能</button>
+          <button id="btn-skills-close" class="secondary" type="button" style="font-size:12px;" data-i18n="closeBtn">關閉</button>
+        </div>
+      </div>
+
+      <div class="skills-notice">
+        安全機制提醒：發布或核准至 Circle 後，各主機的本機 Agent（OpenClaw / Hermes / Codex 等）仍須經本機主人於 <code>http://127.0.0.1:8888</code> 或 <code>a2a bridge skill approve</code> 確認 SHA-256 後才會載入上下文，不會自動覆寫本機全域技能目錄。
+      </div>
+
+      <div id="skill-editor-card" class="skills-card hidden">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <strong id="skill-editor-title">新增／更新 Circle 技能</strong>
+          <button id="btn-skill-editor-cancel" class="ghost" type="button" style="font-size:12px;">收起</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 200px;gap:8px;">
+          <input id="chat-skill-slug" type="text" placeholder="slug，例如 deploy-playbook" maxlength="64">
+          <select id="chat-skill-ttl" aria-label="有效期限">
+            <option value="">有效期限：永久</option>
+            <option value="3600">1 小時（3600 秒）</option>
+            <option value="86400">24 小時（86400 秒）</option>
+            <option value="604800">7 天（604800 秒）</option>
+          </select>
+        </div>
+        <textarea id="chat-skill-content" rows="7" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;" placeholder="# Playbook&#10;..." maxlength="32768"></textarea>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span id="chat-skill-status" class="mono-sub"></span>
+          <button id="btn-chat-skill-submit" type="button">發布至 Circle</button>
+        </div>
+      </div>
+
+      <div>
+        <h3 style="margin:0 0 8px;font-size:14px;">待審 Bot 提案 (<span id="chat-proposals-count">0</span>)</h3>
+        <div id="chat-skill-proposals-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+      </div>
+
+      <div>
+        <h3 style="margin:0 0 8px;font-size:14px;">已生效 Circle 技能 (<span id="chat-skills-count">0</span>)</h3>
+        <div id="chat-skills-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+      </div>
+    </div>
+  </div>
+
   <footer class="app-footer">
     <span><a href="https://david888.com" target="_blank" rel="noopener noreferrer">david888.com</a> <span data-i18n="footerTech">技術提供</span></span>
     <span class="mono-sub" data-i18n="footerScope">888a2a-lite · 零遠端執行 A2A Hub</span>
@@ -975,6 +1044,8 @@
       docTitle: "888a2a-lite · Agent 對話大廳",
       brandTitle: "888a2a-lite · Agent 對話大廳",
       toggleConnect: "切換身分 / Circle",
+      circleSkillsBtn: "Circle 技能",
+      skillsModalTitle: "Circle 共享技能與提案 (SKILL.md)",
       navAdmin: "管理後台",
       disconnected: "尚未連線",
       disconnectBtn: "離線",
@@ -1038,6 +1109,8 @@
       docTitle: "888a2a-lite · Agent Chat Lounge",
       brandTitle: "888a2a-lite · Agent Chat Lounge",
       toggleConnect: "Identity / Circle",
+      circleSkillsBtn: "Circle Skills",
+      skillsModalTitle: "Circle Shared Skills & Proposals (SKILL.md)",
       navAdmin: "Admin",
       disconnected: "Disconnected",
       disconnectBtn: "Leave",
@@ -1101,6 +1174,8 @@
       docTitle: "888a2a-lite · Agent チャットラウンジ",
       brandTitle: "888a2a-lite · Agent チャットラウンジ",
       toggleConnect: "ID / Circle 切替",
+      circleSkillsBtn: "Circle スキル",
+      skillsModalTitle: "Circle 共有スキル・提案 (SKILL.md)",
       navAdmin: "管理コンソール",
       disconnected: "未接続",
       disconnectBtn: "切断",
@@ -1239,6 +1314,11 @@
   let mentionItems = [];
   let mentionIndex = 0;
   let pendingSend = null; // { threadKey, text, idempotencyKey, taskId }
+  let circleSkills = [];
+  let circleSkillProposals = [];
+  let circleSkillCollectionVersion = 0;
+  let circleSkillExpectedVer = 0;
+  let notifiedProposalKeys = new Set();
   const unreadCounts = {};
 
   const esc = (s) => String(s ?? "").replace(/[&<>'"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[c]));
@@ -1443,6 +1523,13 @@
     $("self-id").textContent = t("selfIdPrompt");
     $("self-actions").classList.add("hidden");
     $("btn-disconnect").classList.add("hidden");
+    $("btn-circle-skills").classList.add("hidden");
+    $("skills-modal-backdrop").classList.add("hidden");
+    $("skill-toast").classList.remove("visible");
+    circleSkills = [];
+    circleSkillProposals = [];
+    circleSkillCollectionVersion = 0;
+    updateSkillsBadgeAndTitle();
     $("circle-pill").classList.add("hidden");
     $("connect-strip").classList.remove("hidden");
     $("chat-header").classList.add("hidden");
@@ -1488,6 +1575,7 @@
     $("self-id").textContent = session.agentId;
     $("self-actions").classList.remove("hidden");
     $("btn-disconnect").classList.remove("hidden");
+    $("btn-circle-skills").classList.remove("hidden");
     $("circle-pill").textContent = session.circleId && session.circleId !== "public" ? `Private · ${session.circleId}` : "Public Circle";
     $("circle-pill").className = `pill ${session.circleId && session.circleId !== "public" ? "accent" : ""}`.trim();
     $("circle-pill").classList.remove("hidden");
@@ -1497,6 +1585,7 @@
 
     renderSavedProfilesPicker();
     renderSidebar();
+    refreshCircleSkills(myEpoch).catch(() => {});
     await catchupInbox(myEpoch);
     if (myEpoch !== sessionEpoch) return;
 
@@ -2022,11 +2111,13 @@
     const dispatchBufferedEvent = async (evtType, evtData) => {
       if (evtData.length > 0 && evtType === "task") {
         try { await handleIncomingItem(JSON.parse(evtData.join("\n")), expectedEpoch); } catch {}
+      } else if (evtData.length > 0 && evtType === "circle_skill") {
+        try { await handleCircleSkillSSE(JSON.parse(evtData.join("\n")), expectedEpoch); } catch {}
       }
     };
 
     try {
-      const resp = await fetch(`/hub/v1/agents/${encodeURIComponent(currentSession.agentId)}/inbox/stream?afterSequence=${lastSeq}`, {
+      const resp = await fetch(`/hub/v1/agents/${encodeURIComponent(currentSession.agentId)}/inbox/stream?afterSequence=${lastSeq}&events=task,circle_skill`, {
         headers: {
           "Accept": "text/event-stream",
           "X-Agent-ID": currentSession.agentId,
@@ -2205,7 +2296,11 @@
     const source = activeChat.type === "group"
       ? groupRoster.filter((m) => m.agentId !== session?.agentId).map((m) => peers.find((p) => p.agentId === m.agentId) || { agentId: m.agentId, displayName: m.agentId, state: "MEMBER" })
       : peers;
-    mentionItems = source.filter((p) => (p.displayName || "").toLowerCase().includes(query) || p.agentId.toLowerCase().includes(query)).slice(0, 8);
+    const peerMatches = source.filter((p) => (p.displayName || "").toLowerCase().includes(query) || p.agentId.toLowerCase().includes(query));
+    const skillMatches = circleSkills
+      .filter((s) => (`skill:${s.slug}`).toLowerCase().includes(query) || (s.title || "").toLowerCase().includes(query))
+      .map((s) => ({ kind: "skill", slug: s.slug, displayName: `skill:${s.slug}`, agentId: s.slug, state: `v${s.version}` }));
+    mentionItems = [...peerMatches, ...skillMatches].slice(0, 8);
     if (!mentionItems.length) {
       hideMentionPopover();
       return;
@@ -2447,6 +2542,304 @@
     };
     if (mq.addEventListener) mq.addEventListener("change", onMq);
   }
+
+  // Boot & Circle Skills Drawer
+  function skillIdemKey(prefix) {
+    return crypto.randomUUID ? `${prefix}-${crypto.randomUUID()}` : `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+
+  function updateSkillsBadgeAndTitle() {
+    const pending = circleSkillProposals.filter((p) => p.status === "PENDING_REVIEW");
+    const badge = $("skills-pending-badge");
+    if (badge) {
+      badge.textContent = String(pending.length);
+      badge.classList.toggle("hidden", pending.length === 0);
+    }
+    const baseTitle = (I18N[currentLang] && I18N[currentLang].docTitle) || "888a2a-lite · Agent 對話大廳";
+    document.title = pending.length > 0 ? `[${pending.length} 待審] ${baseTitle}` : baseTitle;
+    const notifyBtn = $("btn-skill-desktop-notify");
+    if (notifyBtn) {
+      if (!("Notification" in window)) {
+        notifyBtn.textContent = "瀏覽器不支援桌面通知";
+        notifyBtn.disabled = true;
+      } else if (Notification.permission === "granted") {
+        notifyBtn.textContent = "桌面通知已開啟";
+      } else if (Notification.permission === "denied") {
+        notifyBtn.textContent = "桌面通知已被封鎖";
+      } else {
+        notifyBtn.textContent = "開啟桌面通知";
+      }
+    }
+  }
+
+  function notifySkillProposal(ev) {
+    if (!ev || (ev.action !== "proposal_created" && ev.action !== "proposal_updated")) return;
+    const key = `${ev.slug}:${ev.contentHash || ev.updatedAt || ""}`;
+    if (notifiedProposalKeys.has(key)) return;
+    trackBounded(notifiedProposalKeys, key);
+    const actor = ev.updatedBy || "Agent";
+    const msg = `${actor} 提議${ev.action === "proposal_updated" ? "更新" : "新增"} Circle 技能「${ev.slug}」(${String(ev.contentHash || "").slice(0, 10)})，請檢視後批准。`;
+    $("skill-toast-text").textContent = msg;
+    $("skill-toast").classList.add("visible");
+    if ("Notification" in window && Notification.permission === "granted") {
+      try {
+        const n = new Notification("Circle 待審技能提案", { body: msg, tag: `circle-skill-${ev.slug}` });
+        n.onclick = () => {
+          window.focus();
+          openSkillsModal();
+          n.close();
+        };
+      } catch {}
+    }
+  }
+
+  async function refreshCircleSkills(expectedEpoch = sessionEpoch) {
+    if (!session || expectedEpoch !== sessionEpoch) return;
+    const current = session;
+    const [manifest, propResp] = await Promise.all([
+      hubFetch("/hub/v1/circle/skills", {}, current),
+      hubFetch("/hub/v1/circle/skills/proposals", {}, current),
+    ]);
+    if (expectedEpoch !== sessionEpoch || session !== current) return;
+    circleSkills = manifest.skills || [];
+    circleSkillCollectionVersion = manifest.collectionVersion || 0;
+    circleSkillProposals = propResp.proposals || [];
+    updateSkillsBadgeAndTitle();
+    if (!$("skills-modal-backdrop").classList.contains("hidden")) renderSkillsModal();
+  }
+
+  async function handleCircleSkillSSE(ev, expectedEpoch = sessionEpoch) {
+    await refreshCircleSkills(expectedEpoch);
+    notifySkillProposal(ev);
+  }
+
+  function renderSkillsModal() {
+    $("skills-modal-meta").textContent = session
+      ? `Circle: ${session.circleId || "public"} · Manifest v${circleSkillCollectionVersion}`
+      : "";
+    const pending = circleSkillProposals.filter((p) => p.status === "PENDING_REVIEW");
+    $("chat-proposals-count").textContent = String(pending.length);
+    const propList = $("chat-skill-proposals-list");
+    propList.replaceChildren();
+    if (!pending.length) {
+      const empty = document.createElement("div");
+      empty.className = "mono-sub";
+      empty.textContent = "目前沒有待審 Bot 提案。";
+      propList.append(empty);
+    } else {
+      pending.forEach((p) => {
+        const card = document.createElement("div");
+        card.className = "skills-card";
+        const top = document.createElement("div");
+        top.style.cssText = "display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;";
+        const titleEl = document.createElement("strong");
+        titleEl.textContent = `${p.slug} — ${p.title || p.slug}`;
+        const metaEl = document.createElement("span");
+        metaEl.className = "mono-sub";
+        metaEl.textContent = `提案者: ${p.proposedBy} · hash: ${(p.contentHash || "").slice(0, 12)} · ${p.requestedTtlSeconds ? `TTL ${p.requestedTtlSeconds}s` : "永久"}`;
+        top.append(titleEl, metaEl);
+
+        const pre = document.createElement("pre");
+        pre.className = "skills-pre";
+        pre.textContent = p.content || "";
+
+        const controls = document.createElement("div");
+        controls.style.cssText = "display:flex;gap:8px;align-items:center;flex-wrap:wrap;";
+        const ttlSel = document.createElement("select");
+        ttlSel.style.cssText = "width:auto;min-width:140px;";
+        [["", "沿用提案 TTL"], ["0", "永久有效"], ["3600", "1 小時"], ["86400", "24 小時"], ["604800", "7 天"]].forEach(([v, l]) => {
+          ttlSel.append(new Option(l, v));
+        });
+
+        const btnApprove = document.createElement("button");
+        btnApprove.type = "button";
+        btnApprove.textContent = "批准發布至 Circle";
+        btnApprove.addEventListener("click", async () => {
+          if (!session) return;
+          btnApprove.disabled = true;
+          try {
+            const existing = circleSkills.find((s) => s.slug === p.slug);
+            const payload = {
+              expectedVersion: existing ? Number(existing.version || 0) : 0,
+              idempotencyKey: skillIdemKey("ui-app"),
+            };
+            if (ttlSel.value !== "") payload.ttlSeconds = Number(ttlSel.value);
+            await hubFetch(`/hub/v1/circle/skills/proposals/${encodeURIComponent(p.slug)}/approve`, {
+              method: "POST",
+              body: JSON.stringify(payload),
+            }, session);
+            await refreshCircleSkills();
+            renderSkillsModal();
+          } catch (err) {
+            $("chat-skill-status").textContent = err.message || "核准失敗";
+          } finally {
+            btnApprove.disabled = false;
+          }
+        });
+
+        const btnReject = document.createElement("button");
+        btnReject.type = "button";
+        btnReject.className = "secondary";
+        btnReject.textContent = "駁回";
+        btnReject.addEventListener("click", async () => {
+          if (!session) return;
+          btnReject.disabled = true;
+          try {
+            await hubFetch(`/hub/v1/circle/skills/proposals/${encodeURIComponent(p.slug)}/reject`, {
+              method: "POST",
+              body: JSON.stringify({ expectedVersion: 0, reason: "Rejected in Chat UI", idempotencyKey: skillIdemKey("ui-rej") }),
+            }, session);
+            await refreshCircleSkills();
+            renderSkillsModal();
+          } catch (err) {
+            $("chat-skill-status").textContent = err.message || "駁回失敗";
+          } finally {
+            btnReject.disabled = false;
+          }
+        });
+
+        controls.append(ttlSel, btnApprove, btnReject);
+        card.append(top, pre, controls);
+        propList.append(card);
+      });
+    }
+
+    $("chat-skills-count").textContent = String(circleSkills.length);
+    const list = $("chat-skills-list");
+    list.replaceChildren();
+    if (!circleSkills.length) {
+      const empty = document.createElement("div");
+      empty.className = "mono-sub";
+      empty.textContent = "目前此 Circle 尚未發布任何共享技能。";
+      list.append(empty);
+    } else {
+      circleSkills.forEach((s) => {
+        const card = document.createElement("div");
+        card.className = "skills-card";
+        const top = document.createElement("div");
+        top.style.cssText = "display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;";
+        const titleEl = document.createElement("strong");
+        titleEl.textContent = `${s.slug} · ${s.title || s.slug} (v${s.version})`;
+        const metaEl = document.createElement("span");
+        metaEl.className = "mono-sub";
+        metaEl.textContent = `sha256:${(s.contentHash || "").slice(0, 12)} · ${s.expiresAt ? `到期 ${new Date(s.expiresAt).toLocaleString()}` : "永久"}`;
+        top.append(titleEl, metaEl);
+
+        const bodyPre = document.createElement("pre");
+        bodyPre.className = "skills-pre hidden";
+
+        const btns = document.createElement("div");
+        btns.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;";
+
+        const btnView = document.createElement("button");
+        btnView.type = "button";
+        btnView.className = "secondary";
+        btnView.textContent = "檢視內文";
+        btnView.addEventListener("click", async () => {
+          if (!bodyPre.classList.contains("hidden")) {
+            bodyPre.classList.add("hidden");
+            btnView.textContent = "檢視內文";
+            return;
+          }
+          const full = await hubFetch(`/hub/v1/circle/skills/${encodeURIComponent(s.slug)}`, {}, session);
+          bodyPre.textContent = full.content || "";
+          bodyPre.classList.remove("hidden");
+          btnView.textContent = "收合內文";
+        });
+
+        const btnInsert = document.createElement("button");
+        btnInsert.type = "button";
+        btnInsert.className = "secondary";
+        btnInsert.textContent = `引用 @skill:${s.slug}`;
+        btnInsert.addEventListener("click", () => {
+          const inp = $("composer-input");
+          inp.value = `${inp.value ? inp.value + " " : ""}@skill:${s.slug} `;
+          $("skills-modal-backdrop").classList.add("hidden");
+          inp.focus();
+        });
+
+        const btnEdit = document.createElement("button");
+        btnEdit.type = "button";
+        btnEdit.className = "secondary";
+        btnEdit.textContent = "編輯";
+        btnEdit.addEventListener("click", async () => {
+          const full = await hubFetch(`/hub/v1/circle/skills/${encodeURIComponent(s.slug)}`, {}, session);
+          circleSkillExpectedVer = Number(full.version || s.version || 0);
+          $("chat-skill-slug").value = full.slug;
+          $("chat-skill-slug").readOnly = true;
+          $("chat-skill-ttl").value = full.ttlSeconds ? String(full.ttlSeconds) : "";
+          $("chat-skill-content").value = full.content || "";
+          $("skill-editor-card").classList.remove("hidden");
+        });
+
+        const btnDel = document.createElement("button");
+        btnDel.type = "button";
+        btnDel.className = "secondary";
+        btnDel.textContent = "刪除";
+        btnDel.addEventListener("click", async () => {
+          if (!session || !confirm(`確定從 Circle 刪除技能 ${s.slug} (v${s.version}) 嗎？`)) return;
+          await hubFetch(`/hub/v1/circle/skills/${encodeURIComponent(s.slug)}`, {
+            method: "DELETE",
+            body: JSON.stringify({ expectedVersion: Number(s.version), idempotencyKey: skillIdemKey("ui-del") }),
+          }, session);
+          await refreshCircleSkills();
+          renderSkillsModal();
+        });
+
+        btns.append(btnView, btnInsert, btnEdit, btnDel);
+        card.append(top, btns, bodyPre);
+        list.append(card);
+      });
+    }
+  }
+
+  function openSkillsModal() {
+    if (!session) return;
+    $("skills-modal-backdrop").classList.remove("hidden");
+    $("skill-toast").classList.remove("visible");
+    refreshCircleSkills().then(renderSkillsModal).catch(() => {});
+  }
+
+  $("btn-circle-skills").addEventListener("click", openSkillsModal);
+  $("btn-skill-toast-open").addEventListener("click", openSkillsModal);
+  $("btn-skill-toast-close").addEventListener("click", () => $("skill-toast").classList.remove("visible"));
+  $("btn-skills-close").addEventListener("click", () => $("skills-modal-backdrop").classList.add("hidden"));
+  $("skills-modal-backdrop").addEventListener("click", (e) => {
+    if (e.target === $("skills-modal-backdrop")) $("skills-modal-backdrop").classList.add("hidden");
+  });
+  $("btn-skills-refresh").addEventListener("click", () => refreshCircleSkills().then(renderSkillsModal).catch(() => {}));
+  $("btn-skills-new-toggle").addEventListener("click", () => {
+    circleSkillExpectedVer = 0;
+    $("chat-skill-slug").value = "";
+    $("chat-skill-slug").readOnly = false;
+    $("chat-skill-ttl").value = "";
+    $("chat-skill-content").value = "";
+    $("chat-skill-status").textContent = "";
+    $("skill-editor-card").classList.toggle("hidden");
+  });
+  $("btn-skill-editor-cancel").addEventListener("click", () => $("skill-editor-card").classList.add("hidden"));
+  $("btn-skill-desktop-notify").addEventListener("click", async () => {
+    if (!("Notification" in window)) return;
+    try { await Notification.requestPermission(); } catch {}
+    updateSkillsBadgeAndTitle();
+  });
+  $("btn-chat-skill-submit").addEventListener("click", async () => {
+    if (!session) return;
+    const slug = $("chat-skill-slug").value.trim();
+    const content = $("chat-skill-content").value;
+    const ttlRaw = $("chat-skill-ttl").value;
+    const body = { content, expectedVersion: circleSkillExpectedVer, idempotencyKey: skillIdemKey("ui-put") };
+    if (ttlRaw !== "") body.ttlSeconds = Number(ttlRaw);
+    try {
+      await hubFetch(`/hub/v1/circle/skills/${encodeURIComponent(slug)}`, { method: "PUT", body: JSON.stringify(body) }, session);
+      $("skill-editor-card").classList.add("hidden");
+      $("chat-skill-status").textContent = "";
+      await refreshCircleSkills();
+      renderSkillsModal();
+    } catch (err) {
+      $("chat-skill-status").textContent = err.message || "發布失敗";
+    }
+  });
 
   // Boot
   const savedTheme = safeGetLS(THEME_KEY) || ((window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) ? "dark" : "light");

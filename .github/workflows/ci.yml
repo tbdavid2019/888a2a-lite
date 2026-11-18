@@ -29,6 +29,37 @@ jobs:
         run: python3 -m py_compile examples/patterns/*.py
       - name: Run pattern unit tests
         run: python3 -m unittest discover -s examples/patterns -p 'test_*.py'
+      - name: Check inline UI JavaScript syntax
+        run: |
+          python3 - <<'PY'
+          import re, subprocess, tempfile, os
+          targets = []
+          for p in ("internal/service/chat.html", "internal/service/admin.html"):
+              with open(p, "r", encoding="utf-8") as f:
+                  scripts = [
+                      body for attrs, body in re.findall(r"<script([^>]*)>(.*?)</script>", f.read(), re.S)
+                      if "application/ld+json" not in attrs.lower()
+                  ]
+              for idx, s in enumerate(scripts):
+                  targets.append((f"{p}#script{idx}", s.replace("{{CSP_NONCE}}", "nonce").replace("{{LOCAL_UI_TOKEN}}", "tok")))
+          with open("examples/worker/a2a_bridge.py", "r", encoding="utf-8") as f:
+              py_src = f.read()
+          m = re.search(r'CLIENT_HTML = """(.*?)"""', py_src, re.S)
+          if m:
+              scripts = re.findall(r"<script[^>]*>(.*?)</script>", m.group(1), re.S)
+              for idx, s in enumerate(scripts):
+                  targets.append((f"CLIENT_HTML#script{idx}", s.replace("{{LOCAL_UI_TOKEN}}", "tok")))
+          assert targets, "no inline scripts found"
+          for name, code in targets:
+              with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8") as tf:
+                  tf.write(code)
+                  tmp = tf.name
+              try:
+                  subprocess.run(["node", "--check", tmp], check=True)
+                  print("JS syntax OK:", name)
+              finally:
+                  os.unlink(tmp)
+          PY
 
   a2a-compatibility-source:
     name: A2A source and SDK gate

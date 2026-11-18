@@ -6,10 +6,12 @@ import (
 
 // InboxSubscription represents an active streaming subscriber.
 type InboxSubscription struct {
-	AgentID   string
-	C         chan InboxItem
-	done      chan struct{}
-	closeOnce sync.Once
+	AgentID      string
+	CircleID     string
+	C            chan InboxItem
+	CircleEvents chan CircleSkillEvent
+	done         chan struct{}
+	closeOnce    sync.Once
 }
 
 // Close closes the subscription channel safely.
@@ -19,28 +21,43 @@ func (s *InboxSubscription) Close() {
 	})
 }
 
-// InboxEventBroker manages in-memory pub-sub for agent inbox event streams.
+// InboxEventBroker manages in-memory pub-sub for agent inbox and optional circle skill event streams.
 type InboxEventBroker struct {
-	mu          sync.RWMutex
-	subscribers map[string]map[*InboxSubscription]struct{}
+	mu                sync.RWMutex
+	subscribers       map[string]map[*InboxSubscription]struct{}
+	circleSubscribers map[string]map[*InboxSubscription]struct{}
 }
 
 // NewInboxEventBroker creates a new event broker.
 func NewInboxEventBroker() *InboxEventBroker {
 	return &InboxEventBroker{
-		subscribers: make(map[string]map[*InboxSubscription]struct{}),
+		subscribers:       make(map[string]map[*InboxSubscription]struct{}),
+		circleSubscribers: make(map[string]map[*InboxSubscription]struct{}),
 	}
 }
 
-// Subscribe registers a subscriber for incoming inbox items of target agentID.
+// Subscribe registers a legacy inbox-only subscriber for incoming inbox items of target agentID.
 func (b *InboxEventBroker) Subscribe(agentID string, bufferSize int) *InboxSubscription {
+	return b.subscribe(agentID, "", false, bufferSize)
+}
+
+// SubscribeWithCircleEvents registers a subscriber for inbox items and capability-gated Circle skill events.
+func (b *InboxEventBroker) SubscribeWithCircleEvents(agentID, circleID string, bufferSize int) *InboxSubscription {
+	return b.subscribe(agentID, circleID, true, bufferSize)
+}
+
+func (b *InboxEventBroker) subscribe(agentID, circleID string, withCircleEvents bool, bufferSize int) *InboxSubscription {
 	if bufferSize <= 0 {
 		bufferSize = 64
 	}
 	sub := &InboxSubscription{
-		AgentID: agentID,
-		C:       make(chan InboxItem, bufferSize),
-		done:    make(chan struct{}),
+		AgentID:  agentID,
+		CircleID: circleID,
+		C:        make(chan InboxItem, bufferSize),
+		done:     make(chan struct{}),
+	}
+	if withCircleEvents && circleID != "" {
+		sub.CircleEvents = make(chan CircleSkillEvent, bufferSize)
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -50,6 +67,14 @@ func (b *InboxEventBroker) Subscribe(agentID string, bufferSize int) *InboxSubsc
 		b.subscribers[agentID] = subs
 	}
 	subs[sub] = struct{}{}
+	if sub.CircleEvents != nil {
+		csubs, ok := b.circleSubscribers[circleID]
+		if !ok {
+			csubs = make(map[*InboxSubscription]struct{})
+			b.circleSubscribers[circleID] = csubs
+		}
+		csubs[sub] = struct{}{}
+	}
 	return sub
 }
 
@@ -64,6 +89,14 @@ func (b *InboxEventBroker) Unsubscribe(sub *InboxSubscription) {
 		delete(subs, sub)
 		if len(subs) == 0 {
 			delete(b.subscribers, sub.AgentID)
+		}
+	}
+	if sub.CircleEvents != nil && sub.CircleID != "" {
+		if csubs, ok := b.circleSubscribers[sub.CircleID]; ok {
+			delete(csubs, sub)
+			if len(csubs) == 0 {
+				delete(b.circleSubscribers, sub.CircleID)
+			}
 		}
 	}
 	sub.Close()
@@ -81,6 +114,30 @@ func (b *InboxEventBroker) Publish(item InboxItem) {
 		select {
 		case <-sub.done:
 		case sub.C <- item:
+		default:
+			// Buffer full, drop without blocking publisher
+		}
+	}
+}
+
+// PublishCircleSkillEvent dispatches metadata-only Circle skill events strictly to opted-in subscribers in event.CircleID.
+func (b *InboxEventBroker) PublishCircleSkillEvent(event CircleSkillEvent) {
+	if event.CircleID == "" {
+		return
+	}
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	subs, ok := b.circleSubscribers[event.CircleID]
+	if !ok || len(subs) == 0 {
+		return
+	}
+	for sub := range subs {
+		if sub.CircleEvents == nil {
+			continue
+		}
+		select {
+		case <-sub.done:
+		case sub.CircleEvents <- event:
 		default:
 			// Buffer full, drop without blocking publisher
 		}

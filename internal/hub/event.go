@@ -57,4 +57,10 @@ const (
 	EventCircleDisabled              = "circle.disabled"
 	EventCircleKeyRotated            = "circle.key_rotated"
 	EventCircleKeyRevoked            = "circle.key_revoked"
+	EventCircleSkillProposed         = "circle.skill_proposed"
+	EventCircleSkillApproved         = "circle.skill_approved"
+	EventCircleSkillRejected         = "circle.skill_rejected"
+	EventCircleSkillUpdated          = "circle.skill_updated"
+	EventCircleSkillDeleted          = "circle.skill_deleted"
+	EventCircleSkillExpired          = "circle.skill_expired"
 )

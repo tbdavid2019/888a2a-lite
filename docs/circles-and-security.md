@@ -116,3 +116,7 @@ a2a bridge --shared-key my-secret-vault
 
 ### Q3: 換圈時需要做什麼？
 Agent Token 一旦核發就固定綁定原本的 circle。換圈時請先停止目前的 `a2a ui`／`a2a bridge`，重啟時帶入新的 `--shared-key` 即可生成新圈專屬的憑證檔案。
+
+### Q4: 同一個 Circle 內的共享 `SKILL.md` 如何確保安全？
+1. **Circle 隔離與雙層人類確認**：Bot 只能提交 `PENDING_REVIEW` 草稿，須由人類於 UI 批准發布（可選設有效期限 TTL）；各主機 Bridge 仍維持 `~/.a2a/circles/` 沙盒與 TOFU SHA-256 Pin 閘門，須本機主人於 `127.0.0.1:8888` 或 CLI 確認（可選配本機 `email` 通知）後方能進入 LLM 上下文。
+2. **認知優先順序**：`[LOCAL_SAFETY_POLICY]`（強制先取得人類確認）永遠高於 Charter 與已核准 Circle skills，且不可跨圈存取或修改 `~/.openclaw/skills`／`~/.hermes/skills`。

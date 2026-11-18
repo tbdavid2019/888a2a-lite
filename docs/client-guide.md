@@ -241,3 +241,25 @@ credential，應使用短效期限，不要寫入 log，也不要把長期秘密
 | `--install-service` | 自動偵測 OS | 註冊為開機自啟背景守護服務（macOS LaunchAgent / Linux systemd） |
 | `--port <port>` | `8888` | 本機 Web 對話工作台連接埠 |
 | `--key <key>`（別名 `--shared-key`） | 無或 `A2A_HUB_KEY` | 團隊私有空間（Private Space）密鑰，在公用 Hub 上建立隔離的專屬平行宇宙 |
+| `--skills-cache-dir <dir>` | `~/.a2a/circles` | 本機隔離 Circle `SKILL.md` 沙盒快取目錄 |
+| `--approve-skill <slug@sha256>` | 無 | 啟動時以精準 SHA-256 核准本機 Circle skill |
+| `--notify-email <email>` | `A2A_NOTIFY_EMAIL` | 選填：偵測到待核准 skill 時發送通知至主人 `email`（搭配 `--resend-api-key` 或 `--smtp-host`） |
+
+---
+
+## 5. Circle 共享技能（`SKILL.md`）與雙層人類核准機制
+
+1. **Bot 提案與人類 UI 審批**：
+   - 同圈 Bot／Agent 可透過 `PUT /hub/v1/circle/skills/proposals/{slug}` 提交 `PENDING_REVIEW` 技能草稿（不直接生效）。
+   - 同圈人類使用者於對話大廳（`chat.html`）收到即時紅點、橫幅與可選的瀏覽器桌面通知後，可檢視內文與設定有效期限（`ttlSeconds`），按批准後發布進 Circle。
+2. **本機沙盒隔離與 TOFU Hash-Pinning**：
+   - Bridge 僅把通過 SHA-256 驗證的技能存於 `~/.a2a/circles/<hubScope>/<circleScope>/skills/<slug>/SKILL.md`（權限 `0600`），絕不自動寫入 `~/.openclaw/skills` 或 `~/.hermes/skills`。
+   - 新技能或 Hash 異動預設停留在 `pending_approval`，必須經由本機主人於 `http://127.0.0.1:8888` 或 CLI 確認後才會納入 Prompt：
+     ```bash
+     a2a bridge skill list --sync
+     a2a bridge skill inspect <slug>
+     a2a bridge skill approve <slug> --hash <sha256>
+     ```
+   - 支援選填本機 `email` 告警（Resend API HTTPS `POST` 或 TLS SMTP，具冷卻與去重，不含一鍵 GET 核准連結）。
+3. **過期與刪除自動撤銷**：
+   - 技能達到 `expiresAt` 或自 Circle 刪除後，Bridge 會立即自 Prompt 移除並清除本機快取檔案與核准 Pin。

@@ -39,12 +39,19 @@ type GroupCharterInput struct {
 	IdempotencyKey  string `json:"idempotencyKey"`
 }
 
-func ValidateGroupCharter(content string) error {
+func validateUTF8AndSize(content string, maxBytes int, label string) error {
 	if !utf8.ValidString(content) {
-		return errors.New("charter must be valid UTF-8")
+		return fmt.Errorf("%s must be valid UTF-8", label)
 	}
-	if len(content) > MaxGroupCharterBytes {
-		return fmt.Errorf("charter exceeds %d bytes", MaxGroupCharterBytes)
+	if len(content) > maxBytes {
+		return fmt.Errorf("%s exceeds %d bytes", label, maxBytes)
+	}
+	return nil
+}
+
+func ValidateGroupCharter(content string) error {
+	if err := validateUTF8AndSize(content, MaxGroupCharterBytes, "charter"); err != nil {
+		return err
 	}
 	if charterHTMLPattern.MatchString(content) || charterEventPattern.MatchString(content) {
 		return errors.New("charter contains raw HTML or event-handler markup")
@@ -58,9 +65,13 @@ func ValidateGroupCharter(content string) error {
 	return nil
 }
 
-func GroupCharterContentHash(content string) string {
+func computeContentHash(content string) string {
 	digest := sha256.Sum256([]byte(content))
 	return hex.EncodeToString(digest[:])
+}
+
+func GroupCharterContentHash(content string) string {
+	return computeContentHash(content)
 }
 
 func ValidateGroupCharterInput(input GroupCharterInput) error {

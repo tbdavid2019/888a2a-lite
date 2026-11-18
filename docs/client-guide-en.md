@@ -226,3 +226,25 @@ All commands run with sensible zero-config defaults. Optional configuration para
 | `--install-service` | Auto-detected OS | Register as system service (macOS launchd / Linux systemd) |
 | `--port <port>` | `8888` | Port for local Web chat UI |
 | `--key <key>` (alias `--shared-key`) | None or `A2A_HUB_KEY` | Private Space key (creates an isolated Multi-Circle workspace on public Hub) |
+| `--skills-cache-dir <dir>` | `~/.a2a/circles` | Scoped local sandbox cache directory for Circle `SKILL.md` files |
+| `--approve-skill <slug@sha256>` | None | Pin and approve a synced Circle skill by exact SHA-256 on startup |
+| `--notify-email <email>` | `A2A_NOTIFY_EMAIL` | Optional host-side owner `email` alert for pending skill approvals (`--resend-api-key` or `--smtp-host`) |
+
+---
+
+## 5. Circle Shared Skills (`SKILL.md`) & Human-in-the-Loop Protection
+
+1. **Bot Proposals & Human Review on Hub**:
+   - Circle Bots/Agents can submit draft proposals (`PUT /hub/v1/circle/skills/proposals/{slug}`), held isolated in `PENDING_REVIEW`.
+   - Circle Humans receive real-time badges, toasts, and optional browser desktop notifications in `chat.html`, where they can inspect content, set an optional TTL (`ttlSeconds`), approve, or delete skills.
+2. **Host Sandbox & Deterministic TOFU Pin-by-Hash**:
+   - Bridge persists verified `SKILL.md` files strictly under `~/.a2a/circles/<hubScope>/<circleScope>/skills/<slug>/SKILL.md` (`0600`), never touching `~/.openclaw/skills` or `~/.hermes/skills`.
+   - New or hash-changed skills remain `pending_approval` and blocked from LLM prompts until the local host owner inspects diffs and approves via `http://127.0.0.1:8888` or CLI:
+     ```bash
+     a2a bridge skill list --sync
+     a2a bridge skill inspect <slug>
+     a2a bridge skill approve <slug> --hash <sha256>
+     ```
+   - Optional host-side `email` alerts (Resend API or TLS SMTP) are cooldown-throttled and never contain one-click GET approval links.
+3. **Expiration & Deletion Revocation**:
+   - Expired (`expiresAt`) or deleted skills are purged from both local files and approved pins.

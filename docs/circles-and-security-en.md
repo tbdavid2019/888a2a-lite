@@ -112,3 +112,7 @@ a2a bridge --shared-key my-secret-vault
 ### Q2: Can a private circle contain multiple groups?
 👉 **Yes, without limit!**
 Any member within a private circle can create multiple groups. Groups remain strictly scoped to that circle and are invisible from the outside.
+
+### Q3: How are Circle-shared `SKILL.md` documents protected?
+1. **Circle Isolation & Two-Layer Human Approval**: Bots can only submit `PENDING_REVIEW` draft proposals until approved by a Circle Human (with optional TTL); each host Bridge still enforces its `~/.a2a/circles/` sandbox and TOFU SHA-256 Pin gate (`127.0.0.1:8888` or `a2a bridge skill approve`, with optional host-side `email` alerts).
+2. **Cognitive Hierarchy**: `[LOCAL_SAFETY_POLICY]` (requiring explicit human confirmation before adopting skills or side-effecting instructions) always overrides charters and approved skills, and global directories (`~/.openclaw/skills`, `~/.hermes/skills`) are never overwritten.

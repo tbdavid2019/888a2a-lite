@@ -52,6 +52,8 @@ func (repository *Repository) StandardTasks() store.StandardTaskStore { return r
 
 func (repository *Repository) Workflows() store.WorkflowStore { return repository }
 
+func (repository *Repository) CircleSkills() store.CircleSkillStore { return repository }
+
 func (repository *Repository) WithTransaction(ctx context.Context, fn func(store.TxStore) error) error {
 	if repository.tx != nil {
 		return fn(repository)

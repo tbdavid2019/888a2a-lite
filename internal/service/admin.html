@@ -184,6 +184,7 @@
     <button id="tab-announcements" class="tab active" type="button" data-i18n="tabAnnouncements">公告管理</button>
     <button id="tab-messages" class="tab" type="button" data-i18n="tabMessages">A2A 訊息監控</button>
     <button id="tab-agents" class="tab" type="button" data-i18n="tabAgents">Agent 管理與在線監控</button>
+    <button id="tab-skills" class="tab" type="button" data-i18n="tabSkills">Circle 技能管理</button>
     <button id="tab-chat" class="tab" type="button" data-i18n="tabChat">線上對話</button>
   </nav>
 
@@ -369,7 +370,70 @@
     </section>
   </div>
 
-  <!-- 分頁 4: 線上對話 -->
+  <!-- 分頁 4: Circle 技能管理 -->
+  <div id="view-skills" class="view">
+    <section class="panel" aria-labelledby="skills-ctrl-title">
+      <div class="actions" style="justify-content:space-between; flex-wrap:wrap; margin-bottom:12px;">
+        <div>
+          <h2 id="skills-ctrl-title" style="margin-bottom:2px;" data-i18n="skillsCtrlTitle">Circle 共享技能 (SKILL.md) 管理</h2>
+          <p class="meta-sub" style="margin:0;" data-i18n="skillsCtrlDesc">檢視或發布特定 Circle 的 SKILL.md，審批 Bot 待審提案，並可設定有效期限（TTL）。</p>
+        </div>
+        <div class="actions">
+          <select id="skills-circle-select" style="width:auto; min-width:220px;" aria-label="選擇 Circle"></select>
+          <button id="btn-refresh-skills" class="secondary" type="button" data-i18n="refreshBtn">重新整理</button>
+        </div>
+      </div>
+      <div class="grid">
+        <label><span data-i18n="skillSlugLabel">Skill Slug（^[a-z0-9][a-z0-9_-]{0,63}$）</span><input id="skill-slug-input" type="text" placeholder="deploy-playbook" maxlength="64"></label>
+        <label><span data-i18n="skillTtlLabel">有效期限 TTL（秒；0 或留空 = 永久）</span><input id="skill-ttl-input" type="number" min="0" max="31536000" placeholder="0（永久）或如 86400"></label>
+        <label class="wide">
+          <span data-i18n="skillContentLabel">SKILL.md 內容（上限 32 KiB）</span>
+          <textarea id="skill-content-input" style="min-height:160px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;" placeholder="# Playbook&#10;..." maxlength="32768"></textarea>
+          <span id="skill-bytes-counter" class="meta-sub">0 / 32768 bytes · expectedVersion: <span id="skill-expected-ver">0</span></span>
+        </label>
+      </div>
+      <div class="actions" style="margin-top:12px;">
+        <button id="btn-save-skill" type="button" data-i18n="skillSaveBtn">發布／更新技能</button>
+        <button id="btn-reset-skill-form" class="secondary" type="button" data-i18n="skillResetBtn">重設表單</button>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="skills-proposals-title">
+      <div class="actions" style="justify-content:space-between;">
+        <h2 id="skills-proposals-title" data-i18n="skillsProposalsTitle">待審 Bot 提案 (PENDING_REVIEW)</h2>
+        <span id="skills-proposals-badge" class="badge">0</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Slug</th><th data-i18n="skillProposerCol">提案者</th><th>Hash (SHA-256)</th><th data-i18n="skillTtlCol">建議 TTL</th><th data-i18n="colAction">操作</th></tr></thead>
+          <tbody id="skill-proposals-rows"><tr><td class="empty" colspan="5" data-i18n="loadPrompt">請先輸入 Operator Token 並載入。</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="skills-active-title">
+      <div class="actions" style="justify-content:space-between;">
+        <h2 id="skills-active-title" data-i18n="skillsActiveTitle">已生效 Circle 技能</h2>
+        <span id="skills-active-badge" class="badge">0</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Slug</th><th data-i18n="annTitle">標題</th><th>Ver</th><th>Hash</th><th data-i18n="annExpires">到期時間</th><th data-i18n="colAction">操作</th></tr></thead>
+          <tbody id="skill-active-rows"><tr><td class="empty" colspan="6" data-i18n="loadPrompt">請先輸入 Operator Token 並載入。</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="skill-detail-panel" class="panel hidden" aria-labelledby="skill-detail-title">
+      <div class="actions" style="justify-content:space-between;">
+        <h2 id="skill-detail-title">技能內容／版次檢視</h2>
+        <button id="btn-close-skill-detail" class="secondary" type="button" data-i18n="cancelEditBtn">關閉</button>
+      </div>
+      <pre id="skill-detail-pre" class="msg-pre" style="max-height:360px; white-space:pre-wrap;"></pre>
+    </section>
+  </div>
+
+  <!-- 分頁 5: 線上對話 -->
   <div id="view-chat" class="view">
     <section class="panel" aria-labelledby="admin-chat-connect-title">
       <div class="actions" style="justify-content:space-between; margin-bottom:12px;">
@@ -448,6 +512,7 @@
   const getTabPath = (tabName) => {
     if (tabName === "agents") return "/admin/agents";
     if (tabName === "messages") return "/admin/messages";
+    if (tabName === "skills") return "/admin/skills";
     if (tabName === "chat") return "/admin/chat";
     return "/admin/announcements";
   };
@@ -456,10 +521,12 @@
     $("tab-announcements").className = `tab ${tabName === "announcements" ? "active" : ""}`;
     $("tab-messages").className = `tab ${tabName === "messages" ? "active" : ""}`;
     $("tab-agents").className = `tab ${tabName === "agents" ? "active" : ""}`;
+    $("tab-skills").className = `tab ${tabName === "skills" ? "active" : ""}`;
     $("tab-chat").className = `tab ${tabName === "chat" ? "active" : ""}`;
     $("view-announcements").className = `view ${tabName === "announcements" ? "active" : ""}`;
     $("view-messages").className = `view ${tabName === "messages" ? "active" : ""}`;
     $("view-agents").className = `view ${tabName === "agents" ? "active" : ""}`;
+    $("view-skills").className = `view ${tabName === "skills" ? "active" : ""}`;
     $("view-chat").className = `view ${tabName === "chat" ? "active" : ""}`;
     if (updateHistory && window.history && window.history.pushState) {
       const targetPath = getTabPath(tabName);
@@ -476,6 +543,8 @@
         loadMessages().catch((e) => status(e.message, "error"));
       } else if (tabName === "agents") {
         loadAgents().catch((e) => status(e.message, "error"));
+      } else if (tabName === "skills") {
+        loadCircleSkillsAdmin().catch((e) => status(e.message, "error"));
       } else if (tabName === "announcements") {
         loadAnnouncements().catch((e) => status(e.message, "error"));
       }
@@ -484,6 +553,7 @@
   $("tab-announcements").addEventListener("click", () => switchTab("announcements"));
   $("tab-messages").addEventListener("click", () => switchTab("messages"));
   $("tab-agents").addEventListener("click", () => switchTab("agents"));
+  $("tab-skills").addEventListener("click", () => switchTab("skills"));
   $("tab-chat").addEventListener("click", () => switchTab("chat"));
 
   const setForm = (announcement, sourceId = null) => {
@@ -528,6 +598,20 @@
       });
       select.value = current;
     });
+    const skillSel = $("skills-circle-select");
+    if (skillSel) {
+      const curSkillCircle = skillSel.value || "public";
+      skillSel.replaceChildren();
+      const circles = body.circles || [];
+      if (!circles.some((c) => c.circleId === "public")) {
+        skillSel.append(new Option("public (ACTIVE)", "public"));
+      }
+      circles.forEach((circle) => {
+        const label = circle.alias ? `${circle.alias} · ${circle.circleId}` : circle.circleId;
+        skillSel.append(new Option(`${label} (${circle.state})`, circle.circleId));
+      });
+      skillSel.value = Array.from(skillSel.options).some((o) => o.value === curSkillCircle) ? curSkillCircle : (skillSel.options[0]?.value || "public");
+    }
   };
 
   const renderDirectMessages = (items) => {
@@ -763,6 +847,9 @@
       } else if (activeTab === "messages") {
         await loadMessages();
         status("已載入 A2A 訊息。", "success");
+      } else if (activeTab === "skills") {
+        await loadCircleSkillsAdmin();
+        status("已載入 Circle 技能與提案。", "success");
       } else {
         await loadAgents();
         status("已載入 Agent 清單。", "success");
@@ -806,6 +893,160 @@
   $("filter-circle").addEventListener("change", () => loadMessages().catch((e) => status(e.message, "error")));
   $("agent-filter-circle").addEventListener("change", () => loadAgents().catch((e) => status(e.message, "error")));
 
+  let skillExpectedVersion = 0;
+  let cachedAdminSkills = [];
+  const utf8Bytes = (s) => new TextEncoder().encode(String(s || "")).length;
+  const newIdemKey = (prefix) => (crypto.randomUUID ? `${prefix}-${crypto.randomUUID()}` : `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+  const updateSkillByteMeter = () => {
+    const bytes = utf8Bytes($("skill-content-input").value);
+    $("skill-bytes-counter").innerHTML = `${bytes} / 32768 bytes · expectedVersion: <span id="skill-expected-ver">${skillExpectedVersion}</span>`;
+  };
+  const resetSkillForm = () => {
+    skillExpectedVersion = 0;
+    $("skill-slug-input").value = "";
+    $("skill-slug-input").readOnly = false;
+    $("skill-ttl-input").value = "";
+    $("skill-content-input").value = "";
+    updateSkillByteMeter();
+  };
+  const showSkillDetail = (title, text) => {
+    $("skill-detail-title").textContent = title;
+    $("skill-detail-pre").textContent = text;
+    $("skill-detail-panel").classList.remove("hidden");
+  };
+  const loadCircleSkillsAdmin = async () => {
+    const cid = ($("skills-circle-select") && $("skills-circle-select").value) || "public";
+    const data = await api(`/hub/v1/admin/circles/${encodeURIComponent(cid)}/skills`);
+    const manifest = data.manifest || {};
+    const skills = manifest.skills || [];
+    cachedAdminSkills = skills;
+    const proposals = (data.proposals || []).filter((p) => p.status === "PENDING_REVIEW");
+    $("skills-proposals-badge").textContent = String(proposals.length);
+    $("skills-active-badge").textContent = `${skills.length} · v${manifest.collectionVersion || 0}`;
+
+    const propRows = $("skill-proposals-rows");
+    propRows.replaceChildren();
+    if (!proposals.length) {
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      td.colSpan = 5;
+      td.className = "empty";
+      td.textContent = "目前無待審 Bot 提案。";
+      tr.append(td);
+      propRows.append(tr);
+    } else {
+      proposals.forEach((p) => {
+        const tr = document.createElement("tr");
+        const cSlug = document.createElement("td"); cSlug.textContent = p.slug;
+        const cProp = document.createElement("td"); cProp.textContent = p.proposedBy;
+        const cHash = document.createElement("td"); cHash.textContent = (p.contentHash || "").slice(0, 12);
+        const cTtl = document.createElement("td"); cTtl.textContent = p.requestedTtlSeconds ? `${p.requestedTtlSeconds}s` : "永久";
+        const cAct = document.createElement("td");
+        const acts = document.createElement("div"); acts.className = "actions";
+        acts.append(button("檢視", "secondary", () => {
+          showSkillDetail(`待審提案: ${p.slug} (${(p.contentHash || "").slice(0, 12)})`, p.content || "");
+        }));
+        acts.append(button("批准發布", "", async () => {
+          const existing = cachedAdminSkills.find((s) => s.slug === p.slug);
+          const expVer = existing ? Number(existing.version || 0) : 0;
+          await api(`/hub/v1/admin/circles/${encodeURIComponent(cid)}/skills/proposals/${encodeURIComponent(p.slug)}/approve`, {
+            method: "POST",
+            body: JSON.stringify({ expectedVersion: expVer, idempotencyKey: newIdemKey("op-app") }),
+          });
+          status(`已批准並發布技能 ${p.slug}。`, "success");
+          await loadCircleSkillsAdmin();
+        }));
+        acts.append(button("駁回", "danger", async () => {
+          await api(`/hub/v1/admin/circles/${encodeURIComponent(cid)}/skills/proposals/${encodeURIComponent(p.slug)}/reject`, {
+            method: "POST",
+            body: JSON.stringify({ expectedVersion: 0, reason: "Rejected by Operator", idempotencyKey: newIdemKey("op-rej") }),
+          });
+          status(`已駁回提案 ${p.slug}。`, "success");
+          await loadCircleSkillsAdmin();
+        }));
+        cAct.append(acts);
+        tr.append(cSlug, cProp, cHash, cTtl, cAct);
+        propRows.append(tr);
+      });
+    }
+
+    const actRows = $("skill-active-rows");
+    actRows.replaceChildren();
+    if (!skills.length) {
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      td.colSpan = 6;
+      td.className = "empty";
+      td.textContent = "此 Circle 尚未發布任何共享技能。";
+      tr.append(td);
+      actRows.append(tr);
+    } else {
+      skills.forEach((s) => {
+        const tr = document.createElement("tr");
+        const cSlug = document.createElement("td"); cSlug.textContent = s.slug;
+        const cTitle = document.createElement("td"); cTitle.textContent = s.title || s.slug;
+        const cVer = document.createElement("td"); cVer.textContent = `v${s.version}`;
+        const cHash = document.createElement("td"); cHash.textContent = (s.contentHash || "").slice(0, 12);
+        const cExp = document.createElement("td"); cExp.textContent = s.expiresAt ? dateText(s.expiresAt) : "永久";
+        const cAct = document.createElement("td");
+        const acts = document.createElement("div"); acts.className = "actions";
+        acts.append(button("編輯", "secondary", async () => {
+          const full = await api(`/hub/v1/admin/circles/${encodeURIComponent(cid)}/skills/${encodeURIComponent(s.slug)}`);
+          skillExpectedVersion = Number(full.version || s.version || 0);
+          $("skill-slug-input").value = full.slug;
+          $("skill-slug-input").readOnly = true;
+          $("skill-ttl-input").value = full.ttlSeconds ? String(full.ttlSeconds) : "";
+          $("skill-content-input").value = full.content || "";
+          updateSkillByteMeter();
+          showSkillDetail(`${full.slug} v${full.version} (${(full.contentHash || "").slice(0, 12)})`, full.content || "");
+        }));
+        acts.append(button("版次歷史", "secondary", async () => {
+          const revData = await api(`/hub/v1/admin/circles/${encodeURIComponent(cid)}/skills/${encodeURIComponent(s.slug)}/revisions`);
+          const lines = (revData.revisions || []).map((r) => `v${r.version} [${r.action}] ${dateText(r.createdAt)} by ${r.updatedBy || "-"} hash=${(r.contentHash || "").slice(0, 12)}\n${r.content || ""}`);
+          showSkillDetail(`${s.slug} 版次歷史`, lines.join("\n\n---\n\n") || "無紀錄");
+        }));
+        acts.append(button("刪除", "danger", async () => {
+          if (!confirm(`確定刪除 Circle [${cid}] 的技能 ${s.slug} (v${s.version}) 嗎？`)) return;
+          await api(`/hub/v1/admin/circles/${encodeURIComponent(cid)}/skills/${encodeURIComponent(s.slug)}`, {
+            method: "DELETE",
+            body: JSON.stringify({ expectedVersion: Number(s.version), idempotencyKey: newIdemKey("op-del") }),
+          });
+          if ($("skill-slug-input").value === s.slug) resetSkillForm();
+          status(`已刪除技能 ${s.slug}。`, "success");
+          await loadCircleSkillsAdmin();
+        }));
+        cAct.append(acts);
+        tr.append(cSlug, cTitle, cVer, cHash, cExp, cAct);
+        actRows.append(tr);
+      });
+    }
+  };
+
+  $("skills-circle-select").addEventListener("change", () => loadCircleSkillsAdmin().catch((e) => status(e.message, "error")));
+  $("btn-refresh-skills").addEventListener("click", () => loadCircleSkillsAdmin().catch((e) => status(e.message, "error")));
+  $("skill-content-input").addEventListener("input", updateSkillByteMeter);
+  $("btn-reset-skill-form").addEventListener("click", resetSkillForm);
+  $("btn-close-skill-detail").addEventListener("click", () => $("skill-detail-panel").classList.add("hidden"));
+  $("btn-save-skill").addEventListener("click", async () => {
+    try {
+      const cid = ($("skills-circle-select") && $("skills-circle-select").value) || "public";
+      const slug = $("skill-slug-input").value.trim();
+      const content = $("skill-content-input").value;
+      const ttlRaw = $("skill-ttl-input").value.trim();
+      const body = { content, expectedVersion: skillExpectedVersion, idempotencyKey: newIdemKey("op-put") };
+      if (ttlRaw !== "") body.ttlSeconds = Number(ttlRaw);
+      await api(`/hub/v1/admin/circles/${encodeURIComponent(cid)}/skills/${encodeURIComponent(slug)}`, {
+        method: "PUT",
+        body: JSON.stringify(body),
+      });
+      status(`已發布／更新技能 ${slug}。`, "success");
+      resetSkillForm();
+      await loadCircleSkillsAdmin();
+    } catch (e) {
+      status(e.message, "error");
+    }
+  });
+
   $("refresh").addEventListener("click", async () => { try { await loadAnnouncements(); status("已重新整理。", "success"); } catch (error) { status(error.message, "error"); } });
   $("cancelEdit").addEventListener("click", () => setForm(null));
   $("saveDraft").addEventListener("click", async () => { try { await api("/hub/v1/admin/announcements", { method: "POST", body: JSON.stringify({ ...input(), status: "DRAFT" }) }); setForm(null); status("草稿已儲存。", "success"); await loadAnnouncements(); } catch (error) { status(error.message, "error"); } });
@@ -816,6 +1057,8 @@
     const hash = window.location.hash;
     if (path.includes("/admin/agents") || hash === "#agents") {
       switchTab("agents", updateHistory);
+    } else if (path.includes("/admin/skills") || hash === "#skills") {
+      switchTab("skills", updateHistory);
     } else if (path.includes("/admin/messages") || hash === "#messages") {
       switchTab("messages", updateHistory);
     } else if (path.includes("/admin/chat") || hash === "#chat") {
@@ -1287,7 +1530,11 @@
       adminTitle: "888a2a-lite 管理後台", adminSubtitle: "Hub control-plane console · 公告管理、A2A 訊息監控、Agent 管理與線上對話。",
       openPublicChat: "開啟公開對話大廳 →", operatorTokenLabel: "Operator Token（部署時的 A2A888_HUB_OPERATOR_TOKEN）",
       operatorTokenPlaceholder: "只存在本次頁面記憶體", loadBtn: "載入",
-      tabAnnouncements: "公告管理", tabMessages: "A2A 訊息監控", tabAgents: "Agent 管理與在線監控", tabChat: "線上對話",
+      tabAnnouncements: "公告管理", tabMessages: "A2A 訊息監控", tabAgents: "Agent 管理與在線監控", tabSkills: "Circle 技能管理", tabChat: "線上對話",
+      skillsCtrlTitle: "Circle 共享技能 (SKILL.md) 管理", skillsCtrlDesc: "檢視或發布特定 Circle 的 SKILL.md，審批 Bot 待審提案，並可設定有效期限（TTL）。",
+      skillSlugLabel: "Skill Slug（^[a-z0-9][a-z0-9_-]{0,63}$）", skillTtlLabel: "有效期限 TTL（秒；0 或留空 = 永久）",
+      skillContentLabel: "SKILL.md 內容（上限 32 KiB）", skillSaveBtn: "發布／更新技能", skillResetBtn: "重設表單",
+      skillsProposalsTitle: "待審 Bot 提案 (PENDING_REVIEW)", skillProposerCol: "提案者", skillTtlCol: "建議 TTL", skillsActiveTitle: "已生效 Circle 技能",
       createAnnouncement: "建立公告", annTitle: "標題", annSeverity: "嚴重度", annExpires: "到期時間（可選）", annDocUrl: "文件連結（可選）", annSummary: "摘要",
       publishBtn: "發布公告", saveDraftBtn: "儲存草稿", cancelEditBtn: "取消編輯", annListTitle: "公告列表", refreshBtn: "重新整理",
       colState: "狀態", colSeverity: "嚴重度", colTitleSummary: "標題／摘要", colTime: "時間", colAction: "操作",
@@ -1317,7 +1564,11 @@
       adminTitle: "888a2a-lite Admin Console", adminSubtitle: "Hub control-plane console · Announcements, A2A audit messages, agent leases, and live chat.",
       openPublicChat: "Open Public Chat Lounge →", operatorTokenLabel: "Operator Token (A2A888_HUB_OPERATOR_TOKEN)",
       operatorTokenPlaceholder: "Held in page memory only", loadBtn: "Load",
-      tabAnnouncements: "Announcements", tabMessages: "Message Audit", tabAgents: "Agents & Leases", tabChat: "Live Chat",
+      tabAnnouncements: "Announcements", tabMessages: "Message Audit", tabAgents: "Agents & Leases", tabSkills: "Circle Skills", tabChat: "Live Chat",
+      skillsCtrlTitle: "Circle Shared Skills (SKILL.md)", skillsCtrlDesc: "Publish or update Circle SKILL.md files, review pending Bot proposals, and configure optional TTL.",
+      skillSlugLabel: "Skill Slug (^[a-z0-9][a-z0-9_-]{0,63}$)", skillTtlLabel: "TTL Seconds (0 or empty = persistent)",
+      skillContentLabel: "SKILL.md Content (max 32 KiB)", skillSaveBtn: "Publish / Update Skill", skillResetBtn: "Reset Form",
+      skillsProposalsTitle: "Pending Bot Proposals", skillProposerCol: "Proposed By", skillTtlCol: "Requested TTL", skillsActiveTitle: "Active Circle Skills",
       createAnnouncement: "Create Announcement", annTitle: "Title", annSeverity: "Severity", annExpires: "Expires At (Optional)", annDocUrl: "Docs URL (Optional)", annSummary: "Summary",
       publishBtn: "Publish", saveDraftBtn: "Save Draft", cancelEditBtn: "Cancel Edit", annListTitle: "Announcements", refreshBtn: "Refresh",
       colState: "State", colSeverity: "Severity", colTitleSummary: "Title / Summary", colTime: "Time", colAction: "Actions",
@@ -1347,7 +1598,11 @@
       adminTitle: "888a2a-lite 管理コンソール", adminSubtitle: "Hub コントロールプレーン · お知らせ管理、A2A メッセージ監視、Agent 管理、ライブチャット。",
       openPublicChat: "公開チャットラウンジを開く →", operatorTokenLabel: "Operator Token（A2A888_HUB_OPERATOR_TOKEN）",
       operatorTokenPlaceholder: "メモリ内のみ保持", loadBtn: "読込",
-      tabAnnouncements: "お知らせ管理", tabMessages: "メッセージ監視", tabAgents: "Agent・リース管理", tabChat: "オンライン会話",
+      tabAnnouncements: "お知らせ管理", tabMessages: "メッセージ監視", tabAgents: "Agent・リース管理", tabSkills: "Circle スキル管理", tabChat: "オンライン会話",
+      skillsCtrlTitle: "Circle 共有スキル (SKILL.md) 管理", skillsCtrlDesc: "指定 Circle の SKILL.md 公開・更新、Bot 提案承認、有効期限 TTL を設定します。",
+      skillSlugLabel: "Skill Slug（^[a-z0-9][a-z0-9_-]{0,63}$）", skillTtlLabel: "有効期限 TTL（秒、0/空 = 無期限）",
+      skillContentLabel: "SKILL.md 本文（最大 32 KiB）", skillSaveBtn: "スキル公開／更新", skillResetBtn: "フォーム初期化",
+      skillsProposalsTitle: "承認待ち Bot 提案", skillProposerCol: "提案者", skillTtlCol: "希望 TTL", skillsActiveTitle: "有効な Circle スキル",
       createAnnouncement: "お知らせ作成", annTitle: "タイトル", annSeverity: "重要度", annExpires: "有効期限（任意）", annDocUrl: "ドキュメント URL（任意）", annSummary: "概要",
       publishBtn: "公開する", saveDraftBtn: "下書き保存", cancelEditBtn: "編集をキャンセル", annListTitle: "お知らせ一覧", refreshBtn: "更新",
       colState: "状態", colSeverity: "重要度", colTitleSummary: "タイトル／概要", colTime: "日時", colAction: "操作",

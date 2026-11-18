@@ -617,6 +617,19 @@ func (service *Service) RunScheduledMaintenance(ctx context.Context) (int64, int
 		return prunedAgents, prunedCircles, err
 	}
 	_, _ = service.store.StandardTasks().ExpireStandardTasks(ctx, now)
+	if expiredEvents, expErr := service.store.CircleSkills().SweepExpiredCircleSkills(ctx, now); expErr == nil {
+		for _, ev := range expiredEvents {
+			service.audit(ctx, hub.Event{
+				Type:         hub.EventCircleSkillExpired,
+				CircleID:     ev.CircleID,
+				ActorAgentID: ev.UpdatedBy,
+				Details:      map[string]any{"slug": ev.Slug, "version": ev.Version, "collectionVersion": ev.CollectionVersion, "contentHash": ev.ContentHash},
+			})
+			if service.broker != nil {
+				service.broker.PublishCircleSkillEvent(ev)
+			}
+		}
+	}
 	return prunedAgents, prunedCircles, nil
 }
 
@@ -791,10 +804,14 @@ func (service *Service) BuildSystemCard(baseURL string) hub.HubSystemCard {
 			"maxAttachmentParts":           int64(service.config.AttachmentLimits.MaxParts),
 			"maxAttachmentArtifacts":       int64(service.config.AttachmentLimits.MaxArtifacts),
 			"maxAttachmentMetadataBytes":   service.config.AttachmentLimits.MaxMetadataBytes,
+			"maxCircleSkillBytes":          int64(hub.MaxCircleSkillBytes),
+			"maxCircleSkillsPerCircle":     int64(hub.MaxCircleSkillsPerCircle),
+			"maxCircleSkillProposals":      int64(hub.MaxCircleSkillProposalsPerCircle),
 		},
 		Extensions: []hub.SystemCardExtension{
 			{URI: hub.AnnouncementExtensionURI, Required: false},
 			{URI: hub.GroupExtensionURI, Required: false},
+			{URI: hub.CircleSkillExtensionURI, Required: false},
 		},
 		StandardA2A: hub.StandardA2AStatus{
 			Enabled:         service.config.StandardGatewayEnabled,
