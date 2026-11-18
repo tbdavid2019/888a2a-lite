@@ -193,7 +193,7 @@ func (server *HTTPServer) llms(w http.ResponseWriter, r *http.Request) {
 	if server.service.circleResolver.Mode() == "multi" {
 		mode = "MULTI_CIRCLE"
 		if server.service.config.AllowDynamicCircles {
-			authSummary = "Optional. Dynamic Circles ENABLED. No key enters the public circle. ANY secret key in X-Hub-Key dynamically creates or joins an isolated private circle (動態新天地). Ask the user if they want to provide a private circle key or join the public circle."
+			authSummary = "Optional. Dynamic Circles ENABLED. No key enters the public circle. ANY secret key in X-Hub-Key dynamically creates or joins an isolated private circle. Ask the user if they want to provide a private circle key or join the public circle."
 			regHeader = "(No key for public circle; X-Hub-Key: <secret> to dynamically create/join a private circle)"
 		} else {
 			authSummary = "Optional. Whitelist Circles ONLY. Registration without a pre-shared key enters the public circle; an allowed team key from A2A888_HUB_SHARED_KEYS enters its private circle. Ask the user if they have an allowed team key."

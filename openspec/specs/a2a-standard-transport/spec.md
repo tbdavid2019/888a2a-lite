@@ -11,10 +11,11 @@ Hub SHALL 在 `/.well-known/agent-card.json` 提供標準 A2A Gateway Agent Card
 Card SHALL 宣告 `supportedInterfaces`（含 `url`、`protocolBinding: "HTTP+JSON"`、`protocolVersion: "1.0"`），在 Per-Agent Card 中 `tenant` 欄位 SHALL 設定為目標 `agentId`。
 Card SHALL 宣告 `securitySchemes.bearerAuth.httpAuthSecurityScheme`（`scheme: "bearer"`、`bearerFormat: "AgentToken"`）與 `securityRequirements: [{"schemes":{"bearerAuth":{"list":[]}}}]`。
 Card SHALL 明確宣告 `capabilities.streaming: true`，未支援之 push notifications 與 extended Agent Card 設為 false 或省略。
+Card 的 `defaultInputModes`、`defaultOutputModes` 與相關 Skill modes SHALL 宣告 `text/plain` 以及 URL reference 可承載的實際 MIME profile；此宣告代表 Gateway 可保存與轉送該類型的 URL reference，不代表 Hub 會下載或解析檔案。
 
 #### Scenario: Standard client discovers the gateway card
 - **WHEN** client GET `/.well-known/agent-card.json`
-- **THEN** Hub 回傳符合 A2A AgentCard 結構的 JSON，包含 `supportedInterfaces`、`capabilities`、`defaultInputModes`、`defaultOutputModes`、`skills` 與 `securitySchemes`
+- **THEN** Hub 回傳符合 A2A AgentCard 結構的 JSON，包含 `supportedInterfaces`、`capabilities`、`defaultInputModes`、`defaultOutputModes`、`skills` 與 `securitySchemes`，且 modes 包含已支援的 URL reference MIME profile
 
 #### Scenario: Standard client fetches a specific agent card
 - **WHEN** client GET `/a2a/v1/agents/{agentId}/card`
@@ -30,6 +31,7 @@ Hub SHALL 提供 `POST /a2a/v1/message:send`（並在根目錄掛載 `POST /mess
 Request SHALL 支援 `Content-Type: application/a2a+json` 與 `application/json`，並解析 `A2A-Version` 標頭；若請求不支援之版本，SHALL 回傳 `VERSION_NOT_SUPPORTED` 錯誤。
 Request SHALL 接受標準 `SendMessageRequest` 結構，驗證 `message.messageId`、`message.role` 和 `parts`。Gateway 使用 request 的 `tenant` 欄位作為目標 Agent ID，authenticated caller 作為 requester。
 Success response SHALL 封裝於 `SendMessageResponse` envelope（`{"task": {...}}` 或 `{"message": {...}}`），不得回傳未封裝之裸物件。
+Message Parts SHALL 允許 `text` 與符合 URL attachment capability 的 HTTPS `url` reference 混合；`raw`、`data`、不合法 URL、缺少 URL MIME type 或未宣告 MIME profile 的 Part SHALL 被拒絕。
 
 **`returnImmediately` 語意支援：**
 - 若 `configuration.returnImmediately: false`（省略時預設）：Hub SHALL 等待終態或 INPUT_REQUIRED／AUTH_REQUIRED 才成功返回。HTTP 等待逾時 SHALL 回傳 504 deadline error 並保留 Task；不得以 200 WORKING 返回。client 斷線 SHALL 只終止等待，不取消工作。
@@ -47,9 +49,13 @@ Success response SHALL 封裝於 `SendMessageResponse` envelope（`{"task": {...
 - **WHEN** request 沒有可解析的 target tenant
 - **THEN** Hub 回傳 400 INVALID_ARGUMENT，且不建立 mailbox 或 A2A task
 
+#### Scenario: Mixed text and URL Parts are accepted
+- **WHEN** Message contains text Parts and valid HTTPS URL Parts whose media types are advertised by the target Card
+- **THEN** Hub creates one Task and preserves all original Parts in the Task history and mailbox correlation
+
 #### Scenario: Unsupported Part type is rejected
-- **WHEN** Message 包含任一不支援的 Part，包括混合 text 與 file/data
-- **THEN** Hub 回傳 `ContentTypeNotSupportedError`（400 Bad Request，包含 `CONTENT_TYPE_NOT_SUPPORTED` 錯誤詳情），且不產生 partial write
+- **WHEN** Message 包含 `raw`、`data`、不合法 URL、缺少 URL media type，或未宣告的 media type
+- **THEN** Hub 回傳 `ContentTypeNotSupportedError` 或 `INVALID_ARGUMENT`（400 Bad Request，包含 machine-readable error 詳情），且不產生 partial write
 
 ### Requirement: Standard Task identity, lifecycle and list envelopes are durable
 
@@ -183,3 +189,31 @@ Standard A2A transport SHALL 支援由 Group Extension 宣告的 `group:<groupId
 
 - **WHEN** client 發送普通 Agent tenant Message 且沒有 Group Extension header
 - **THEN** Gateway 仍依第一期 P2P contract 處理，不要求或建立群組資料
+
+### Requirement: Executor reply messages carry required identity and task correlation
+
+When an executor update includes a standard Agent `Message`, the Gateway SHALL require a non-empty `messageId`, `contextId`, and `taskId`. The `taskId` and `contextId` SHALL match the persisted task before the update is committed. An invalid or mismatched message SHALL be rejected without changing task state, history, revision, or events.
+
+#### Scenario: Executor reply has complete matching identity
+- **WHEN** an assigned target reports a Message with messageId, matching taskId, and matching contextId
+- **THEN** the Hub stores the Message in task history and applies the requested state update
+
+#### Scenario: Executor reply is missing messageId
+- **WHEN** an assigned target reports a Message without messageId
+- **THEN** the Hub returns `INVALID_ARGUMENT` and leaves the task unchanged
+
+#### Scenario: Executor reply targets a different task context
+- **WHEN** an assigned target reports a Message whose taskId or contextId differs from the persisted task
+- **THEN** the Hub returns `INVALID_ARGUMENT` and leaves the task unchanged
+
+### Requirement: Agent Cards advertise the accepted URL attachment MIME profile
+
+The Gateway and Per-Agent Agent Cards SHALL advertise every MIME family and exact MIME type accepted by URL attachment validation, including supported text, image, audio, video, PDF, archive, and office document types. The Gateway SHALL reject URL Part media types that are outside the advertised profile.
+
+#### Scenario: Card includes every accepted exact MIME type
+- **WHEN** a client reads the Gateway or Per-Agent Agent Card
+- **THEN** its input and output modes include the full set of exact URL attachment MIME types accepted by the Gateway
+
+#### Scenario: Wildcard media type is represented consistently
+- **WHEN** the Gateway accepts an image, audio, or video subtype
+- **THEN** the corresponding Agent Card advertises that media family using its wildcard mode

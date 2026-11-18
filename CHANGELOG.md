@@ -4,6 +4,8 @@
 
 ### Changed
 
+- 移除 `/llms.txt` 動態輸出（`internal/service/http.go`）與 `skills/a2a-client/SKILL.md` 中的中文「動態新天地／新天地」字眼，維持 LLM 介面純英文描述。
+- 歸檔已完成之 OpenSpec 變更 `a2a-url-attachments` 與 `durable-agent-workflows`，並將 delta specs 同步至 `openspec/specs/`。
 - 升級 Open Graph 首圖（`internal/service/assets/og-image.png`）與 `chat.html` SEO/OG meta 標籤：
   - 換上深空星雲軌道網絡背景與中英雙語（English + 台灣繁體中文）1200×630 視覺首圖，並同步雙語化 `description`、`og:title`/`og:description` 與 `twitter:title`/`twitter:description`。
 
