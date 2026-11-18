@@ -85,20 +85,28 @@ func TestCircleSkillsHTTPBotProposalHumanApproveTTLIsolationAndSSE(t *testing.T)
 	defer ts.Close()
 
 	legacyReq, _ := http.NewRequest(http.MethodGet, ts.URL+"/hub/v1/agents/"+bot.AgentID+"/inbox/stream", nil)
+	legacyReq.Header.Set("X-Agent-ID", bot.AgentID)
 	legacyReq.Header.Set("Authorization", "Bearer "+bot.AgentToken)
 	legacyResp, err := ts.Client().Do(legacyReq)
 	if err != nil {
 		t.Fatalf("legacy SSE connect: %v", err)
 	}
 	defer func() { _ = legacyResp.Body.Close() }()
+	if legacyResp.StatusCode != http.StatusOK {
+		t.Fatalf("legacy SSE status = %d, want 200", legacyResp.StatusCode)
+	}
 
 	optInReq, _ := http.NewRequest(http.MethodGet, ts.URL+"/hub/v1/agents/"+human.AgentID+"/inbox/stream?events=task,circle_skill", nil)
+	optInReq.Header.Set("X-Agent-ID", human.AgentID)
 	optInReq.Header.Set("Authorization", "Bearer "+human.AgentToken)
 	optInResp, err := ts.Client().Do(optInReq)
 	if err != nil {
 		t.Fatalf("optIn SSE connect: %v", err)
 	}
 	defer func() { _ = optInResp.Body.Close() }()
+	if optInResp.StatusCode != http.StatusOK {
+		t.Fatalf("optIn SSE status = %d, want 200", optInResp.StatusCode)
+	}
 
 	optInLines := make(chan string, 32)
 	go func() {
