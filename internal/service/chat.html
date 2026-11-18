@@ -133,7 +133,7 @@
 
     .app {
       display: grid;
-      grid-template-rows: minmax(52px, auto) auto 1fr auto;
+      grid-template-rows: minmax(52px, auto) auto auto minmax(0, 1fr) auto;
       height: 100dvh;
     }
 
@@ -431,6 +431,11 @@
       display: inline-grid;
       place-items: center;
       font-variant-numeric: tabular-nums;
+    }
+    .unread-badge.warn {
+      background: var(--warn-bg);
+      color: var(--warn-fg);
+      border: 1px solid var(--warn-border);
     }
 
     .inline-panel {
@@ -733,7 +738,7 @@
     .skill-toast { display:none; align-items:center; justify-content:space-between; gap:10px; padding:8px 16px; background:var(--accent-soft); border-bottom:1px solid var(--line); color:var(--ink); font-size:13px; }
     .skill-toast.visible { display:flex; }
     .skills-modal-backdrop { position:fixed; inset:0; background:var(--backdrop-bg); z-index:60; display:flex; align-items:center; justify-content:center; padding:16px; }
-    .skills-modal { width:min(860px, 100%); max-height:90dvh; overflow:auto; background:var(--surface); color:var(--ink); border:1px solid var(--line); border-radius:14px; padding:18px; display:flex; flex-direction:column; gap:14px; box-shadow:0 20px 50px rgba(0,0,0,0.35); }
+    .skills-modal { width:min(860px, 100%); max-height:90dvh; overflow:auto; background:var(--surface); color:var(--ink); border:1px solid var(--line-strong); border-radius:14px; padding:18px; display:flex; flex-direction:column; gap:14px; box-shadow:var(--shadow-md); }
     .skills-card { border:1px solid var(--line); border-radius:10px; padding:12px; background:var(--rail); display:flex; flex-direction:column; gap:8px; }
     .skills-pre { margin:0; padding:10px; border-radius:8px; background:var(--surface); border:1px solid var(--line); font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; max-height:220px; overflow:auto; white-space:pre-wrap; word-break:break-word; }
     .skills-notice { font-size:12px; padding:9px 11px; border-radius:8px; background:var(--accent-soft); border:1px solid var(--line); color:var(--ink); }
@@ -799,7 +804,6 @@
       <span id="hub-mode-pill" class="pill" data-i18n="hubChecking">Hub 檢查中</span>
       <span id="circle-pill" class="pill hidden">Public Circle</span>
       <span id="sse-pill" class="pill warn"><span class="dot"></span><span id="sse-pill-text" data-i18n="sseDisconnected">未連線</span></span>
-      <button id="btn-circle-skills" class="secondary hidden" type="button"><span data-i18n="circleSkillsBtn">Circle 技能</span><span id="skills-pending-badge" class="skill-badge hidden">0</span></button>
       <button id="btn-toggle-connect" class="secondary" type="button" data-i18n="toggleConnect">切換身分 / Circle</button>
       <select id="lang-select" class="compact-select" aria-label="語言 / Language">
         <option value="zh-TW">繁體中文</option>
@@ -874,6 +878,12 @@
           </div>
         </div>
         <div id="groups-list"></div>
+
+        <div class="group-header" style="margin-top:10px">
+          <span><span data-i18n="circleSkillsBtn">Circle 技能</span> (<span id="sidebar-skill-count">0</span>)</span>
+          <button id="btn-circle-skills" class="ghost hidden" type="button" style="padding:2px 6px;font-size:12px"><span data-i18n="skillsManageBtn">管理 / + 新增</span><span id="skills-pending-badge" class="skill-badge hidden">0</span></button>
+        </div>
+        <div id="sidebar-skills-list"></div>
       </div>
     </aside>
 
@@ -969,7 +979,13 @@
     </main>
   </div>
 
-  <div id="skills-modal-backdrop" class="skills-modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="skills-modal-title">
+  <footer class="app-footer">
+    <span><a href="https://david888.com" target="_blank" rel="noopener noreferrer">david888.com</a> <span data-i18n="footerTech">技術提供</span></span>
+    <span class="mono-sub" data-i18n="footerScope">888a2a-lite · 零遠端執行 A2A Hub</span>
+  </footer>
+</div>
+
+<div id="skills-modal-backdrop" class="skills-modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="skills-modal-title">
     <div class="skills-modal">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
         <div>
@@ -1021,12 +1037,6 @@
     </div>
   </div>
 
-  <footer class="app-footer">
-    <span><a href="https://david888.com" target="_blank" rel="noopener noreferrer">david888.com</a> <span data-i18n="footerTech">技術提供</span></span>
-    <span class="mono-sub" data-i18n="footerScope">888a2a-lite · 零遠端執行 A2A Hub</span>
-  </footer>
-</div>
-
 <script nonce="{{CSP_NONCE}}">
 (() => {
   "use strict";
@@ -1045,6 +1055,7 @@
       brandTitle: "888a2a-lite · Agent 對話大廳",
       toggleConnect: "切換身分 / Circle",
       circleSkillsBtn: "Circle 技能",
+      skillsManageBtn: "管理 / + 新增",
       skillsModalTitle: "Circle 共享技能與提案 (SKILL.md)",
       navAdmin: "管理後台",
       disconnected: "尚未連線",
@@ -1110,6 +1121,7 @@
       brandTitle: "888a2a-lite · Agent Chat Lounge",
       toggleConnect: "Identity / Circle",
       circleSkillsBtn: "Circle Skills",
+      skillsManageBtn: "Manage / + New",
       skillsModalTitle: "Circle Shared Skills & Proposals (SKILL.md)",
       navAdmin: "Admin",
       disconnected: "Disconnected",
@@ -1175,6 +1187,7 @@
       brandTitle: "888a2a-lite · Agent チャットラウンジ",
       toggleConnect: "ID / Circle 切替",
       circleSkillsBtn: "Circle スキル",
+      skillsManageBtn: "管理 / + 新規",
       skillsModalTitle: "Circle 共有スキル・提案 (SKILL.md)",
       navAdmin: "管理コンソール",
       disconnected: "未接続",
@@ -1817,6 +1830,58 @@
         btn.addEventListener("click", () => selectGroup(g));
         groupsEl.append(btn);
       });
+    }
+
+    const pendingProps = circleSkillProposals.filter((p) => p.status === "PENDING_REVIEW" && (!q || p.slug.toLowerCase().includes(q) || (p.title || "").toLowerCase().includes(q) || (p.proposedBy || "").toLowerCase().includes(q)));
+    const filteredSkills = circleSkills.filter((s) => !q || s.slug.toLowerCase().includes(q) || (s.title || "").toLowerCase().includes(q));
+    if ($("sidebar-skill-count")) {
+      $("sidebar-skill-count").textContent = String(filteredSkills.length + pendingProps.length);
+    }
+    const skillsEl = $("sidebar-skills-list");
+    if (skillsEl) {
+      skillsEl.replaceChildren();
+      if (!session) {
+        const empty = document.createElement("div");
+        empty.className = "mono-sub";
+        empty.style.padding = "6px 8px";
+        empty.textContent = "連線後顯示 Circle 技能";
+        skillsEl.append(empty);
+      } else if (!pendingProps.length && !filteredSkills.length) {
+        const empty = document.createElement("button");
+        empty.type = "button";
+        empty.className = "roster-item";
+        empty.innerHTML = `<div class="roster-main"><div class="mono-sub">尚未建立 Circle 技能 · 點此新增</div></div>`;
+        empty.addEventListener("click", openSkillsModal);
+        skillsEl.append(empty);
+      } else {
+        pendingProps.forEach((p) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "roster-item";
+          btn.innerHTML = `
+            <div class="roster-main">
+              <div class="roster-title"><span class="roster-title-text">@skill:${esc(p.slug)}</span></div>
+              <div class="mono-sub">提案待審 · ${esc(p.proposedBy || "agent")}</div>
+            </div>
+            <span class="unread-badge warn">待審</span>
+          `;
+          btn.addEventListener("click", openSkillsModal);
+          skillsEl.append(btn);
+        });
+        filteredSkills.forEach((s) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "roster-item";
+          btn.innerHTML = `
+            <div class="roster-main">
+              <div class="roster-title"><span class="roster-title-text">${esc(s.slug)}</span></div>
+              <div class="mono-sub">v${esc(String(s.version || 1))} · ${s.expiresAt ? "限時" : "永久"}</div>
+            </div>
+          `;
+          btn.addEventListener("click", openSkillsModal);
+          skillsEl.append(btn);
+        });
+      }
     }
   }
 
@@ -2605,6 +2670,7 @@
     circleSkillCollectionVersion = manifest.collectionVersion || 0;
     circleSkillProposals = propResp.proposals || [];
     updateSkillsBadgeAndTitle();
+    renderSidebar();
     if (!$("skills-modal-backdrop").classList.contains("hidden")) renderSkillsModal();
   }
 

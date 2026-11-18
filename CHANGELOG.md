@@ -10,6 +10,10 @@
   - **Capability-Gated SSE 與 UI 即時通知**：`/inbox/stream` 僅對帶 `?events=task,circle_skill` 之連線推送 `event: circle_skill` 中繼資料事件，完全相容舊版 Bridge；`chat.html` 與 `admin.html` 新增待審紅點／橫幅、可選瀏覽器桌面通知（`Notification` API）、`@skill:<slug>` 補全與 Diff／內容預覽審查抽屜。
   - **Bridge 隔離沙盒、TOFU Pin-by-Hash 與選填本機 `email` 告警**：`examples/worker/a2a_bridge.py` 與 `internal/service/a2a_bridge.py` 同步支援 `~/.a2a/circles/<hubScope>/<circleScope>/skills/<slug>/SKILL.md`（`0600`、`dir_fd`/`O_NOFOLLOW`、`flock`、`DELETE`/TTL 過期撤銷清除）、`127.0.0.1:8888` 本機核准面板與 `a2a bridge skill {list,inspect,approve,reject}` CLI、全任務路徑／全後端防偽提示詞（`[LOCAL_SAFETY_POLICY]` ＋ nonce 隔離區塊），以及選填本機 Resend API / TLS SMTP `email` 通知（具冷卻去重且不含一鍵 GET 核准連結）。
 
+### Fixed
+
+- 修正 `internal/service/chat.html` `.app` Grid 版面因 `#skill-toast` 與 `#skills-modal-backdrop` 位移 `.workspace` 軌道導致下方出現空白區塊的問題，並將「Circle 技能」區塊整合進左側同圈側邊欄清單（含待審 Bot 提案徽章、已生效技能與快捷管理按鈕）。
+
 ### Changed
 
 - 移除 `/llms.txt` 動態輸出（`internal/service/http.go`）與 `skills/a2a-client/SKILL.md` 中的中文「動態新天地／新天地」字眼，維持 LLM 介面純英文描述。
