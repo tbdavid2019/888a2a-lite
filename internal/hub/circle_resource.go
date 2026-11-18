@@ -200,14 +200,13 @@ func CircleResourceManifestETag(circleID string, collectionVersion int64) string
 func CircleResourceManifestETagWithItems(circleID string, collectionVersion int64, items []CircleResourceManifestItem) string {
 	var b strings.Builder
 	b.WriteString(circleID)
-	b.WriteByte('|')
-	b.WriteString(fmt.Sprintf("%d", collectionVersion))
+	fmt.Fprintf(&b, "|%d", collectionVersion)
 	for _, item := range items {
 		exp := ""
 		if item.ExpiresAt != nil {
 			exp = *item.ExpiresAt
 		}
-		b.WriteString(fmt.Sprintf("|%s:%d:%s:%s", item.Slug, item.Version, exp, item.UpdatedAt))
+		fmt.Fprintf(&b, "|%s:%d:%s:%s", item.Slug, item.Version, exp, item.UpdatedAt)
 	}
 	digest := computeContentHash(b.String())
 	if len(digest) > 16 {
