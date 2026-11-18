@@ -12,23 +12,23 @@ import (
 )
 
 const (
-	DefaultHubID                 = "public"
-	DefaultListenAddr            = ":8080"
-	DefaultDatabasePath          = "/data/hub.db"
-	DefaultRegistrationTTL       = 365 * 24 * time.Hour
-	DefaultPeerLease             = 15 * time.Minute
-	DefaultMaxRegisteredAgents   = 100
-	DefaultMaxTasksPerMinute     = 60
-	DefaultMaxConcurrentTasks    = 4
-	DefaultMaxPayloadBytes       = 1 << 20
-	DefaultMaxGroupMembers       = 32
-	DefaultMaxGroupFanout        = 32
-	DefaultMaxGroupHistoryPage   = 100
-	DefaultRegistrationPerMinute = 10
-	DefaultStandardWaitTimeout   = 30 * time.Second
-	DefaultMaxCircles            = 200
-	DefaultEmptyCircleTTL        = 24 * time.Hour
-	DefaultIdleAgentTTL          = 7 * 24 * time.Hour
+	DefaultHubID                  = "public"
+	DefaultListenAddr             = ":8080"
+	DefaultDatabasePath           = "/data/hub.db"
+	DefaultRegistrationTTL        = 365 * 24 * time.Hour
+	DefaultPeerLease              = 15 * time.Minute
+	DefaultMaxRegisteredAgents    = 100
+	DefaultMaxTasksPerMinute      = 60
+	DefaultMaxConcurrentTasks     = 4
+	DefaultMaxPayloadBytes        = 1 << 20
+	DefaultMaxGroupMembers        = 32
+	DefaultMaxGroupFanout         = 32
+	DefaultMaxGroupHistoryPage    = 100
+	DefaultRegistrationPerMinute  = 10
+	DefaultStandardWaitTimeout    = 30 * time.Second
+	DefaultMaxCircles             = 200
+	DefaultEmptyCircleTTL         = 24 * time.Hour
+	DefaultIdleAgentTTL           = 7 * 24 * time.Hour
 	DefaultCircleSkillWritePolicy = "human_or_admin"
 )
 

@@ -29,11 +29,11 @@ const (
 )
 
 const (
-	SkillEventActionUpdated         = "updated"
-	SkillEventActionDeleted         = "deleted"
-	SkillEventActionExpired         = "expired"
-	SkillEventActionProposalCreated = "proposal_created"
-	SkillEventActionProposalUpdated = "proposal_updated"
+	SkillEventActionUpdated          = "updated"
+	SkillEventActionDeleted          = "deleted"
+	SkillEventActionExpired          = "expired"
+	SkillEventActionProposalCreated  = "proposal_created"
+	SkillEventActionProposalUpdated  = "proposal_updated"
 	SkillEventActionProposalRejected = "proposal_rejected"
 )
 
