@@ -836,6 +836,7 @@ class DurableBridgeTests(unittest.TestCase):
 
             list_payload = json.loads(lines[1]["result"]["content"][0]["text"])
             self.assertEqual(list_payload["skills"][0]["approvalState"], "pending_approval")
+            self.assertNotIn("content", list_payload["skills"][0])
 
             blocked_payload = json.loads(lines[2]["result"]["content"][0]["text"])
             self.assertTrue(blocked_payload["approvalRequired"])

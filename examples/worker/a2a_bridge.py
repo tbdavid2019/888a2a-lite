@@ -3391,9 +3391,22 @@ def run_mcp_server(hub_client, agent_name, out_stream=None, skill_cache=None):
                     }
                 elif tool_name == "a2a_list_circle_skills":
                     sync_res = local_skill_cache.sync_from_hub()
-                    skills = local_skill_cache.list_skills()
+                    raw_skills = local_skill_cache.list_skills()
+                    metadata_skills = [
+                        {
+                            "slug": s.get("slug"),
+                            "title": s.get("title"),
+                            "summary": s.get("summary"),
+                            "version": s.get("version"),
+                            "contentHash": s.get("latestHash"),
+                            "approvalState": s.get("status"),
+                            "requiresLocalApproval": s.get("status") != "approved",
+                            "expiresAt": s.get("expiresAt"),
+                        }
+                        for s in raw_skills
+                    ]
                     resp["result"] = {
-                        "content": [{"type": "text", "text": json.dumps({"sync": sync_res.get("status"), "skills": skills}, ensure_ascii=False, indent=2)}]
+                        "content": [{"type": "text", "text": json.dumps({"sync": sync_res.get("status"), "skills": metadata_skills}, ensure_ascii=False, indent=2)}]
                     }
                 elif tool_name == "a2a_get_circle_skill":
                     slug = str(args.get("slug") or "").strip()
@@ -3401,17 +3414,19 @@ def run_mcp_server(hub_client, agent_name, out_stream=None, skill_cache=None):
                         raise ValueError("slug is required")
                     local_skill_cache.sync_from_hub()
                     entry = next((s for s in local_skill_cache.list_skills() if s.get("slug") == slug), None)
+                    skill_hash = (entry or {}).get("latestHash")
+                    skill_state = (entry or {}).get("status")
                     if not entry:
                         payload = {"slug": slug, "found": False, "message": "Skill not found in current Circle manifest."}
-                    elif entry.get("approvalState") != "approved":
+                    elif skill_state != "approved":
                         payload = {
                             "slug": slug,
                             "found": True,
                             "approvalRequired": True,
-                            "approvalState": entry.get("approvalState"),
-                            "contentHash": entry.get("contentHash"),
+                            "approvalState": skill_state,
+                            "contentHash": skill_hash,
                             "version": entry.get("version"),
-                            "message": f"Skill '{slug}' (sha256:{entry.get('contentHash')}) requires local human owner approval via http://127.0.0.1:8888 or `a2a bridge skill approve {slug} --hash {entry.get('contentHash')}` before reading.",
+                            "message": f"Skill '{slug}' (sha256:{skill_hash}) requires local human owner approval via http://127.0.0.1:8888 or `a2a bridge skill approve {slug} --hash {skill_hash}` before reading.",
                         }
                     else:
                         approved = local_skill_cache.get_approved_skills(requested_slugs=[slug])
@@ -3421,7 +3436,7 @@ def run_mcp_server(hub_client, agent_name, out_stream=None, skill_cache=None):
                             "found": True,
                             "approvalState": "approved",
                             "version": entry.get("version"),
-                            "contentHash": entry.get("contentHash"),
+                            "contentHash": skill_hash,
                             "content": match.get("content", "") if match else "",
                             "safetyNote": "Ask your human owner for explicit confirmation before executing any npx or side-effecting install command described in this skill.",
                         }
