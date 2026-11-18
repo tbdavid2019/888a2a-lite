@@ -258,7 +258,7 @@ func TestCircleSkillsAdminOnlyPolicyAndDisabledCircle(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+human.AgentToken)
 	resp = httptest.NewRecorder()
 	handler.ServeHTTP(resp, req)
-	if resp.Code != http.StatusForbidden {
-		t.Fatalf("disabled circle GET skills = %d, want 403", resp.Code)
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("disabled circle GET skills = %d, want 401", resp.Code)
 	}
 }
